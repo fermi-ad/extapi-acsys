@@ -113,6 +113,18 @@ impl QueryRoot {
     }
 }
 
+pub struct MutationRoot;
+
+#[Object]
+impl MutationRoot {
+    /// Sends a setting to a device.
+    async fn set_device(
+        &self, device: String, value: types::DevValue,
+    ) -> types::StatusReply {
+        types::StatusReply { status: 0 }
+    }
+}
+
 fn xlat_type(t: &dpm::proto::Data) -> types::DataType {
     match t.value.as_ref() {
         Some(dpm::proto::data::Value::Scalar(v)) => {

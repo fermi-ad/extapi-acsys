@@ -154,3 +154,13 @@ pub struct EventInfo {
     pub timestamp: DateTime<Utc>,
     pub event: u16,
 }
+
+#[derive(InputObject)]
+pub struct DevValue {
+    pub int_val: Option<i32>,
+    pub scalar_val: Option<f64>,
+    pub scalar_array_val: Option<Vec<f64>>,
+    pub raw_val: Option<Vec<u8>>,
+    pub text_val: Option<String>,
+    pub text_array_val: Option<Vec<String>>,
+}
