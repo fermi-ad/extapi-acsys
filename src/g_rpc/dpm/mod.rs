@@ -5,12 +5,12 @@ pub mod proto {
 }
 
 pub async fn acquire_devices(
-    devices: Vec<String>,
+    session_id: &str, devices: Vec<String>,
 ) -> Result<tonic::Response<tonic::Streaming<proto::Reading>>, tonic::Status> {
     match DpmClient::connect("http://dce46.fnal.gov:50051/").await {
         Ok(mut client) => {
             let req = AcquisitionList {
-                session_id: String::from(""),
+                session_id: session_id.to_owned(),
                 req: devices,
             };
 

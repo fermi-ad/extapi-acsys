@@ -180,7 +180,7 @@ pub struct SubscriptionRoot;
 #[Subscription]
 impl SubscriptionRoot {
     async fn accelerator_data(&self, drfs: Vec<String>) -> DataStream {
-        match dpm::acquire_devices(drfs.clone()).await {
+        match dpm::acquire_devices("", drfs.clone()).await {
             Ok(s) => {
                 Box::pin(s.into_inner().map(mk_xlater(drfs))) as DataStream
             }
