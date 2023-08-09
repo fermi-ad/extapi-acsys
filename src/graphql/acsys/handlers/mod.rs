@@ -5,7 +5,7 @@ use async_graphql::*;
 use futures_util::{stream, Stream, StreamExt};
 use std::pin::Pin;
 use tonic::Status;
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 
 // This module contains the GraphQL types that we'll use for the API.
 
@@ -137,6 +137,10 @@ fn xlat_type(t: &dpm::proto::Data) -> types::DataType {
             types::DataType::StatusReply(types::StatusReply {
                 status: *v as i16,
             })
+        }
+        Some(v) => {
+            info!("can't translate {:?}", v);
+            todo!()
         }
         _ => todo!(),
     }
