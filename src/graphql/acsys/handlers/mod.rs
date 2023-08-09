@@ -11,8 +11,22 @@ use tracing::{error, warn};
 
 mod types;
 
+// Converts a `DigitalControlItem`, from the gRPC API, into a
+// `DigControlEntry` struct, used in the GraphQL API.
+
+fn to_dig_ctrl(
+    item: &devdb::proto::DigitalControlItem,
+) -> types::DigControlEntry {
+    types::DigControlEntry {
+        value: item.value as i32,
+        short_name: item.short_name.clone(),
+        long_name: item.long_name.clone(),
+    }
+}
+
 // Converts an `InfoEntry` structure, from the gRPC API, into a
-// `DeviceInfoResult` struct, used in the GraphQL API.
+// `DeviceInfoResult` struct, used in the GraphQL API. This function
+// is intended to be used by an iterator's `.map()` method.
 
 fn to_info_result(item: &devdb::proto::InfoEntry) -> types::DeviceInfoResult {
     match &item.result {
@@ -31,23 +45,7 @@ fn to_info_result(item: &devdb::proto::InfoEntry) -> types::DeviceInfoResult {
                 }),
                 dig_control: di.dig_control.as_ref().map(|p| {
                     types::DigControl {
-                        entries: p
-                            .cmds
-                            .iter()
-                            .map(
-                                |devdb::proto::DigitalControlItem {
-                                     value,
-                                     short_name,
-                                     long_name,
-                                 }| {
-                                    types::DigControlEntry {
-                                        value: *value as i32,
-                                        short_name: short_name.into(),
-                                        long_name: long_name.into(),
-                                    }
-                                },
-                            )
-                            .collect(),
+                        entries: p.cmds.iter().map(to_dig_ctrl).collect(),
                     }
                 }),
             })
