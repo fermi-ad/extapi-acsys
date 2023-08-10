@@ -15,8 +15,8 @@ tracing = { version = "0.1", features = ["log"] }
 tracing-subscriber = "0.3"
 tracing-futures = "0.2"
 
-async-graphql = { version = "5", features = ["chrono"] }
-async-graphql-warp = "5"
+async-graphql = { version = "6", features = ["chrono"] }
+async-graphql-warp = "6"
 warp = "0.3"
 
 chrono = "0.4"
