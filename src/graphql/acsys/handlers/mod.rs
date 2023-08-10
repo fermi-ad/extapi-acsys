@@ -111,6 +111,85 @@ impl QueryRoot {
     }
 }
 
+fn gqlval_to_grpcval(val: &types::DevValue) -> dpm::proto::Data {
+    match val {
+        types::DevValue {
+            int_val: Some(v),
+            scalar_val: _,
+            scalar_array_val: _,
+            raw_val: _,
+            text_val: _,
+            text_array_val: _,
+        } => dpm::proto::Data {
+            value: Some(dpm::proto::data::Value::Status(*v)),
+        },
+        types::DevValue {
+            int_val: None,
+            scalar_val: Some(v),
+            scalar_array_val: _,
+            raw_val: _,
+            text_val: _,
+            text_array_val: _,
+        } => dpm::proto::Data {
+            value: Some(dpm::proto::data::Value::Scalar(*v)),
+        },
+        types::DevValue {
+            int_val: None,
+            scalar_val: None,
+            scalar_array_val: Some(v),
+            raw_val: _,
+            text_val: _,
+            text_array_val: _,
+        } => dpm::proto::Data {
+            value: Some(dpm::proto::data::Value::ScalarArr(
+                dpm::proto::data::ScalarArray { value: v.clone() },
+            )),
+        },
+        types::DevValue {
+            int_val: None,
+            scalar_val: None,
+            scalar_array_val: None,
+            raw_val: Some(v),
+            text_val: _,
+            text_array_val: _,
+        } => dpm::proto::Data {
+            value: Some(dpm::proto::data::Value::Raw(v.clone())),
+        },
+        types::DevValue {
+            int_val: None,
+            scalar_val: None,
+            scalar_array_val: None,
+            raw_val: None,
+            text_val: Some(v),
+            text_array_val: _,
+        } => dpm::proto::Data {
+            value: Some(dpm::proto::data::Value::Text(v.clone())),
+        },
+        types::DevValue {
+            int_val: None,
+            scalar_val: None,
+            scalar_array_val: None,
+            raw_val: None,
+            text_val: None,
+            text_array_val: Some(v),
+        } => dpm::proto::Data {
+            value: Some(dpm::proto::data::Value::TextArr(
+                dpm::proto::data::TextArray { value: v.clone() },
+            )),
+        },
+        types::DevValue {
+            int_val: None,
+            scalar_val: None,
+            scalar_array_val: None,
+            raw_val: None,
+            text_val: None,
+            text_array_val: None,
+        } => dpm::proto::Data {
+            value: Some(dpm::proto::data::Value::Raw(vec![])),
+        },
+    }
+}
+
 pub struct MutationRoot;
 
 #[Object]
@@ -119,7 +198,16 @@ impl MutationRoot {
     async fn set_device(
         &self, device: String, value: types::DevValue,
     ) -> types::StatusReply {
-        types::StatusReply { status: 0 }
+        match dpm::set_device("", device, gqlval_to_grpcval(&value)).await {
+            Ok(status) => types::StatusReply {
+                status: status as i16,
+            },
+            Err(e) => {
+                error!("set_device: {}", &e);
+
+                types::StatusReply { status: -1 }
+            }
+        }
     }
 }
 
