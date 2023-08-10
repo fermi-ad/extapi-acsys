@@ -1,4 +1,6 @@
-use proto::{dpm_client::DpmClient, AcquisitionList};
+use proto::{
+    dpm_client::DpmClient, AcquisitionList, Setting, SettingList, StatusList,
+};
 
 pub mod proto {
     tonic::include_proto!("dpm");
@@ -15,6 +17,33 @@ pub async fn acquire_devices(
             };
 
             client.start_acquisition(req).await
+        }
+        Err(_) => Err(tonic::Status::unavailable("DPM service unavailable")),
+    }
+}
+
+pub async fn set_device(
+    session_id: &str, device: String, value: proto::Data,
+) -> Result<i32, tonic::Status> {
+    match DpmClient::connect("http://dce46.fnal.gov:50051/").await {
+        Ok(mut client) => {
+            let req = SettingList {
+                session_id: session_id.to_owned(),
+                setting: vec![Setting {
+                    name: device,
+                    data: Some(value),
+                }],
+                event: "".to_owned(),
+            };
+
+            let StatusList { status } =
+                client.apply_settings(req).await?.into_inner();
+
+            if status.len() == 1 {
+                Ok(status[0])
+            } else {
+                Err(tonic::Status::internal("received more than one status"))
+            }
         }
         Err(_) => Err(tonic::Status::unavailable("DPM service unavailable")),
     }
