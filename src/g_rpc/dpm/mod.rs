@@ -1,6 +1,7 @@
 use proto::{
     dpm_client::DpmClient, AcquisitionList, Setting, SettingList, StatusList,
 };
+use tracing::info;
 
 pub mod proto {
     tonic::include_proto!("dpm");
@@ -25,6 +26,8 @@ pub async fn acquire_devices(
 pub async fn set_device(
     session_id: &str, device: String, value: proto::Data,
 ) -> Result<i32, tonic::Status> {
+    info!("setting device {} to {:?}", &device, &value);
+
     match DpmClient::connect("http://dce46.fnal.gov:50051/").await {
         Ok(mut client) => {
             let req = SettingList {

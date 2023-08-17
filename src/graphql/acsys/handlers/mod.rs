@@ -270,6 +270,7 @@ pub struct SubscriptionRoot;
 #[Subscription]
 impl SubscriptionRoot {
     async fn accelerator_data(&self, drfs: Vec<String>) -> DataStream {
+        info!("monitoring {:?}", &drfs);
         match dpm::acquire_devices("", drfs.clone()).await {
             Ok(s) => {
                 Box::pin(s.into_inner().map(mk_xlater(drfs))) as DataStream
@@ -282,6 +283,7 @@ impl SubscriptionRoot {
     }
 
     async fn report_events(&self, events: Vec<i32>) -> EventStream {
+        info!("subscribing to clock events: {:?}", &events);
         match clock::subscribe(&events).await {
             Ok(s) => Box::pin(s.into_inner().map(Result::unwrap).map(
                 |clock::proto::EventInfo { stamp, event, .. }| {
