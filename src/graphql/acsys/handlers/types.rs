@@ -106,6 +106,21 @@ pub struct DeviceProperty {
     pub common_units: Option<String>,
 }
 
+#[derive(SimpleObject)]
+pub struct DigStatusEntry {
+    pub bit_no: i32,
+    pub color0: i32,
+    pub name0: String,
+    pub color1: i32,
+    pub name1: String,
+    pub description: String,
+}
+
+#[derive(SimpleObject)]
+pub struct DigStatus {
+    pub entries: Vec<DigStatusEntry>,
+}
+
 /// Describes one digital control command used by a device. `name` is the name of the command and can be used by applications to create a descriptive menu. `value` is the actual integer value to send to the device in order to perform the command.
 #[derive(SimpleObject)]
 pub struct DigControlEntry {
@@ -133,6 +148,7 @@ pub struct DeviceInfo {
     pub setting: Option<DeviceProperty>,
 
     pub dig_control: Option<DigControl>,
+    pub dig_status: Option<DigStatus>,
 }
 
 /// The result of the device info query. It can return device information or an error message describing why information wasn't returned.

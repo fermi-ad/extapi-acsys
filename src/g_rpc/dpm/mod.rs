@@ -23,6 +23,9 @@ pub async fn acquire_devices(
     }
 }
 
+// This function wraps the logic needed to make the `ApplySettings()`
+// gRPC transaction.
+
 pub async fn set_device(
     session_id: &str, device: String, value: proto::Data,
 ) -> Result<i32, tonic::Status> {

@@ -32,11 +32,34 @@ message Property {
     optional string common_units = 2;
 }
 
+// Defines the information associated with one bit of the digital
+// status.
+
+message DigitalStatusItem {
+    uint32 bit_no = 1;
+    uint32 color0 = 2;
+    string name0 = 3;
+    uint32 color1 = 4;
+    string name1 = 5;
+    string description =6;
+}
+
+// Holds all the Digital Status information for the device.
+
+message DigitalStatus {
+    repeated DigitalStatusItem bits = 1;
+}
+
+// A single Digital Control item which defines the information
+// associated with one command.
+
 message DigitalControlItem {
     uint32 value = 1;
     string short_name = 2;
     string long_name = 3;
 }
+
+// Holds all the Digital Control commands for the device.
 
 message DigitalControl {
     repeated DigitalControlItem cmds = 1;
@@ -45,11 +68,12 @@ message DigitalControl {
 // Holds information about a device.
 
 message DeviceInfo {
-    uint32 index = 1;
+    uint32 device_index = 1;
     string description = 2;
     optional Property reading = 3;
     optional Property setting = 4;
     optional DigitalControl dig_control = 5;
+    optional DigitalStatus dig_status = 6;
 }
 
 // One entry in `DeviceInfoReply`s array.

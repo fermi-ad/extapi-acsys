@@ -24,6 +24,19 @@ fn to_dig_ctrl(
     }
 }
 
+fn to_dig_status(
+    item: &devdb::proto::DigitalStatusItem,
+) -> types::DigStatusEntry {
+    types::DigStatusEntry {
+        bit_no: item.bit_no as i32,
+        color0: item.color0 as i32,
+        name0: item.name0.clone(),
+        color1: item.color1 as i32,
+        name1: item.name1.clone(),
+        description: item.description.clone(),
+    }
+}
+
 // Converts an `InfoEntry` structure, from the gRPC API, into a
 // `DeviceInfoResult` struct, used in the GraphQL API. This function
 // is intended to be used by an iterator's `.map()` method.
@@ -47,6 +60,9 @@ fn to_info_result(item: &devdb::proto::InfoEntry) -> types::DeviceInfoResult {
                     types::DigControl {
                         entries: p.cmds.iter().map(to_dig_ctrl).collect(),
                     }
+                }),
+                dig_status: di.dig_status.as_ref().map(|p| types::DigStatus {
+                    entries: p.bits.iter().map(to_dig_status).collect(),
                 }),
             })
         }
