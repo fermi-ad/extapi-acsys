@@ -11,7 +11,11 @@ pub async fn start_service() {
     let filter = acsys::filter("acsys").with(
         warp::cors()
             .allow_any_origin()
-            .allow_headers(vec!["content-type", "Access-Control-Allow-Origin"])
+            .allow_headers(vec![
+                "content-type",
+                "Access-Control-Allow-Origin",
+                "Sec-WebSocket-Protocol",
+            ])
             .allow_methods(vec!["OPTIONS", "GET", "POST"]),
     );
 
