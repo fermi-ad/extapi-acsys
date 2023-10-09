@@ -211,6 +211,8 @@ pub struct MutationRoot;
 #[Object]
 impl MutationRoot {
     /// Sends a setting to a device.
+    ///
+    /// Not all devices can be set -- most are read-only. For ACNET devices, the `device` string should use DRF notation to specify one of the two settable properties: `.SETTING` and `.CONTROL`.
     async fn set_device(
         &self, device: String, value: types::DevValue,
     ) -> types::StatusReply {
