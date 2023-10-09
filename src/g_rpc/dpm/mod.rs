@@ -33,6 +33,10 @@ pub async fn set_device(
 
     match DpmClient::connect("http://dce46.fnal.gov:50051/").await {
         Ok(mut client) => {
+            // Build the setting request. This function only sets one
+            // device, so the request only has a 1-element array
+            // containing the setting.
+
             let req = SettingList {
                 session_id: session_id.to_owned(),
                 setting: vec![Setting {
