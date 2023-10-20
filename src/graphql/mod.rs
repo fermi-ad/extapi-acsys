@@ -1,4 +1,5 @@
 use warp::Filter;
+use std::path::Path;
 
 pub mod acsys;
 
@@ -19,5 +20,14 @@ pub async fn start_service() {
             .allow_methods(vec!["OPTIONS", "GET", "POST"]),
     );
 
-    warp::serve(filter).run(([0, 0, 0, 0], 8000)).await;
+    warp::serve(filter)
+        .tls()
+        .cert_path(Path::new(
+            "/etc/ssl/private/acsys-proxy.fnal.gov/cert.pem",
+        ))
+        .key_path(Path::new(
+            "/etc/ssl/private/acsys-proxy.fnal.gov/key.pem",
+        ))
+        .run(([0, 0, 0, 0], 8000))
+        .await;
 }
