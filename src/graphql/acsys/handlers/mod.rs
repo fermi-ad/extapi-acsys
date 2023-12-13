@@ -24,16 +24,24 @@ fn to_dig_ctrl(
     }
 }
 
+// Converts a `DigitalStatusItem`, from the gRPC API, into a
+// `DigStatusEntry` struct used by the GraphQL API.
+
 fn to_dig_status(
     item: &devdb::proto::DigitalStatusItem,
 ) -> types::DigStatusEntry {
     types::DigStatusEntry {
-        bit_no: item.bit_no as i32,
-        color0: item.color0 as i32,
-        name0: item.name0.clone(),
-        color1: item.color1 as i32,
-        name1: item.name1.clone(),
-        description: item.description.clone(),
+	 mask_val: item.mask_val,
+	 match_val: item.match_val,
+	 invert: item.invert,
+	 short_name: item.short_name.to_owned(),
+	 long_name: item.long_name.to_owned(),
+	 true_str: item.true_str.to_owned(),
+	 true_color: item.true_color,
+	 true_char: item.true_char.to_owned(),
+	 false_str: item.false_str.to_owned(),
+	 false_color: item.false_color,
+	 false_char: item.false_char.to_owned(),
     }
 }
 

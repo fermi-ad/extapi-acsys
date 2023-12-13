@@ -108,12 +108,17 @@ pub struct DeviceProperty {
 
 #[derive(SimpleObject)]
 pub struct DigStatusEntry {
-    pub bit_no: i32,
-    pub color0: i32,
-    pub name0: String,
-    pub color1: i32,
-    pub name1: String,
-    pub description: String,
+    pub mask_val:u32,
+    pub match_val: u32,
+    pub invert: bool,
+    pub short_name: String,
+    pub long_name: String,
+    pub true_str: String,
+    pub true_color: u32,
+    pub true_char: String,
+    pub false_str: String,
+    pub false_color: u32,
+    pub false_char: String,
 }
 
 #[derive(SimpleObject)]

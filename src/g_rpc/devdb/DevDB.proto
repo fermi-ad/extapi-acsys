@@ -36,12 +36,17 @@ message Property {
 // status.
 
 message DigitalStatusItem {
-    uint32 bit_no = 1;
-    uint32 color0 = 2;
-    string name0 = 3;
-    uint32 color1 = 4;
-    string name1 = 5;
-    string description =6;
+    uint32 mask_val = 1;
+    uint32 match_val = 2;
+    bool invert = 3;
+    string short_name = 4;
+    string long_name = 5;
+    string true_str = 6;
+    uint32 true_color = 7;
+    string true_char = 8;
+    string false_str = 9;
+    uint32 false_color = 10;
+    string false_char = 11;
 }
 
 // Holds all the Digital Status information for the device.
