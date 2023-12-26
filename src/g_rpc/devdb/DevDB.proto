@@ -49,10 +49,20 @@ message DigitalStatusItem {
     string false_char = 11;
 }
 
+message DigitalExtStatusItem {
+    uint32 bit_no = 1;
+    uint32 color0 = 2;
+    string name0 = 3;
+    uint32 color1 = 4;
+    string name1 = 5;
+    string description = 6;
+}
+
 // Holds all the Digital Status information for the device.
 
 message DigitalStatus {
     repeated DigitalStatusItem bits = 1;
+    repeated DigitalExtStatusItem ext_bits = 2;
 }
 
 // A single Digital Control item which defines the information

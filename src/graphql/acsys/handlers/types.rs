@@ -108,7 +108,7 @@ pub struct DeviceProperty {
 
 #[derive(SimpleObject)]
 pub struct DigStatusEntry {
-    pub mask_val:u32,
+    pub mask_val: u32,
     pub match_val: u32,
     pub invert: bool,
     pub short_name: String,
@@ -122,8 +122,19 @@ pub struct DigStatusEntry {
 }
 
 #[derive(SimpleObject)]
+pub struct DigExtStatusEntry {
+    pub bit_no: u32,
+    pub color0: u32,
+    pub name0: String,
+    pub color1: u32,
+    pub name1: String,
+    pub description: String,
+}
+
+#[derive(SimpleObject)]
 pub struct DigStatus {
     pub entries: Vec<DigStatusEntry>,
+    pub ext_entries: Vec<DigExtStatusEntry>,
 }
 
 /// Describes one digital control command used by a device. `name` is the name of the command and can be used by applications to create a descriptive menu. `value` is the actual integer value to send to the device in order to perform the command.

@@ -31,17 +31,30 @@ fn to_dig_status(
     item: &devdb::proto::DigitalStatusItem,
 ) -> types::DigStatusEntry {
     types::DigStatusEntry {
-	 mask_val: item.mask_val,
-	 match_val: item.match_val,
-	 invert: item.invert,
-	 short_name: item.short_name.to_owned(),
-	 long_name: item.long_name.to_owned(),
-	 true_str: item.true_str.to_owned(),
-	 true_color: item.true_color,
-	 true_char: item.true_char.to_owned(),
-	 false_str: item.false_str.to_owned(),
-	 false_color: item.false_color,
-	 false_char: item.false_char.to_owned(),
+        mask_val: item.mask_val,
+        match_val: item.match_val,
+        invert: item.invert,
+        short_name: item.short_name.to_owned(),
+        long_name: item.long_name.to_owned(),
+        true_str: item.true_str.to_owned(),
+        true_color: item.true_color,
+        true_char: item.true_char.to_owned(),
+        false_str: item.false_str.to_owned(),
+        false_color: item.false_color,
+        false_char: item.false_char.to_owned(),
+    }
+}
+
+fn to_ext_dig_status(
+    item: &devdb::proto::DigitalExtStatusItem,
+) -> types::DigExtStatusEntry {
+    types::DigExtStatusEntry {
+	bit_no: item.bit_no,
+	color0: item.color0,
+	name0: item.name0.clone(),
+	color1: item.color1,
+	name1: item.name1.clone(),
+	description: item.description.clone(),
     }
 }
 
@@ -71,6 +84,11 @@ fn to_info_result(item: &devdb::proto::InfoEntry) -> types::DeviceInfoResult {
                 }),
                 dig_status: di.dig_status.as_ref().map(|p| types::DigStatus {
                     entries: p.bits.iter().map(to_dig_status).collect(),
+                    ext_entries: p
+                        .ext_bits
+                        .iter()
+                        .map(to_ext_dig_status)
+                        .collect(),
                 }),
             })
         }
