@@ -22,12 +22,8 @@ pub async fn start_service() {
 
     warp::serve(filter)
         .tls()
-        .cert_path(Path::new(
-            "/etc/ssl/private/acsys-proxy.fnal.gov/cert.pem",
-        ))
-        .key_path(Path::new(
-            "/etc/ssl/private/acsys-proxy.fnal.gov/key.pem",
-        ))
+        .cert_path(Path::new("/etc/ssl/private/acsys-proxy.fnal.gov/cert.pem"))
+        .key_path(Path::new("/etc/ssl/private/acsys-proxy.fnal.gov/key.pem"))
         .run(([0, 0, 0, 0], 8000))
         .await;
 }
