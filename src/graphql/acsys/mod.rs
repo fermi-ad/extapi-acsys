@@ -5,11 +5,8 @@ use warp::{Filter, Rejection};
 
 mod handlers;
 
-type MySchema = Schema<
-    handlers::QueryRoot,
-    handlers::MutationRoot,
-    handlers::SubscriptionRoot,
->;
+type MySchema =
+    Schema<handlers::Queries, handlers::Mutations, handlers::Subscriptions>;
 
 // Returns a Warp Filter that organizes the DPM protion of the web
 // site.
@@ -22,9 +19,9 @@ pub fn filter(
     // queries and subscriptions.
 
     let schema = Schema::build(
-        handlers::QueryRoot,
-        handlers::MutationRoot,
-        handlers::SubscriptionRoot,
+        handlers::Queries,
+        handlers::Mutations,
+        handlers::Subscriptions,
     )
     .finish();
 

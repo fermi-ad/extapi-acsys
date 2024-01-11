@@ -115,13 +115,13 @@ fn to_info_result(item: &devdb::proto::InfoEntry) -> types::DeviceInfoResult {
 
 // Create a zero-sized struct to attach the GraphQL handlers.
 
-pub struct QueryRoot;
+pub struct Queries;
 
 // Define the schema's query entry points. Any methods defined in this
 // section will appear in the schema.
 
 #[Object]
-impl QueryRoot {
+impl Queries {
     /// Retrieve the next data point for the specified devices. Depending upon the event in the DRF string, the data may come back immediately or after a delay.
     async fn accelerator_data(
         &self, _drfs: Vec<String>,
@@ -232,10 +232,10 @@ fn gqlval_to_grpcval(val: &types::DevValue) -> dpm::proto::Data {
     }
 }
 
-pub struct MutationRoot;
+pub struct Mutations;
 
 #[Object]
-impl MutationRoot {
+impl Mutations {
     /// Sends a setting to a device.
     ///
     /// Not all devices can be set -- most are read-only. For ACNET devices, the `device` string should use DRF notation to specify one of the two settable properties: `.SETTING` and `.CONTROL`.
@@ -309,10 +309,10 @@ fn mk_xlater(
 type DataStream = Pin<Box<dyn Stream<Item = types::DataReply> + Send>>;
 type EventStream = Pin<Box<dyn Stream<Item = types::EventInfo> + Send>>;
 
-pub struct SubscriptionRoot;
+pub struct Subscriptions;
 
 #[Subscription]
-impl SubscriptionRoot {
+impl Subscriptions {
     async fn accelerator_data(&self, drfs: Vec<String>) -> DataStream {
         info!("monitoring {:?}", &drfs);
         match dpm::acquire_devices("", drfs.clone()).await {
