@@ -1,5 +1,4 @@
 use async_graphql::*;
-use async_graphql_warp::graphql_subscription;
 use std::convert::Infallible;
 use warp::{Filter, Rejection};
 
@@ -41,7 +40,8 @@ pub fn filter(
 
     // Build the subscription portion.
 
-    let graphql_sub = graphql_subscription(schema).with(warp::log("subs"));
+    let graphql_sub = async_graphql_warp::graphql_subscription(schema)
+        .with(warp::log("subs"));
 
     // Build the sub-site. Look, first, for the leading path and then
     // look for any of the above services.
