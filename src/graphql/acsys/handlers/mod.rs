@@ -134,7 +134,10 @@ impl Queries {
         &self, devices: Vec<String>,
     ) -> types::DeviceInfoReply {
         let result = match devdb::get_device_info(&devices).await {
-            Ok(s) => s.into_inner().set.iter().map(to_info_result).collect(),
+            Ok(s) => {
+                info!("reply received ... translating to GraphQL");
+                s.into_inner().set.iter().map(to_info_result).collect()
+            }
             Err(e) => {
                 let err_msg = format!("{}", &e);
 
@@ -148,7 +151,7 @@ impl Queries {
                     .collect()
             }
         };
-
+        info!("returning reply");
         types::DeviceInfoReply { result }
     }
 }
@@ -317,6 +320,7 @@ impl Subscriptions {
         info!("monitoring {:?}", &drfs);
         match dpm::acquire_devices("", drfs.clone()).await {
             Ok(s) => {
+                info!("stream acquired");
                 Box::pin(s.into_inner().map(mk_xlater(drfs))) as DataStream
             }
             Err(e) => {
