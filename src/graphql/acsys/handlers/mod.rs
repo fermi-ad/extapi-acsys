@@ -49,12 +49,12 @@ fn to_ext_dig_status(
     item: &devdb::proto::DigitalExtStatusItem,
 ) -> types::DigExtStatusEntry {
     types::DigExtStatusEntry {
-	bit_no: item.bit_no,
-	color0: item.color0,
-	name0: item.name0.clone(),
-	color1: item.color1,
-	name1: item.name1.clone(),
-	description: item.description.clone(),
+        bit_no: item.bit_no,
+        color0: item.color0,
+        name0: item.name0.clone(),
+        color1: item.color1,
+        name1: item.name1.clone(),
+        description: item.description.clone(),
     }
 }
 
