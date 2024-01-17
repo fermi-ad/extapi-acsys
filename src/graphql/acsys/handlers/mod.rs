@@ -154,12 +154,12 @@ impl Queries {
             }
         };
 
-	let total_time = now.elapsed().as_micros();
+        let total_time = now.elapsed().as_micros();
 
         info!(
             "deviceInfo({:?}) => total: {} μs, rpc: {} μs, local: {} μs",
-	    &devices[..],
-	    total_time,
+            &devices[..],
+            total_time,
             rpc_time,
             total_time - rpc_time
         );
