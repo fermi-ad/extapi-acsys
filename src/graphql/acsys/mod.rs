@@ -7,8 +7,9 @@ mod handlers;
 type MySchema =
     Schema<handlers::Queries, handlers::Mutations, handlers::Subscriptions>;
 
-// Returns a Warp Filter that organizes the DPM protion of the web
-// site.
+// Returns a Warp Filter that organizes the DPM portion of the web
+// site. The base path is passed in and this function adds filters to
+// recognize and provide GraphQL request support.
 
 pub fn filter(
     path: &str,
@@ -24,7 +25,8 @@ pub fn filter(
     )
     .finish();
 
-    // Build the query portion.
+    // Build the query portion. This Warp Filter recognizes GraphQL
+    // query and mutation requests.
 
     let graphql_query = async_graphql_warp::graphql(schema.clone())
         .and_then(
@@ -38,7 +40,9 @@ pub fn filter(
         )
         .with(warp::log("query"));
 
-    // Build the subscription portion.
+    // Build the subscription portion. This Warp Filter recognizes
+    // GraphQL subscription requests, which require upgrading the
+    // connection to a WebSocket. This is handled by the library.
 
     let graphql_sub = async_graphql_warp::graphql_subscription(schema)
         .with(warp::log("subs"));
