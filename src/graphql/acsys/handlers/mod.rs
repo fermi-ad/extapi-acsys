@@ -157,10 +157,11 @@ impl Queries {
 	let total_time = now.elapsed().as_micros();
 
         info!(
-            "deviceInfo => total: {} μs, rpc: {} μs, local: {} μs",
+            "deviceInfo({:?}) => total: {} μs, rpc: {} μs, local: {} μs",
+	    &devices[..],
 	    total_time,
             rpc_time,
-            now.elapsed().as_micros() - rpc_time
+            total_time - rpc_time
         );
         types::DeviceInfoReply { result: reply }
     }
