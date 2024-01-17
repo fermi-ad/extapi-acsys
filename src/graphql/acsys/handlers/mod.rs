@@ -201,29 +201,6 @@ impl Mutations {
     }
 }
 
-fn xlat_type(t: &dpm::proto::Data) -> types::DataType {
-    match t.value.as_ref() {
-        Some(dpm::proto::data::Value::Scalar(v)) => {
-            types::DataType::Scalar(types::Scalar { scalar_value: *v })
-        }
-        Some(dpm::proto::data::Value::ScalarArr(v)) => {
-            types::DataType::ScalarArray(types::ScalarArray {
-                scalar_array_value: v.value.clone(),
-            })
-        }
-        Some(dpm::proto::data::Value::Status(v)) => {
-            types::DataType::StatusReply(types::StatusReply {
-                status: *v as i16,
-            })
-        }
-        Some(v) => {
-            info!("can't translate {:?}", v);
-            todo!()
-        }
-        _ => todo!(),
-    }
-}
-
 fn mk_xlater(
     names: Vec<String>,
 ) -> Box<
@@ -234,13 +211,13 @@ fn mk_xlater(
     Box::new(move |e: Result<dpm::proto::Reading, Status>| {
         let e = e.unwrap();
 
-        if let Some(ref data) = e.data {
+        if let Some(data) = e.data {
             types::DataReply {
                 ref_id: e.index as i32,
                 cycle: 1,
                 data: types::DataInfo {
                     timestamp: std::time::SystemTime::now().into(),
-                    result: xlat_type(data),
+                    result: data.into(),
                     di: 0,
                     name: names[e.index as usize].clone(),
                 },
