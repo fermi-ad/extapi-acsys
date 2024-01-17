@@ -201,6 +201,10 @@ pub struct DevValue {
 // This section defines some useful traits for types in this module.
 
 use crate::g_rpc::dpm::proto;
+use tracing::warn;
+
+// Defining this trait allows us to convert a `DevValue` into a
+// `proto::Data` type by using the `.into()` method.
 
 impl Into<proto::Data> for DevValue {
     fn into(self) -> proto::Data {
@@ -279,6 +283,32 @@ impl Into<proto::Data> for DevValue {
             } => proto::Data {
                 value: Some(proto::data::Value::Raw(vec![])),
             },
+        }
+    }
+}
+
+// Defining this trait allows us to convert a `proto::Data` type into a
+// `DataType` by using the `.into()` method.
+
+impl Into<DataType> for proto::Data {
+    fn into(self) -> DataType {
+        match self.value {
+            Some(proto::data::Value::Scalar(v)) => {
+                DataType::Scalar(Scalar { scalar_value: v })
+            }
+            Some(proto::data::Value::ScalarArr(v)) => {
+                DataType::ScalarArray(ScalarArray {
+                    scalar_array_value: v.value,
+                })
+            }
+            Some(proto::data::Value::Status(v)) => {
+                DataType::StatusReply(StatusReply { status: v as i16 })
+            }
+            Some(v) => {
+                warn!("can't translate {:?}", &v);
+                todo!()
+            }
+            _ => todo!(),
         }
     }
 }
