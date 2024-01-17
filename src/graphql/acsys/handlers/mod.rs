@@ -4,6 +4,7 @@ use crate::g_rpc::dpm;
 use async_graphql::*;
 use futures_util::{stream, Stream, StreamExt};
 use std::pin::Pin;
+use tokio::time::Instant;
 use tonic::Status;
 use tracing::{error, info, warn};
 
@@ -133,11 +134,12 @@ impl Queries {
     async fn device_info(
         &self, devices: Vec<String>,
     ) -> types::DeviceInfoReply {
-        let result = match devdb::get_device_info(&devices).await {
-            Ok(s) => {
-                info!("reply received ... translating to GraphQL");
-                s.into_inner().set.iter().map(to_info_result).collect()
-            }
+        let now = Instant::now();
+        let result = devdb::get_device_info(&devices).await;
+        let rpc_time = now.elapsed().as_micros();
+
+        let reply = match result {
+            Ok(s) => s.into_inner().set.iter().map(to_info_result).collect(),
             Err(e) => {
                 let err_msg = format!("{}", &e);
 
@@ -151,8 +153,16 @@ impl Queries {
                     .collect()
             }
         };
-        info!("returning reply");
-        types::DeviceInfoReply { result }
+
+	let total_time = now.elapsed().as_micros();
+
+        info!(
+            "deviceInfo => total: {} μs, rpc: {} μs, local: {} μs",
+	    total_time,
+            rpc_time,
+            now.elapsed().as_micros() - rpc_time
+        );
+        types::DeviceInfoReply { result: reply }
     }
 }
 

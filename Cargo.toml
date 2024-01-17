@@ -9,7 +9,7 @@ tonic-build = "0.8"
 [dependencies]
 futures = "0.3.27"
 futures-util = { version = "0.3", features = ["tokio-io"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "rt"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "rt", "time"] }
 
 tracing = { version = "0.1", features = ["log"] }
 tracing-subscriber = "0.3"
