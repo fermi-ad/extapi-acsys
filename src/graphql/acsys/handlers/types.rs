@@ -196,3 +196,89 @@ pub struct DevValue {
     pub text_val: Option<String>,
     pub text_array_val: Option<Vec<String>>,
 }
+
+// --------------------------------------------------------------------------
+// This section defines some useful traits for types in this module.
+
+use crate::g_rpc::dpm::proto;
+
+impl Into<proto::Data> for DevValue {
+    fn into(self) -> proto::Data {
+        match self {
+            DevValue {
+                int_val: Some(v),
+                scalar_val: _,
+                scalar_array_val: _,
+                raw_val: _,
+                text_val: _,
+                text_array_val: _,
+            } => proto::Data {
+                value: Some(proto::data::Value::Status(v)),
+            },
+            DevValue {
+                int_val: None,
+                scalar_val: Some(v),
+                scalar_array_val: _,
+                raw_val: _,
+                text_val: _,
+                text_array_val: _,
+            } => proto::Data {
+                value: Some(proto::data::Value::Scalar(v)),
+            },
+            DevValue {
+                int_val: None,
+                scalar_val: None,
+                scalar_array_val: Some(v),
+                raw_val: _,
+                text_val: _,
+                text_array_val: _,
+            } => proto::Data {
+                value: Some(proto::data::Value::ScalarArr(
+                    proto::data::ScalarArray { value: v },
+                )),
+            },
+            DevValue {
+                int_val: None,
+                scalar_val: None,
+                scalar_array_val: None,
+                raw_val: Some(v),
+                text_val: _,
+                text_array_val: _,
+            } => proto::Data {
+                value: Some(proto::data::Value::Raw(v)),
+            },
+            DevValue {
+                int_val: None,
+                scalar_val: None,
+                scalar_array_val: None,
+                raw_val: None,
+                text_val: Some(v),
+                text_array_val: _,
+            } => proto::Data {
+                value: Some(proto::data::Value::Text(v)),
+            },
+            DevValue {
+                int_val: None,
+                scalar_val: None,
+                scalar_array_val: None,
+                raw_val: None,
+                text_val: None,
+                text_array_val: Some(v),
+            } => proto::Data {
+                value: Some(proto::data::Value::TextArr(
+                    proto::data::TextArray { value: v },
+                )),
+            },
+            DevValue {
+                int_val: None,
+                scalar_val: None,
+                scalar_array_val: None,
+                raw_val: None,
+                text_val: None,
+                text_array_val: None,
+            } => proto::Data {
+                value: Some(proto::data::Value::Raw(vec![])),
+            },
+        }
+    }
+}
