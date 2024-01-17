@@ -237,17 +237,19 @@ pub struct Subscriptions;
 #[Subscription]
 impl Subscriptions {
     async fn accelerator_data(&self, drfs: Vec<String>) -> DataStream {
-        info!("monitoring {:?}", &drfs);
-        match dpm::acquire_devices("", drfs.clone()).await {
+        let now = Instant::now();
+        let stream = match dpm::acquire_devices("", drfs.clone()).await {
             Ok(s) => {
-                info!("stream acquired");
                 Box::pin(s.into_inner().map(mk_xlater(drfs))) as DataStream
             }
             Err(e) => {
                 error!("{}", &e);
                 Box::pin(stream::empty()) as DataStream
             }
-        }
+        };
+
+        info!("monitoring() => rpc: {} μs", now.elapsed().as_micros());
+        stream
     }
 
     async fn report_events(&self, events: Vec<i32>) -> EventStream {
