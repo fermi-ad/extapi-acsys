@@ -30,6 +30,11 @@ message DeviceList {
 message Property {
     optional string primary_units = 1;
     optional string common_units = 2;
+    double min_val = 3;
+    double max_val = 4;
+    uint32 p_index = 5;
+    uint32 c_index = 6;
+    repeated double coeff = 7;
 }
 
 // Defines the information associated with one bit of the digital

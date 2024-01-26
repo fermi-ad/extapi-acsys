@@ -73,10 +73,20 @@ fn to_info_result(item: &devdb::proto::InfoEntry) -> types::DeviceInfoResult {
                 reading: di.reading.as_ref().map(|p| types::DeviceProperty {
                     primary_units: p.primary_units.clone(),
                     common_units: p.common_units.clone(),
+		    min_val: p.min_val,
+		    max_val: p.max_val,
+		    primary_index: p.p_index,
+		    common_index: p.c_index,
+		    coeff: p.coeff.clone(),
                 }),
                 setting: di.setting.as_ref().map(|p| types::DeviceProperty {
                     primary_units: p.primary_units.clone(),
                     common_units: p.common_units.clone(),
+		    min_val: p.min_val,
+		    max_val: p.max_val,
+		    primary_index: p.p_index,
+		    common_index: p.c_index,
+		    coeff: p.coeff.clone(),
                 }),
                 dig_control: di.dig_control.as_ref().map(|p| {
                     types::DigControl {
