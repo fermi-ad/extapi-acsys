@@ -104,6 +104,21 @@ pub struct DeviceProperty {
 
     /// Specifies the engineering units for the common transform of the device. This field might be `null`, if there aren't units for this transform.
     pub common_units: Option<String>,
+
+    /// The maximum value this device will read and allow to be set. This field is a recommendation for applications to follow. The actual hardware driver will enforce the limits.
+    pub min_val: f64,
+
+    /// The minimum value this device will read and allow to be set. This field is a recommendation for applications to follow. The actual hardware driver will enforce the limits.
+    pub max_val: f64,
+
+    /// The index of the primary scaling transform.
+    pub primary_index: u32,
+
+    /// The index of the common scaling transform.
+    pub common_index: u32,
+
+    /// The coefficients to be used with the common scaling transform. There will be 0 - 10 coefficients, depending on the transform. The transform documentation refers to the constants as "c1" through "c10". These correspond to the indices 0 through 9, respectively.
+    pub coeff: Vec<f64>,
 }
 
 #[derive(SimpleObject)]
