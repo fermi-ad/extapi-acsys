@@ -247,6 +247,7 @@ pub struct Subscriptions;
 #[Subscription]
 impl Subscriptions {
     async fn accelerator_data(&self, drfs: Vec<String>) -> DataStream {
+	let hdr = format!("monitoring({:?})", &drfs);
         let now = Instant::now();
         let stream = match dpm::acquire_devices("", drfs.clone()).await {
             Ok(s) => {
@@ -258,7 +259,7 @@ impl Subscriptions {
             }
         };
 
-        info!("monitoring() => rpc: {} μs", now.elapsed().as_micros());
+        info!("{} => rpc: {} μs", hdr, now.elapsed().as_micros());
         stream
     }
 
