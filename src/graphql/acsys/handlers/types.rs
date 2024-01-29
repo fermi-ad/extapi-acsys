@@ -187,24 +187,24 @@ pub struct SettingProp {
 #[ComplexObject]
 impl SettingProp {
     /// If the device has associated "knobbing" information, this field will specify the configuration.
-    async fn knob_info(&self) -> Option<KnobInfo> {
+    async fn knob_info(&self) -> KnobInfo {
         if self.common_index == 40 && self.coeff.len() >= 6 {
-            Some(KnobInfo {
+            KnobInfo {
                 min_val: self.coeff[3].min(self.coeff[4]),
                 max_val: self.coeff[3].max(self.coeff[4]),
                 step: self.coeff[5],
-            })
+            }
         } else {
             let inc = match self.primary_index {
                 16 | 22 | 24 | 84 => 0.005,
                 _ => 16.0,
             };
 
-            Some(KnobInfo {
+            KnobInfo {
                 min_val: self.min_val,
                 max_val: self.max_val,
                 step: inc,
-            })
+            }
         }
     }
 }
