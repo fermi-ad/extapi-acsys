@@ -23,6 +23,7 @@ pub fn filter(
         handlers::Mutations,
         handlers::Subscriptions,
     )
+    .register_output_type::<handlers::types::DeviceProperty>()
     .finish();
 
     // Build the query portion. This Warp Filter recognizes GraphQL

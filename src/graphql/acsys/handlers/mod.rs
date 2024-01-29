@@ -10,7 +10,7 @@ use tracing::{error, info, warn};
 
 // This module contains the GraphQL types that we'll use for the API.
 
-mod types;
+pub mod types;
 
 // Converts a `DigitalControlItem`, from the gRPC API, into a
 // `DigControlEntry` struct, used in the GraphQL API.
@@ -70,7 +70,7 @@ fn to_info_result(item: &devdb::proto::InfoEntry) -> types::DeviceInfoResult {
         Some(devdb::proto::info_entry::Result::Device(di)) => {
             types::DeviceInfoResult::DeviceInfo(types::DeviceInfo {
                 description: di.description.clone(),
-                reading: di.reading.as_ref().map(|p| types::DeviceProperty {
+                reading: di.reading.as_ref().map(|p| types::ReadingProp {
                     primary_units: p.primary_units.clone(),
                     common_units: p.common_units.clone(),
                     min_val: p.min_val,
@@ -79,7 +79,7 @@ fn to_info_result(item: &devdb::proto::InfoEntry) -> types::DeviceInfoResult {
                     common_index: p.c_index,
                     coeff: p.coeff.clone(),
                 }),
-                setting: di.setting.as_ref().map(|p| types::DeviceProperty {
+                setting: di.setting.as_ref().map(|p| types::SettingProp {
                     primary_units: p.primary_units.clone(),
                     common_units: p.common_units.clone(),
                     min_val: p.min_val,
