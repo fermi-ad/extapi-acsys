@@ -104,9 +104,25 @@ pub struct DataReply {
     pub data: DataInfo,
 }
 
-/// Holds data associated with a property of a device.
+/// Common set of attributes for reading and setting properties.
+#[derive(Interface)]
+#[graphql(
+    field(name = "primary_units", ty = "&Option<String>"),
+    field(name = "common_units", ty = "&Option<String>"),
+    field(name = "min_val", ty = "&f64"),
+    field(name = "max_val", ty = "&f64"),
+    field(name = "primary_index", ty = "&u32"),
+    field(name = "common_index", ty = "&u32"),
+    field(name = "coeff", ty = "&Vec<f64>")
+)]
+pub enum DeviceProperty {
+    ReadingProp(ReadingProp),
+    SettingProp(SettingProp),
+}
+
+/// Holds data associated with the reading property of a device.
 #[derive(SimpleObject)]
-pub struct DeviceProperty {
+pub struct ReadingProp {
     /// Specifies the engineering units for the primary transform of the device. This field might be `null`, if there aren't units for this transform.
     pub primary_units: Option<String>,
 
@@ -127,6 +143,70 @@ pub struct DeviceProperty {
 
     /// The coefficients to be used with the common scaling transform. There will be 0 - 10 coefficients, depending on the transform. The transform documentation refers to the constants as "c1" through "c10". These correspond to the indices 0 through 9, respectively.
     pub coeff: Vec<f64>,
+}
+
+/// Holds information about "knobbing" a device's setting value.
+#[derive(SimpleObject)]
+pub struct KnobInfo {
+    /// The minimum value of the device. When knobbing, the setting shouldn't go lower than this value.
+    pub min_val: f64,
+
+    /// The maximum value of the device. When knobbing, the setting shouldn't go higher than this value.
+    pub max_val: f64,
+
+    /// The recommended step size when sending a stream of settings.
+    pub step: f64,
+}
+
+/// Holds data associated with the setting property of a device.
+#[derive(SimpleObject)]
+#[graphql(complex)]
+pub struct SettingProp {
+    /// Specifies the engineering units for the primary transform of the device. This field might be `null`, if there aren't units for this transform.
+    pub primary_units: Option<String>,
+
+    /// Specifies the engineering units for the common transform of the device. This field might be `null`, if there aren't units for this transform.
+    pub common_units: Option<String>,
+
+    /// The maximum value this device will read and allow to be set. This field is a recommendation for applications to follow. The actual hardware driver will enforce the limits.
+    pub min_val: f64,
+
+    /// The minimum value this device will read and allow to be set. This field is a recommendation for applications to follow. The actual hardware driver will enforce the limits.
+    pub max_val: f64,
+
+    /// The index of the primary scaling transform.
+    pub primary_index: u32,
+
+    /// The index of the common scaling transform.
+    pub common_index: u32,
+
+    /// The coefficients to be used with the common scaling transform. There will be 0 - 10 coefficients, depending on the transform. The transform documentation refers to the constants as "c1" through "c10". These correspond to the indices 0 through 9, respectively.
+    pub coeff: Vec<f64>,
+}
+
+#[ComplexObject]
+impl SettingProp {
+    /// If the device has associated "knobbing" information, this field will specify the configuration.
+    async fn knob_info(&self) -> Option<KnobInfo> {
+        if self.common_index == 40 && self.coeff.len() >= 6 {
+            Some(KnobInfo {
+                min_val: self.coeff[3].min(self.coeff[4]),
+                max_val: self.coeff[3].max(self.coeff[4]),
+                step: self.coeff[5],
+            })
+        } else {
+            let inc = match self.primary_index {
+                16 | 22 | 24 | 84 => 0.005,
+                _ => 16.0,
+            };
+
+            Some(KnobInfo {
+                min_val: self.min_val,
+                max_val: self.max_val,
+                step: inc,
+            })
+        }
+    }
 }
 
 /// Represents a legacy form to describe a basic status bit.
@@ -228,10 +308,10 @@ pub struct DeviceInfo {
     pub description: String,
 
     /// Holds informations related to the reading property. If the device doesn't have a reading property, this field will be `null`.
-    pub reading: Option<DeviceProperty>,
+    pub reading: Option<ReadingProp>,
 
     /// Holds informations related to the setting property. If the device doesn't have a setting property, this field will be `null`.
-    pub setting: Option<DeviceProperty>,
+    pub setting: Option<SettingProp>,
 
     pub dig_control: Option<DigControl>,
     pub dig_status: Option<DigStatus>,
