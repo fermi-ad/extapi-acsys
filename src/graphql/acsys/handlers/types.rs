@@ -1,41 +1,49 @@
 use async_graphql::*;
 use chrono::*;
 
+/// Contains an informaive message describing why a request resulted in an error.
 #[derive(SimpleObject)]
 pub struct ErrorReply {
     pub message: String,
 }
 
+/// Contains an ACNET status code. The Data Pool Manager currently returns these status codes, but they may go away in the future since EPICS has its own set of error codes.
 #[derive(SimpleObject)]
 pub struct StatusReply {
     pub status: i16,
 }
 
+/// Represents a simple, floating point value.
 #[derive(SimpleObject)]
 pub struct Scalar {
     pub scalar_value: f64,
 }
 
+/// Represents an array of floating point values.
 #[derive(SimpleObject)]
 pub struct ScalarArray {
     pub scalar_array_value: Vec<f64>,
 }
 
+/// Contains the raw, unscaled data returned by a device.
 #[derive(SimpleObject)]
 pub struct Raw {
     pub raw_value: Vec<u8>,
 }
 
+/// Contains a textual value returned by a device.
 #[derive(SimpleObject)]
 pub struct Text {
     pub text_value: String,
 }
 
+/// Represents an array of textual values.
 #[derive(SimpleObject)]
 pub struct TextArray {
     pub text_array_value: Vec<String>,
 }
 
+/// Represents a generic return type. EPICS devices have a hierarchy and this return type can model those values. Note that the value associated with the key can be another `StructData`, so arbitrarily deep trees can be created.
 #[derive(SimpleObject)]
 pub struct StructData {
     pub key: String,
@@ -121,42 +129,89 @@ pub struct DeviceProperty {
     pub coeff: Vec<f64>,
 }
 
+/// Represents a legacy form to describe a basic status bit.
+///
+/// The BASIC STATUS property of a device traditionally modeled a power supply's set of status bits (on/off, ready/tripped, etc.) This structure models the data associated with each of these statuses and allows them to be renamed.
 #[derive(SimpleObject)]
 pub struct DigStatusEntry {
+    /// This value is logically ANDed with the active, raw status to filter the bit that aren't related to the current status.
     pub mask_val: u32,
+
+    /// This is the value that the masked status needs to be in order to consider it in a good state.
     pub match_val: u32,
+
+    /// If this field is true, then the raw status is complemented before masking.
     pub invert: bool,
+
+    /// A short name for this status.
     pub short_name: String,
+
+    /// A longer version of the name of this status.
     pub long_name: String,
+
+    /// A string representing the value when it's in a good state.
     pub true_str: String,
+
+    /// The color to use when the status is in a good state.
     pub true_color: u32,
+
+    /// A character to display that represents a good state.
     pub true_char: String,
+
+    /// A string representing the value when it's in a bad state.
     pub false_str: String,
+
+    /// The color to use when the status is in a bad state.
     pub false_color: u32,
+
+    /// A character to display that represents a bad state.
     pub false_char: String,
 }
 
+/// Represents a more modern way to define the bits in the basic status.
 #[derive(SimpleObject)]
 pub struct DigExtStatusEntry {
+    /// Indicates with which bit in the status this entry corresponds. The LSB is 0.
     pub bit_no: u32,
+
+    /// The color to use when this bit is `false`.
     pub color0: u32,
+
+    /// The descriptive name when this bit is `false`.
     pub name0: String,
+
+    /// The color to use when this bit is `true`.
     pub color1: u32,
+
+    /// The descriptive name when this bit is `false`.
     pub name1: String,
+
+    /// The description of this bit's purpose.
     pub description: String,
 }
 
+/// The configuration of the device's basic status property.
+///
+/// This structure contains both the legacy and modern forms of configurations used to describe a device's basic status property.
 #[derive(SimpleObject)]
 pub struct DigStatus {
+    /// Holds the legacy, "power supply" configuration.
     pub entries: Vec<DigStatusEntry>,
+
+    /// Hold the modern, bit definitions.
     pub ext_entries: Vec<DigExtStatusEntry>,
 }
 
-/// Describes one digital control command used by a device. `name` is the name of the command and can be used by applications to create a descriptive menu. `value` is the actual integer value to send to the device in order to perform the command.
+/// Describes one digital control command used by a device.
 #[derive(SimpleObject)]
 pub struct DigControlEntry {
+    /// The actual integer value to send to the device in order to perform the command.
     pub value: i32,
+
+    /// The name of the command and can be used by applications to create a descriptive menu.
     pub short_name: String,
+
+    /// A more descriptive name of the command.
     pub long_name: String,
 }
 
