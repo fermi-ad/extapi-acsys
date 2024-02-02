@@ -113,7 +113,12 @@ pub struct DataReply {
     field(name = "max_val", ty = "&f64"),
     field(name = "primary_index", ty = "&u32"),
     field(name = "common_index", ty = "&u32"),
-    field(name = "coeff", ty = "&Vec<f64>")
+    field(name = "coeff", ty = "&Vec<f64>"),
+    field(name = "is_step_motor", ty = "&bool"),
+    field(name = "is_destructive_read", ty = "&bool"),
+    field(name = "is_fe_scaling", ty = "&bool"),
+    field(name = "is_contr_setting", ty = "&bool"),
+    field(name = "is_knobbable", ty = "&bool")
 )]
 pub enum DeviceProperty {
     ReadingProp(ReadingProp),
@@ -143,6 +148,21 @@ pub struct ReadingProp {
 
     /// The coefficients to be used with the common scaling transform. There will be 0 - 10 coefficients, depending on the transform. The transform documentation refers to the constants as "c1" through "c10". These correspond to the indices 0 through 9, respectively.
     pub coeff: Vec<f64>,
+
+    /// Indicates whether the property is associated with a stepper motor.
+    pub is_step_motor: bool,
+
+    /// Indicates whether reading the property results in a destructive read.
+    pub is_destructive_read: bool,
+
+    /// Indicates that the front-end does the scaling for this property.
+    pub is_fe_scaling: bool,
+
+    /// UNKNOWN
+    pub is_contr_setting: bool,
+
+    /// Indicates that this device can be "knobbed" (i.e. it accepts a rapid stream of settings.)
+    pub is_knobbable: bool,
 }
 
 /// Holds information about "knobbing" a device's setting value.
@@ -182,6 +202,21 @@ pub struct SettingProp {
 
     /// The coefficients to be used with the common scaling transform. There will be 0 - 10 coefficients, depending on the transform. The transform documentation refers to the constants as "c1" through "c10". These correspond to the indices 0 through 9, respectively.
     pub coeff: Vec<f64>,
+
+    /// Indicates whether the property is associated with a stepper motor.
+    pub is_step_motor: bool,
+
+    /// Indicates whether reading the property results in a destructive read.
+    pub is_destructive_read: bool,
+
+    /// Indicates that the front-end does the scaling for this property.
+    pub is_fe_scaling: bool,
+
+    /// UNKNOWN
+    pub is_contr_setting: bool,
+
+    /// Indicates that this device can be "knobbed" (i.e. it accepts a rapid stream of settings.)
+    pub is_knobbable: bool,
 }
 
 #[ComplexObject]
