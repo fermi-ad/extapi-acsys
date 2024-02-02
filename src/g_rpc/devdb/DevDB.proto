@@ -35,6 +35,11 @@ message Property {
     uint32 p_index = 5;
     uint32 c_index = 6;
     repeated double coeff = 7;
+    bool is_step_motor = 8;
+    bool is_destructive_read = 9;
+    bool is_fe_scaling = 10;
+    bool is_contr_setting = 11;
+    bool is_knobbable = 12;
 }
 
 // Defines the information associated with one bit of the digital
