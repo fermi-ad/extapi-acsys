@@ -117,8 +117,7 @@ pub struct DataReply {
     field(name = "is_step_motor", ty = "&bool"),
     field(name = "is_destructive_read", ty = "&bool"),
     field(name = "is_fe_scaling", ty = "&bool"),
-    field(name = "is_contr_setting", ty = "&bool"),
-    field(name = "is_knobbable", ty = "&bool")
+    field(name = "is_contr_setting", ty = "&bool")
 )]
 pub enum DeviceProperty {
     ReadingProp(ReadingProp),
@@ -160,9 +159,6 @@ pub struct ReadingProp {
 
     /// UNKNOWN
     pub is_contr_setting: bool,
-
-    /// Indicates that this device can be "knobbed" (i.e. it accepts a rapid stream of settings.)
-    pub is_knobbable: bool,
 }
 
 /// Holds information about "knobbing" a device's setting value.
@@ -216,30 +212,35 @@ pub struct SettingProp {
     pub is_contr_setting: bool,
 
     /// Indicates that this device can be "knobbed" (i.e. it accepts a rapid stream of settings.)
+    #[graphql(skip)]
     pub is_knobbable: bool,
 }
 
 #[ComplexObject]
 impl SettingProp {
     /// If the device has associated "knobbing" information, this field will specify the configuration.
-    async fn knob_info(&self) -> KnobInfo {
-        if self.common_index == 40 && self.coeff.len() >= 6 {
-            KnobInfo {
-                min_val: self.coeff[3].min(self.coeff[4]),
-                max_val: self.coeff[3].max(self.coeff[4]),
-                step: self.coeff[5],
+    async fn knob_info(&self) -> Option<KnobInfo> {
+        if self.is_knobbable {
+            if self.common_index == 40 && self.coeff.len() >= 6 {
+                Some(KnobInfo {
+                    min_val: self.coeff[3].min(self.coeff[4]),
+                    max_val: self.coeff[3].max(self.coeff[4]),
+                    step: self.coeff[5],
+                })
+            } else {
+                let inc = match self.primary_index {
+                    16 | 22 | 24 | 84 => 0.005,
+                    _ => 16.0,
+                };
+
+                Some(KnobInfo {
+                    min_val: self.min_val,
+                    max_val: self.max_val,
+                    step: inc,
+                })
             }
         } else {
-            let inc = match self.primary_index {
-                16 | 22 | 24 | 84 => 0.005,
-                _ => 16.0,
-            };
-
-            KnobInfo {
-                min_val: self.min_val,
-                max_val: self.max_val,
-                step: inc,
-            }
+            None
         }
     }
 }
