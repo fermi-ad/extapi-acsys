@@ -113,7 +113,11 @@ pub struct DataReply {
     field(name = "max_val", ty = "&f64"),
     field(name = "primary_index", ty = "&u32"),
     field(name = "common_index", ty = "&u32"),
-    field(name = "coeff", ty = "&Vec<f64>")
+    field(name = "coeff", ty = "&Vec<f64>"),
+    field(name = "is_step_motor", ty = "&bool"),
+    field(name = "is_destructive_read", ty = "&bool"),
+    field(name = "is_fe_scaling", ty = "&bool"),
+    field(name = "is_contr_setting", ty = "&bool")
 )]
 pub enum DeviceProperty {
     ReadingProp(ReadingProp),
@@ -143,6 +147,18 @@ pub struct ReadingProp {
 
     /// The coefficients to be used with the common scaling transform. There will be 0 - 10 coefficients, depending on the transform. The transform documentation refers to the constants as "c1" through "c10". These correspond to the indices 0 through 9, respectively.
     pub coeff: Vec<f64>,
+
+    /// Indicates whether the property is associated with a stepper motor.
+    pub is_step_motor: bool,
+
+    /// Indicates whether reading the property results in a destructive read.
+    pub is_destructive_read: bool,
+
+    /// Indicates that the front-end does the scaling for this property.
+    pub is_fe_scaling: bool,
+
+    /// UNKNOWN
+    pub is_contr_setting: bool,
 }
 
 /// Holds information about "knobbing" a device's setting value.
@@ -182,29 +198,49 @@ pub struct SettingProp {
 
     /// The coefficients to be used with the common scaling transform. There will be 0 - 10 coefficients, depending on the transform. The transform documentation refers to the constants as "c1" through "c10". These correspond to the indices 0 through 9, respectively.
     pub coeff: Vec<f64>,
+
+    /// Indicates whether the property is associated with a stepper motor.
+    pub is_step_motor: bool,
+
+    /// Indicates whether reading the property results in a destructive read.
+    pub is_destructive_read: bool,
+
+    /// Indicates that the front-end does the scaling for this property.
+    pub is_fe_scaling: bool,
+
+    /// UNKNOWN
+    pub is_contr_setting: bool,
+
+    /// Indicates that this device can be "knobbed" (i.e. it accepts a rapid stream of settings.)
+    #[graphql(skip)]
+    pub is_knobbable: bool,
 }
 
 #[ComplexObject]
 impl SettingProp {
     /// If the device has associated "knobbing" information, this field will specify the configuration.
-    async fn knob_info(&self) -> KnobInfo {
-        if self.common_index == 40 && self.coeff.len() >= 6 {
-            KnobInfo {
-                min_val: self.coeff[3].min(self.coeff[4]),
-                max_val: self.coeff[3].max(self.coeff[4]),
-                step: self.coeff[5],
+    async fn knob_info(&self) -> Option<KnobInfo> {
+        if self.is_knobbable {
+            if self.common_index == 40 && self.coeff.len() >= 6 {
+                Some(KnobInfo {
+                    min_val: self.coeff[3].min(self.coeff[4]),
+                    max_val: self.coeff[3].max(self.coeff[4]),
+                    step: self.coeff[5],
+                })
+            } else {
+                let inc = match self.primary_index {
+                    16 | 22 | 24 | 84 => 0.005,
+                    _ => 16.0,
+                };
+
+                Some(KnobInfo {
+                    min_val: self.min_val,
+                    max_val: self.max_val,
+                    step: inc,
+                })
             }
         } else {
-            let inc = match self.primary_index {
-                16 | 22 | 24 | 84 => 0.005,
-                _ => 16.0,
-            };
-
-            KnobInfo {
-                min_val: self.min_val,
-                max_val: self.max_val,
-                step: inc,
-            }
+            None
         }
     }
 }

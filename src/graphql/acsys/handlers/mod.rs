@@ -78,6 +78,10 @@ fn to_info_result(item: &devdb::proto::InfoEntry) -> types::DeviceInfoResult {
                     primary_index: p.p_index,
                     common_index: p.c_index,
                     coeff: p.coeff.clone(),
+                    is_contr_setting: p.is_contr_setting,
+                    is_destructive_read: p.is_destructive_read,
+                    is_fe_scaling: p.is_fe_scaling,
+                    is_step_motor: p.is_step_motor,
                 }),
                 setting: di.setting.as_ref().map(|p| types::SettingProp {
                     primary_units: p.primary_units.clone(),
@@ -87,6 +91,11 @@ fn to_info_result(item: &devdb::proto::InfoEntry) -> types::DeviceInfoResult {
                     primary_index: p.p_index,
                     common_index: p.c_index,
                     coeff: p.coeff.clone(),
+                    is_contr_setting: p.is_contr_setting,
+                    is_destructive_read: p.is_destructive_read,
+                    is_fe_scaling: p.is_fe_scaling,
+                    is_knobbable: p.is_knobbable,
+                    is_step_motor: p.is_step_motor,
                 }),
                 dig_control: di.dig_control.as_ref().map(|p| {
                     types::DigControl {
