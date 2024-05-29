@@ -75,6 +75,15 @@ pub enum DataType {
     StructData(StructData),
 }
 
+#[derive(SimpleObject)]
+pub struct XFormResult {
+    /// Timestamp representing when the data was sampled. This value is provided as milliseconds since 1970, UTC.
+    pub timestamp: DateTime<Utc>,
+
+    /// The value of the device when sampled.
+    pub result: Scalar,
+}
+
 /// This structure holds information associated with a device's reading, A "reading" is the latest value of any of a device's properties.
 #[derive(SimpleObject)]
 pub struct DataInfo {
@@ -381,6 +390,26 @@ pub struct DevValue {
     pub raw_val: Option<Vec<u8>>,
     pub text_val: Option<String>,
     pub text_array_val: Option<Vec<String>>,
+}
+
+#[derive(InputObject, Debug)]
+pub struct XFormExpr {
+    pub device: Option<String>,
+}
+
+impl std::fmt::Display for XFormExpr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            XFormExpr { device: Some(name) } => write!(f, "{}", name),
+            _ => write!(f, "** BAD COMPONENT: '{:?}' **", self),
+        }
+    }
+}
+
+#[derive(InputObject)]
+pub struct XFormRequest {
+    pub event: String,
+    pub expr: XFormExpr,
 }
 
 // --------------------------------------------------------------------------
