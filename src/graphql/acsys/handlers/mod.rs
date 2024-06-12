@@ -250,13 +250,25 @@ fn mk_xlater(
     })
 }
 
-fn xlat_expr(expr: &types::XFormExpr) -> Option<xform::proto::Operation> {
+fn xlat_expr(expr: &types::XFormExpr) -> Option<Box<xform::proto::Operation>> {
     match expr {
-        types::XFormExpr { device: Some(name) } => {
-            Some(xform::proto::Operation {
-                op: Some(xform::proto::operation::Op::Device(name.into())),
-            })
-        }
+        types::XFormExpr {
+            dev_ex: Some(types::XFormDeviceExpr { device }),
+            avg_ex: None,
+        } => Some(Box::new(xform::proto::Operation {
+            op: Some(xform::proto::operation::Op::Device(device.into())),
+        })),
+        types::XFormExpr {
+            dev_ex: None,
+            avg_ex: Some(types::XFormAvgExpr { expr, n }),
+        } => Some(Box::new(xform::proto::Operation {
+            op: Some(xform::proto::operation::Op::Avg(Box::new(
+                xform::proto::Average {
+                    n: *n,
+                    op: xlat_expr(&*expr),
+                },
+            ))),
+        })),
         _ => None,
     }
 }

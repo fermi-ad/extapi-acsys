@@ -5,18 +5,18 @@ pub mod proto {
 }
 
 pub async fn activate_expression(
-    event: String, op: proto::Operation,
+    event: String, op: Box<proto::Operation>,
 ) -> Result<tonic::Response<tonic::Streaming<proto::ExprResult>>, tonic::Status>
 {
     match XFormApiClient::connect("http://clx76.fnal.gov:6803/").await {
         Ok(mut client) => {
             let req = proto::Expr {
-                op: Some(op),
+                op: Some(*op),
                 event,
             };
 
             client.activate_expression(req).await
         }
-        Err(_) => Err(tonic::Status::unavailable("DPM service unavailable")),
+        Err(_) => Err(tonic::Status::unavailable("XForm service unavailable")),
     }
 }

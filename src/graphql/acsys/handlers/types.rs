@@ -1,7 +1,7 @@
 use async_graphql::*;
 use chrono::*;
 
-/// Contains an informaive message describing why a request resulted in an error.
+/// Contains an informative message describing why a request resulted in an error.
 #[derive(SimpleObject)]
 pub struct ErrorReply {
     pub message: String,
@@ -393,14 +393,33 @@ pub struct DevValue {
 }
 
 #[derive(InputObject, Debug)]
+pub struct XFormDeviceExpr {
+    pub device: String,
+}
+
+#[derive(InputObject, Debug)]
+pub struct XFormAvgExpr {
+    pub expr: Box<XFormExpr>,
+    pub n: u32,
+}
+
+#[derive(InputObject, Debug)]
 pub struct XFormExpr {
-    pub device: Option<String>,
+    pub dev_ex: Option<XFormDeviceExpr>,
+    pub avg_ex: Option<XFormAvgExpr>,
 }
 
 impl std::fmt::Display for XFormExpr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            XFormExpr { device: Some(name) } => write!(f, "{}", name),
+            XFormExpr {
+                dev_ex: Some(XFormDeviceExpr { device }),
+                avg_ex: None,
+            } => write!(f, "{}", device),
+            XFormExpr {
+                dev_ex: None,
+                avg_ex: Some(XFormAvgExpr { expr, n }),
+            } => write!(f, "AVG({}, {})", &expr, &n),
             _ => write!(f, "** BAD COMPONENT: '{:?}' **", self),
         }
     }
