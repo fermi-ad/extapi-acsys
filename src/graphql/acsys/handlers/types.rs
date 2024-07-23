@@ -1,7 +1,7 @@
 use async_graphql::*;
 use chrono::*;
 
-/// Contains an informaive message describing why a request resulted in an error.
+/// Contains an informative message describing why a request resulted in an error.
 #[derive(SimpleObject)]
 pub struct ErrorReply {
     pub message: String,
@@ -73,6 +73,15 @@ pub enum DataType {
 
     /// Represents structured data. The value is a map type where the key is a string that represents a field name and the value is one of the values of this enumeration. This means you can nest `StructData` types to make arbitrarily complex types.
     StructData(StructData),
+}
+
+#[derive(SimpleObject)]
+pub struct XFormResult {
+    /// Timestamp representing when the data was sampled. This value is provided as milliseconds since 1970, UTC.
+    pub timestamp: DateTime<Utc>,
+
+    /// The value of the device when sampled.
+    pub result: Scalar,
 }
 
 /// This structure holds information associated with a device's reading, A "reading" is the latest value of any of a device's properties.
@@ -381,6 +390,45 @@ pub struct DevValue {
     pub raw_val: Option<Vec<u8>>,
     pub text_val: Option<String>,
     pub text_array_val: Option<Vec<String>>,
+}
+
+#[derive(InputObject, Debug)]
+pub struct XFormDeviceExpr {
+    pub device: String,
+}
+
+#[derive(InputObject, Debug)]
+pub struct XFormAvgExpr {
+    pub expr: Box<XFormExpr>,
+    pub n: u32,
+}
+
+#[derive(InputObject, Debug)]
+pub struct XFormExpr {
+    pub dev_ex: Option<XFormDeviceExpr>,
+    pub avg_ex: Option<XFormAvgExpr>,
+}
+
+impl std::fmt::Display for XFormExpr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            XFormExpr {
+                dev_ex: Some(XFormDeviceExpr { device }),
+                avg_ex: None,
+            } => write!(f, "{}", device),
+            XFormExpr {
+                dev_ex: None,
+                avg_ex: Some(XFormAvgExpr { expr, n }),
+            } => write!(f, "AVG({}, {})", &expr, &n),
+            _ => write!(f, "** BAD COMPONENT: '{:?}' **", self),
+        }
+    }
+}
+
+#[derive(InputObject)]
+pub struct XFormRequest {
+    pub event: String,
+    pub expr: XFormExpr,
 }
 
 // --------------------------------------------------------------------------

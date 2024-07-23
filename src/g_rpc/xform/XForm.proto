@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package fnal.xform;
+
+service XFormAPI {
+    rpc ActivateExpression(Expr) returns (stream ExprResult) {}
+}
+
+message Average {
+    Operation op = 1;
+    uint32 n = 2;
+}
+
+message Addition {
+    Operation op1 = 1;
+    Operation op2 = 2;
+};
+
+message Operation {
+    oneof op {
+	string device = 1;
+	Average avg = 2;
+	Addition delta = 3;
+    }
+}
+
+message Expr {
+    Operation op = 1;
+    string event = 2;
+}
+
+message ExprResult {
+    uint64 timestamp = 1;
+    bool correlated = 2;
+    oneof result {
+	double value = 3;
+	string err_msg = 4;
+    }
+}
