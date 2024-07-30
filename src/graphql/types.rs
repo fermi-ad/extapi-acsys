@@ -1,5 +1,6 @@
 use async_graphql::*;
 use chrono::*;
+use std::collections::HashMap;
 
 /// Contains an informative message describing why a request resulted in an error.
 #[derive(SimpleObject)]
@@ -48,6 +49,26 @@ pub struct TextArray {
 pub struct StructData {
     pub key: String,
     pub struct_value: Box<DataType>,
+}
+
+#[derive(SimpleObject)]
+pub struct ScanProgress {
+    pub message: String,
+    pub detector_id: String,
+    pub start_time: Option<i32>,
+    pub current_position: Option<f32>,
+    pub progress_percentage: Option<i32>,
+}
+
+#[derive(SimpleObject)]
+pub struct ScanResult {
+    pub progress: ScanProgress,
+    pub voltage: Vec<f32>,
+}
+
+#[derive(SimpleObject)]
+pub struct KnownStations {
+    pub map: HashMap<String, String>,
 }
 
 /// The control system supports several types and this entity can repesent any of them.
