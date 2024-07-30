@@ -3,6 +3,7 @@ use async_graphql::*;
 use warp::{Filter, Rejection};
 
 mod acsys;
+mod xform;
 mod scanner;
 mod types;
 
@@ -10,7 +11,7 @@ mod types;
 struct Query(acsys::Queries, scanner::Queries);
 
 #[derive(MergedSubscription, Default)]
-struct Subscriptions(acsys::Subscriptions, scanner::Subscriptions);
+struct Subscriptions(acsys::Subscriptions, scanner::Subscriptions, xform::Subscriptions);
 
 // Final schema type.
 
