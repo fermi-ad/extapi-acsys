@@ -27,6 +27,11 @@ prost-types = "0.13"
 
 #sqlx = { version = "0.6", features = ["postgres", "runtime-tokio-rustls"] }
 
+[profile.release]
+incremental = false
+opt-level = 'z'
+lto = true
+
 [profile.dev]
 incremental = false
 opt-level = 2
