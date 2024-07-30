@@ -1,13 +1,12 @@
 use crate::g_rpc::clock;
 use crate::g_rpc::devdb;
 use crate::g_rpc::dpm;
-use crate::g_rpc::wscan;
 use crate::g_rpc::xform;
 
 use async_graphql::*;
 use chrono::TimeZone;
 use futures_util::{stream, Stream, StreamExt};
-use std::{collections::HashMap, pin::Pin};
+use std::pin::Pin;
 use tokio::time::Instant;
 use tonic::Status;
 use tracing::{error, info, warn};
@@ -143,6 +142,7 @@ fn to_info_result(item: &devdb::proto::InfoEntry) -> global::DeviceInfoResult {
 
 // Create a zero-sized struct to attach the GraphQL handlers.
 
+#[derive(Default)]
 pub struct Queries;
 
 // Define the schema's query entry points. Any methods defined in this
@@ -191,78 +191,6 @@ impl Queries {
             total_time - rpc_time
         );
         global::DeviceInfoReply { result: reply }
-    }
-
-    async fn retrieve_scans(&self) -> global::KnownStations {
-        match wscan::retrieve_scans().await {
-            Ok(map) => global::KnownStations { map },
-            Err(e) => {
-		error!("error retrieving stations: {}", e);
-		global::KnownStations {
-                    map: HashMap::new(),
-		}
-	    },
-        }
-    }
-
-    /// Requests the progress of the motion station associated with the `id`.
-    async fn get_progress(&self, id: String) -> global::ScanProgress {
-        match wscan::get_progress(id.clone()).await {
-            Ok(resp) => {
-                let wscan::proto::ScanProgress {
-                    message,
-                    detector_id,
-                    start_time,
-                    current_position,
-                    progress_percentage,
-                } = resp.into_inner();
-
-                global::ScanProgress {
-                    message,
-                    detector_id,
-                    start_time: Some(start_time),
-                    current_position: Some(current_position),
-                    progress_percentage: Some(progress_percentage),
-                }
-            }
-            Err(e) => global::ScanProgress {
-                message: format!("error: {}", e),
-                detector_id: id,
-                start_time: None,
-                current_position: None,
-                progress_percentage: None,
-            },
-        }
-    }
-
-    /// Requests that any motion in the specified station be stopped.
-    async fn abort_scan(&self, id: String) -> global::ScanProgress {
-        match wscan::abort_scan(id.clone()).await {
-            Ok(resp) => {
-                let wscan::proto::ScanProgress {
-                    message,
-                    detector_id,
-                    start_time,
-                    current_position,
-                    progress_percentage,
-                } = resp.into_inner();
-
-                global::ScanProgress {
-                    message,
-                    detector_id,
-                    start_time: Some(start_time),
-                    current_position: Some(current_position),
-                    progress_percentage: Some(progress_percentage),
-                }
-            }
-            Err(e) => global::ScanProgress {
-                message: format!("error: {}", e),
-                detector_id: id,
-                start_time: None,
-                current_position: None,
-                progress_percentage: None,
-            },
-        }
     }
 }
 
@@ -382,8 +310,8 @@ fn xlat_xform_reply(
 type DataStream = Pin<Box<dyn Stream<Item = global::DataReply> + Send>>;
 type XFormStream = Pin<Box<dyn Stream<Item = global::XFormResult> + Send>>;
 type EventStream = Pin<Box<dyn Stream<Item = global::EventInfo> + Send>>;
-type ScanStream = Pin<Box<dyn Stream<Item = global::ScanResult> + Send>>;
 
+#[derive(Default)]
 pub struct Subscriptions;
 
 #[Subscription]
@@ -443,39 +371,6 @@ impl Subscriptions {
             Err(e) => {
                 error!("{}", &e);
                 Box::pin(stream::empty()) as EventStream
-            }
-        }
-    }
-
-    /// Starts a scan at the specified station.
-    async fn start_scan(&self, id: String) -> ScanStream {
-        info!("requesting scan at station {}", &id);
-        match wscan::start_scan(id, 0.0, 0.0, 0.0, 0.0, 0).await {
-            Ok(s) => Box::pin(s.into_inner().map(Result::unwrap).map(
-                |wscan::proto::ScanResult { progress, voltage }| {
-                    let wscan::proto::ScanProgress {
-                        message,
-                        detector_id,
-                        start_time,
-                        current_position,
-                        progress_percentage,
-                    } = progress.unwrap();
-
-                    global::ScanResult {
-                        progress: global::ScanProgress {
-                            message,
-                            detector_id,
-                            start_time: Some(start_time),
-                            current_position: Some(current_position),
-                            progress_percentage: Some(progress_percentage),
-                        },
-                        voltage,
-                    }
-                },
-            )) as ScanStream,
-            Err(e) => {
-                error!("{}", &e);
-                Box::pin(stream::empty()) as ScanStream
             }
         }
     }

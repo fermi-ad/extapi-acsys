@@ -6,8 +6,16 @@ mod acsys;
 mod scanner;
 mod types;
 
+#[derive(MergedObject, Default)]
+struct Query(acsys::Queries, scanner::Queries);
+
+#[derive(MergedSubscription, Default)]
+struct Subscriptions(acsys::Subscriptions, scanner::Subscriptions);
+
+// Final schema type.
+
 type MySchema =
-    Schema<acsys::Queries, acsys::Mutations, acsys::Subscriptions>;
+    Schema<Query, acsys::Mutations, Subscriptions>;
 
 const AUTH_HEADER: &str = "acsys-auth-jwt";
 
@@ -28,9 +36,9 @@ fn filter(
     // queries and subscriptions.
 
     let schema = Schema::build(
-        acsys::Queries,
+        Query::default(),
         acsys::Mutations,
-        acsys::Subscriptions,
+        Subscriptions::default(),
     )
     .register_output_type::<types::DeviceProperty>()
     .finish();
