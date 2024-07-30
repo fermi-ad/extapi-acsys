@@ -4,7 +4,7 @@ version = "0.1.1"
 edition = "2021"
 
 [build-dependencies]
-tonic-build = "0.8"
+tonic-build = "0.12"
 
 [dependencies]
 futures = "0.3.27"
@@ -21,9 +21,9 @@ warp = { version = "0.3", features = [ "tls" ] }
 
 chrono = "0.4"
 
-tonic = "0.8"
-prost = "0.11"
-prost-types = "0.11"
+tonic = "0.12"
+prost = "0.13"
+prost-types = "0.13"
 
 #sqlx = { version = "0.6", features = ["postgres", "runtime-tokio-rustls"] }
 
