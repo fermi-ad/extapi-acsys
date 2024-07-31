@@ -1,10 +1,10 @@
-use async_graphql::*;
+use async_graphql::{SimpleObject, types};
 use std::collections::HashMap;
 
 #[derive(SimpleObject)]
 pub struct ScanProgress {
     pub message: String,
-    pub detector_id: String,
+    pub detector_id: types::ID,
     pub start_time: Option<i32>,
     pub current_position: Option<f32>,
     pub progress_percentage: Option<i32>,

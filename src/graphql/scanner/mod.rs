@@ -1,6 +1,6 @@
 use crate::g_rpc::wscan;
 
-use async_graphql::*;
+use async_graphql::{Object, Subscription, types::ID};
 use futures_util::{stream, Stream, StreamExt};
 use std::{collections::HashMap, pin::Pin};
 use tracing::{error, info};
@@ -32,8 +32,8 @@ impl ScannerQueries {
     }
 
     /// Requests the progress of the motion station associated with the `id`.
-    async fn get_progress(&self, id: String) -> types::ScanProgress {
-        match wscan::get_progress(id.clone()).await {
+    async fn get_progress(&self, id: ID) -> types::ScanProgress {
+        match wscan::get_progress(id.0.clone()).await {
             Ok(resp) => {
                 let wscan::proto::ScanProgress {
                     message,
@@ -45,7 +45,7 @@ impl ScannerQueries {
 
                 types::ScanProgress {
                     message,
-                    detector_id,
+                    detector_id: ID(detector_id),
                     start_time: Some(start_time),
                     current_position: Some(current_position),
                     progress_percentage: Some(progress_percentage),
@@ -62,8 +62,8 @@ impl ScannerQueries {
     }
 
     /// Requests that any motion in the specified station be stopped.
-    async fn abort_scan(&self, id: String) -> types::ScanProgress {
-        match wscan::abort_scan(id.clone()).await {
+    async fn abort_scan(&self, id: ID) -> types::ScanProgress {
+        match wscan::abort_scan(id.0.clone()).await {
             Ok(resp) => {
                 let wscan::proto::ScanProgress {
                     message,
@@ -75,7 +75,7 @@ impl ScannerQueries {
 
                 types::ScanProgress {
                     message,
-                    detector_id,
+                    detector_id: ID(detector_id),
                     start_time: Some(start_time),
                     current_position: Some(current_position),
                     progress_percentage: Some(progress_percentage),
@@ -100,9 +100,9 @@ pub struct ScannerSubscriptions;
 #[Subscription]
 impl ScannerSubscriptions {
     /// Starts a scan at the specified station.
-    async fn start_scan(&self, id: String) -> ScanStream {
-        info!("requesting scan at station {}", &id);
-        match wscan::start_scan(id, 0.0, 0.0, 0.0, 0.0, 0).await {
+    async fn start_scan(&self, id: ID) -> ScanStream {
+        info!("requesting scan at station {}", &id.0);
+        match wscan::start_scan(id.0, 0.0, 0.0, 0.0, 0.0, 0).await {
             Ok(s) => Box::pin(s.into_inner().map(Result::unwrap).map(
                 |wscan::proto::ScanResult { progress, voltage }| {
                     let wscan::proto::ScanProgress {
@@ -116,7 +116,7 @@ impl ScannerSubscriptions {
                     types::ScanResult {
                         progress: types::ScanProgress {
                             message,
-                            detector_id,
+                            detector_id: ID(detector_id),
                             start_time: Some(start_time),
                             current_position: Some(current_position),
                             progress_percentage: Some(progress_percentage),
