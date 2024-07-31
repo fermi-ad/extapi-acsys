@@ -74,6 +74,16 @@ pub struct KnobInfo {
     pub step: f64,
 }
 
+impl KnobInfo {
+    pub fn new(min_val: f64, max_val: f64, step: f64) -> Self {
+        KnobInfo {
+            min_val: min_val.min(max_val),
+            max_val: min_val.max(max_val),
+            step,
+        }
+    }
+}
+
 /// Holds data associated with the setting property of a device.
 #[derive(SimpleObject)]
 #[graphql(complex)]
@@ -122,22 +132,14 @@ impl SettingProp {
     async fn knob_info(&self) -> Option<KnobInfo> {
         if self.is_knobbable {
             if self.common_index == 40 && self.coeff.len() >= 6 {
-                Some(KnobInfo {
-                    min_val: self.coeff[3].min(self.coeff[4]),
-                    max_val: self.coeff[3].max(self.coeff[4]),
-                    step: self.coeff[5],
-                })
+                Some(KnobInfo::new(self.coeff[3], self.coeff[4], self.coeff[5]))
             } else {
                 let inc = match self.primary_index {
                     16 | 22 | 24 | 84 => 0.005,
                     _ => 16.0,
                 };
 
-                Some(KnobInfo {
-                    min_val: self.min_val,
-                    max_val: self.max_val,
-                    step: inc,
-                })
+                Some(KnobInfo::new(self.min_val, self.max_val, inc))
             }
         } else {
             None
