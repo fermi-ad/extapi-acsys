@@ -1,6 +1,6 @@
 use crate::g_rpc::wscan;
 
-use async_graphql::{Object, Subscription, types::ID};
+use async_graphql::{types::ID, Object, Subscription};
 use futures_util::{stream, Stream, StreamExt};
 use std::{collections::HashMap, pin::Pin};
 use tracing::{error, info};

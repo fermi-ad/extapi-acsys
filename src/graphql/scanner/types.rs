@@ -1,4 +1,4 @@
-use async_graphql::{SimpleObject, types};
+use async_graphql::{types, SimpleObject};
 use std::collections::HashMap;
 
 #[derive(SimpleObject)]
