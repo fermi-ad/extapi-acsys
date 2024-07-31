@@ -21,6 +21,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tonic_build::configure()
         .build_client(true)
         .build_server(false)
+        .compile(&["src/g_rpc/wscan/WScan.proto"], &incl)?;
+
+    tonic_build::configure()
+        .build_client(true)
+        .build_server(false)
         .protoc_arg("--experimental_allow_proto3_optional")
         .compile(&["src/g_rpc/devdb/DevDB.proto"], &incl)?;
 

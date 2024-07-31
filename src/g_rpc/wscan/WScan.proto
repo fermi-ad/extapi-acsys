@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package scanner;
+
+import "google/protobuf/empty.proto";
+
+// The request message containing the scan parameters.
+message ScanRequest {
+    string detector_id = 1;
+    float  position_start = 2;
+    float  position_end = 3;
+    float  position_step = 4;
+    float  sampling_duration = 5;
+    int32  pulses_per_sample = 6;
+}
+
+//The request for a progress check
+message DetectorRequest{
+    string detector_id = 1;
+}
+
+// The response message containing the scan progress.
+message ScanProgress {
+    string message = 1;
+    string detector_id = 2;
+    int32  start_time = 3;
+    float  current_position = 4;
+    int32  progress_percentage = 5;
+}
+
+// The response message for scan result.
+message ScanResult {
+    ScanProgress progress = 1;
+    repeated float voltage = 2;
+}
+
+// The service definition.
+service Scanner {
+    rpc StartScan   (ScanRequest)	returns (stream ScanResult);
+    rpc GetProgress (DetectorRequest)	returns (ScanProgress);
+    rpc AbortScan   (DetectorRequest)	returns (ScanProgress);
+}
