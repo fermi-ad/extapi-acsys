@@ -490,6 +490,9 @@ impl Into<DataType> for proto::Data {
             Some(proto::data::Value::Status(v)) => {
                 DataType::StatusReply(StatusReply { status: v as i16 })
             }
+            Some(proto::data::Value::Text(v)) => {
+                DataType::Text(Text { text_value: v })
+            }
             Some(v) => {
                 warn!("can't translate {:?}", &v);
                 todo!()
