@@ -3,6 +3,7 @@ use std::{convert::Infallible, path::Path};
 use warp::{Filter, Rejection};
 
 mod acsys;
+mod clock;
 mod scanner;
 mod types;
 mod xform;
@@ -13,6 +14,7 @@ struct Query(acsys::ACSysQueries, scanner::ScannerQueries);
 #[derive(MergedSubscription, Default)]
 struct Subscriptions(
     acsys::ACSysSubscriptions,
+    clock::ClockSubscriptions,
     scanner::ScannerSubscriptions,
     xform::XFormSubscriptions,
 );
