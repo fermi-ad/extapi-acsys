@@ -193,6 +193,7 @@ impl ACSysQueries {
     }
 }
 
+#[derive(Default)]
 pub struct ACSysMutations;
 
 #[Object]

@@ -2,7 +2,7 @@ use crate::g_rpc::wscan;
 
 use async_graphql::{types::ID, Object, Subscription};
 use futures_util::{stream, Stream, StreamExt};
-use std::{collections::HashMap, pin::Pin};
+use std::pin::Pin;
 use tracing::{error, info};
 
 // Pull in our local types.
@@ -19,76 +19,41 @@ pub struct ScannerQueries;
 
 #[Object]
 impl ScannerQueries {
-    async fn retrieve_scans(&self) -> types::KnownStations {
-        match wscan::retrieve_scans().await {
-            Ok(map) => types::KnownStations { map },
-            Err(e) => {
-                error!("error retrieving stations: {}", e);
-                types::KnownStations {
-                    map: HashMap::new(),
-                }
-            }
-        }
+    /// Queries the scanning service for scan configurations. If `id` is `null`, all configurations are returned. If `id` is not `null`, the configuration associated with the ID will be returned. If no ID matches, an empty list is returned.
+    async fn retrieve_scans(
+        &self, _id: Option<ID>,
+    ) -> Vec<types::ScanConfiguration> {
+        vec![]
     }
 
     /// Requests the progress of the motion station associated with the `id`.
-    async fn get_progress(&self, id: ID) -> types::ScanProgress {
+    async fn get_progress(&self, id: ID) -> types::ScanCurrentState {
         match wscan::get_progress(id.0.clone()).await {
-            Ok(resp) => {
-                let wscan::proto::ScanProgress {
-                    message,
-                    detector_id,
-                    start_time,
-                    current_position,
-                    progress_percentage,
-                } = resp.into_inner();
-
-                types::ScanProgress {
-                    message,
-                    detector_id: ID(detector_id),
-                    start_time: Some(start_time),
-                    current_position: Some(current_position),
-                    progress_percentage: Some(progress_percentage),
-                }
-            }
-            Err(e) => types::ScanProgress {
-                message: format!("error: {}", e),
+            Ok(resp) => types::ScanCurrentState::from(resp.into_inner()),
+            Err(e) => types::ScanCurrentState {
                 detector_id: id,
-                start_time: None,
-                current_position: None,
-                progress_percentage: None,
+                state: types::ScanState::Error(types::ScanStateError {
+                    err_message: format!("error: {}", e),
+                    position: None,
+                }),
             },
         }
     }
+}
 
-    /// Requests that any motion in the specified station be stopped.
-    async fn abort_scan(&self, id: ID) -> types::ScanProgress {
-        match wscan::abort_scan(id.0.clone()).await {
-            Ok(resp) => {
-                let wscan::proto::ScanProgress {
-                    message,
-                    detector_id,
-                    start_time,
-                    current_position,
-                    progress_percentage,
-                } = resp.into_inner();
+#[derive(Default)]
+pub struct ScannerMutations;
 
-                types::ScanProgress {
-                    message,
-                    detector_id: ID(detector_id),
-                    start_time: Some(start_time),
-                    current_position: Some(current_position),
-                    progress_percentage: Some(progress_percentage),
-                }
-            }
-            Err(e) => types::ScanProgress {
-                message: format!("error: {}", e),
-                detector_id: id,
-                start_time: None,
-                current_position: None,
-                progress_percentage: None,
-            },
-        }
+#[Object]
+impl ScannerMutations {
+    /// Requests that a scan be started with the configuration specified by the `id` parameter. If a scan was successfully started, an ID will be returned. If it couldn't be started, `null` is returned.
+    async fn request_scan(&self, _id: ID) -> Option<ID> {
+        None
+    }
+
+    /// Requests that a scan be stopped. The `id` parameter is the value obtained from a previous `request_scan` command or from a scan progress query.
+    async fn abort_scan(&self, id: ID) -> bool {
+        wscan::abort_scan(id.0.clone()).await.is_ok()
     }
 }
 
@@ -100,27 +65,13 @@ pub struct ScannerSubscriptions;
 #[Subscription]
 impl ScannerSubscriptions {
     /// Starts a scan at the specified station.
-    async fn start_scan(&self, id: ID) -> ScanStream {
+    async fn get_scanner_state(&self, id: ID) -> ScanStream {
         info!("requesting scan at station {}", &id.0);
         match wscan::start_scan(id.0, 0.0, 0.0, 0.0, 0.0, 0).await {
             Ok(s) => Box::pin(s.into_inner().map(Result::unwrap).map(
                 |wscan::proto::ScanResult { progress, voltage }| {
-                    let wscan::proto::ScanProgress {
-                        message,
-                        detector_id,
-                        start_time,
-                        current_position,
-                        progress_percentage,
-                    } = progress.unwrap();
-
                     types::ScanResult {
-                        progress: types::ScanProgress {
-                            message,
-                            detector_id: ID(detector_id),
-                            start_time: Some(start_time),
-                            current_position: Some(current_position),
-                            progress_percentage: Some(progress_percentage),
-                        },
+                        progress: types::ScanCurrentState::from(progress.unwrap()),
                         voltage,
                     }
                 },

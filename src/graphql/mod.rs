@@ -11,6 +11,9 @@ mod xform;
 #[derive(MergedObject, Default)]
 struct Query(acsys::ACSysQueries, scanner::ScannerQueries);
 
+#[derive(MergedObject, Default)]
+struct Mutations(acsys::ACSysMutations, scanner::ScannerMutations);
+
 #[derive(MergedSubscription, Default)]
 struct Subscriptions(
     acsys::ACSysSubscriptions,
@@ -21,7 +24,7 @@ struct Subscriptions(
 
 // Final schema type.
 
-type MySchema = Schema<Query, acsys::ACSysMutations, Subscriptions>;
+type MySchema = Schema<Query, Mutations, Subscriptions>;
 
 const AUTH_HEADER: &str = "acsys-auth-jwt";
 
@@ -43,7 +46,7 @@ fn filter(
 
     let schema = Schema::build(
         Query::default(),
-        acsys::ACSysMutations,
+        Mutations::default(),
         Subscriptions::default(),
     )
     .register_output_type::<types::DeviceProperty>()
