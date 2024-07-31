@@ -71,7 +71,9 @@ impl ScannerSubscriptions {
             Ok(s) => Box::pin(s.into_inner().map(Result::unwrap).map(
                 |wscan::proto::ScanResult { progress, voltage }| {
                     types::ScanResult {
-                        progress: types::ScanCurrentState::from(progress.unwrap()),
+                        progress: types::ScanCurrentState::from(
+                            progress.unwrap(),
+                        ),
                         voltage,
                     }
                 },
