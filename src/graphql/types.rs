@@ -486,6 +486,11 @@ impl Into<DataType> for proto::Data {
             Some(proto::data::Value::Text(v)) => {
                 DataType::Text(Text { text_value: v })
             }
+            Some(proto::data::Value::TextArr(proto::data::TextArray {
+                value: v,
+            })) => DataType::TextArray(TextArray {
+                text_array_value: v,
+            }),
             Some(v) => {
                 warn!("can't translate {:?}", &v);
                 todo!()
