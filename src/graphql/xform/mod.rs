@@ -68,10 +68,10 @@ fn xlat_xform_reply(
 type XFormStream = Pin<Box<dyn Stream<Item = types::XFormResult> + Send>>;
 
 #[derive(Default)]
-pub struct Subscriptions;
+pub struct XFormSubscriptions;
 
 #[Subscription]
-impl Subscriptions {
+impl XFormSubscriptions {
     async fn calc_stream(&self, config: types::XFormRequest) -> XFormStream {
         info!("calculating {}", &config.expr);
 

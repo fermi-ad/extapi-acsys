@@ -12,22 +12,22 @@ pub mod types;
 // Create a zero-sized struct to attach the GraphQL handlers.
 
 #[derive(Default)]
-pub struct Queries;
+pub struct ScannerQueries;
 
 // Define the schema's query entry points. Any methods defined in this
 // section will appear in the schema.
 
 #[Object]
-impl Queries {
+impl ScannerQueries {
     async fn retrieve_scans(&self) -> types::KnownStations {
         match wscan::retrieve_scans().await {
             Ok(map) => types::KnownStations { map },
             Err(e) => {
-		error!("error retrieving stations: {}", e);
-		types::KnownStations {
+                error!("error retrieving stations: {}", e);
+                types::KnownStations {
                     map: HashMap::new(),
-		}
-	    },
+                }
+            }
         }
     }
 
@@ -95,10 +95,10 @@ impl Queries {
 type ScanStream = Pin<Box<dyn Stream<Item = types::ScanResult> + Send>>;
 
 #[derive(Default)]
-pub struct Subscriptions;
+pub struct ScannerSubscriptions;
 
 #[Subscription]
-impl Subscriptions {
+impl ScannerSubscriptions {
     /// Starts a scan at the specified station.
     async fn start_scan(&self, id: String) -> ScanStream {
         info!("requesting scan at station {}", &id);

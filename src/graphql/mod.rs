@@ -1,22 +1,25 @@
-use std::{path::Path, convert::Infallible};
 use async_graphql::*;
+use std::{convert::Infallible, path::Path};
 use warp::{Filter, Rejection};
 
 mod acsys;
-mod xform;
 mod scanner;
 mod types;
+mod xform;
 
 #[derive(MergedObject, Default)]
-struct Query(acsys::Queries, scanner::Queries);
+struct Query(acsys::ACSysQueries, scanner::ScannerQueries);
 
 #[derive(MergedSubscription, Default)]
-struct Subscriptions(acsys::Subscriptions, scanner::Subscriptions, xform::Subscriptions);
+struct Subscriptions(
+    acsys::ACSysSubscriptions,
+    scanner::ScannerSubscriptions,
+    xform::XFormSubscriptions,
+);
 
 // Final schema type.
 
-type MySchema =
-    Schema<Query, acsys::Mutations, Subscriptions>;
+type MySchema = Schema<Query, acsys::ACSysMutations, Subscriptions>;
 
 const AUTH_HEADER: &str = "acsys-auth-jwt";
 
@@ -38,7 +41,7 @@ fn filter(
 
     let schema = Schema::build(
         Query::default(),
-        acsys::Mutations,
+        acsys::ACSysMutations,
         Subscriptions::default(),
     )
     .register_output_type::<types::DeviceProperty>()

@@ -141,13 +141,13 @@ fn to_info_result(item: &devdb::proto::InfoEntry) -> global::DeviceInfoResult {
 // Create a zero-sized struct to attach the GraphQL handlers.
 
 #[derive(Default)]
-pub struct Queries;
+pub struct ACSysQueries;
 
 // Define the schema's query entry points. Any methods defined in this
 // section will appear in the schema.
 
 #[Object]
-impl Queries {
+impl ACSysQueries {
     /// Retrieve the next data point for the specified devices. Depending upon the event in the DRF string, the data may come back immediately or after a delay.
     async fn accelerator_data(
         &self, _drfs: Vec<String>,
@@ -171,9 +171,11 @@ impl Queries {
                 devices
                     .iter()
                     .map(|_| {
-                        global::DeviceInfoResult::ErrorReply(global::ErrorReply {
-                            message: err_msg.clone(),
-                        })
+                        global::DeviceInfoResult::ErrorReply(
+                            global::ErrorReply {
+                                message: err_msg.clone(),
+                            },
+                        )
                     })
                     .collect()
             }
@@ -192,10 +194,10 @@ impl Queries {
     }
 }
 
-pub struct Mutations;
+pub struct ACSysMutations;
 
 #[Object]
-impl Mutations {
+impl ACSysMutations {
     /// Sends a setting to a device.
     ///
     /// Not all devices can be set -- most are read-only. For ACNET devices, the `device` string should use DRF notation to specify one of the two settable properties: `.SETTING` and `.CONTROL`.
@@ -258,10 +260,10 @@ type DataStream = Pin<Box<dyn Stream<Item = global::DataReply> + Send>>;
 type EventStream = Pin<Box<dyn Stream<Item = global::EventInfo> + Send>>;
 
 #[derive(Default)]
-pub struct Subscriptions;
+pub struct ACSysSubscriptions;
 
 #[Subscription]
-impl Subscriptions {
+impl ACSysSubscriptions {
     async fn accelerator_data(&self, drfs: Vec<String>) -> DataStream {
         let hdr = format!("monitoring({:?})", &drfs);
         let now = Instant::now();

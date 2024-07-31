@@ -1,6 +1,6 @@
+use crate::graphql::types::Scalar;
 use async_graphql::*;
 use chrono::*;
-use crate::graphql::types::Scalar;
 
 #[derive(SimpleObject)]
 pub struct XFormResult {
