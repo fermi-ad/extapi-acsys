@@ -25,9 +25,13 @@ pub struct ACSysQueries;
 
 #[Object]
 impl ACSysQueries {
-    /// Retrieve the next data point for the specified devices. Depending upon the event in the DRF string, the data may come back immediately or after a delay.
+    #[doc = "Retrieve the next data point for the specified devices. Depending upon the event in the DRF string, the data may come back immediately or after a delay."]
     async fn accelerator_data(
-        &self, _drfs: Vec<String>,
+        &self,
+        #[graphql(
+            desc = "An array of DRF strings. The device readings will be in the same order as specified in this array."
+        )]
+        _drfs: Vec<String>,
     ) -> Vec<global::DataReply> {
         vec![]
     }
@@ -38,11 +42,16 @@ pub struct ACSysMutations;
 
 #[Object]
 impl ACSysMutations {
-    /// Sends a setting to a device.
-    ///
-    /// Not all devices can be set -- most are read-only. For ACNET devices, the `device` string should use DRF notation to specify one of the two settable properties: `.SETTING` and `.CONTROL`.
+    #[doc = "Sends a setting to a device.
+
+Not all devices can be set -- most are read-only. To be able to set a device, your SSO account must be associated with every device you may want to set."]
     async fn set_device(
-        &self, device: String, value: global::DevValue,
+        &self,
+        #[graphql(
+            desc = "The device to be set. This parameter should be expressed as a DRF entity. For instance, for ACNET devices, the device name should be appended with `.SETTING` or `.CONTROL`."
+        )]
+        device: String,
+        #[graphql(desc = "The value of the setting.")] value: global::DevValue,
     ) -> global::StatusReply {
         let now = Instant::now();
         let result =
@@ -103,7 +112,14 @@ pub struct ACSysSubscriptions;
 
 #[Subscription]
 impl ACSysSubscriptions {
-    async fn accelerator_data(&self, drfs: Vec<String>) -> DataStream {
+    #[doc = ""]
+    async fn accelerator_data(
+        &self,
+        #[graphql(
+            desc = "A array of DRF strings. Each entry of the returned stream will have a index to associate the reading with the DRF that started it."
+        )]
+        drfs: Vec<String>,
+    ) -> DataStream {
         let hdr = format!("monitoring({:?})", &drfs);
         let now = Instant::now();
         let stream = match dpm::acquire_devices("", drfs.clone()).await {
