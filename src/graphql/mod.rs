@@ -4,12 +4,17 @@ use warp::{Filter, Rejection};
 
 mod acsys;
 mod clock;
+mod devdb;
 mod scanner;
 mod types;
 mod xform;
 
 #[derive(MergedObject, Default)]
-struct Query(acsys::ACSysQueries, scanner::ScannerQueries);
+struct Query(
+    acsys::ACSysQueries,
+    devdb::DevDBQueries,
+    scanner::ScannerQueries,
+);
 
 #[derive(MergedObject, Default)]
 struct Mutations(acsys::ACSysMutations, scanner::ScannerMutations);
@@ -49,7 +54,7 @@ fn filter(
         Mutations::default(),
         Subscriptions::default(),
     )
-    .register_output_type::<types::DeviceProperty>()
+    .register_output_type::<devdb::types::DeviceProperty>()
     .finish();
 
     // Build the query portion. This Warp Filter recognizes GraphQL
