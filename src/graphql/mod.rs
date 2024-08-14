@@ -60,7 +60,8 @@ pub async fn start_service() {
     //    .run(([0, 0, 0, 0], 8000))
     //    .await;
 
-    const ENDPOINT: &str = "/acsys";
+    const Q_ENDPOINT: &str = "/acsys";
+    const S_ENDPOINT: &str = "/acsys/s";
 
     // Build the GraphQL schema. Also, define the GraphQL interface
     // (DeviceProperty) that we use in the schema.
@@ -78,19 +79,19 @@ pub async fn start_service() {
 
     let graphiql = axum::response::Html(
         async_graphql::http::GraphiQLSource::build()
-            .endpoint(ENDPOINT)
-            .subscription_endpoint(ENDPOINT)
+            .endpoint(Q_ENDPOINT)
+            .subscription_endpoint(S_ENDPOINT)
             .finish(),
     );
 
-    // Build up the routes for the site. We're using the same path
-    // because each of the three services uses a different method
-    // (GET, POST, and WS.)
+    // Build up the routes for the site.
 
     let app = Router::new()
-        .route(ENDPOINT, get(graphiql))
-        .route_service(ENDPOINT, GraphQL::new(schema.clone()))
-        .route_service(ENDPOINT, GraphQLSubscription::new(schema));
+        .route(
+            Q_ENDPOINT,
+            get(graphiql).post_service(GraphQL::new(schema.clone())),
+        )
+        .route_service(S_ENDPOINT, GraphQLSubscription::new(schema));
 
     // Start the server on port 8000!
 
