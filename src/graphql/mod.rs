@@ -1,7 +1,6 @@
 use async_graphql::*;
 use async_graphql_axum::{GraphQL, GraphQLSubscription};
 use axum::{routing::get, Router};
-use tokio::net::TcpListener;
 
 mod acsys;
 mod bbm;
@@ -41,6 +40,13 @@ struct Subscription(
 // wrapped with CORS support from the `warp` crate.
 
 pub async fn start_service() {
+    let config = axum_server::tls_rustls::RustlsConfig::from_pem_file(
+        "/etc/ssl/private/acsys-proxy.fnal.gov/cert.pem",
+        "/etc/ssl/private/acsys-proxy.fnal.gov/key.pem",
+    )
+    .await
+    .unwrap();
+
     //let filter = filter("acsys").with(
     //    warp::cors()
     //        .allow_any_origin()
@@ -52,13 +58,6 @@ pub async fn start_service() {
     //        ])
     //        .allow_methods(vec!["OPTIONS", "GET", "POST"]),
     //);
-
-    //warp::serve(filter)
-    //    .tls()
-    //    .cert_path(Path::new("/etc/ssl/private/acsys-proxy.fnal.gov/cert.pem"))
-    //    .key_path(Path::new("/etc/ssl/private/acsys-proxy.fnal.gov/key.pem"))
-    //    .run(([0, 0, 0, 0], 8000))
-    //    .await;
 
     const Q_ENDPOINT: &str = "/acsys";
     const S_ENDPOINT: &str = "/acsys/s";
@@ -95,7 +94,11 @@ pub async fn start_service() {
 
     // Start the server on port 8000!
 
-    axum::serve(TcpListener::bind("0.0.0.0:8000").await.unwrap(), app)
-        .await
-        .unwrap();
+    axum_server::tls_rustls::bind_rustls(
+        "0.0.0.0:8080".parse().unwrap(),
+        config,
+    )
+    .serve(app.into_make_service())
+    .await
+    .unwrap();
 }
