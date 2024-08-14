@@ -3,6 +3,7 @@ use std::{convert::Infallible, path::Path};
 use warp::{Filter, Rejection};
 
 mod acsys;
+mod bbm;
 mod clock;
 mod devdb;
 mod scanner;
@@ -13,6 +14,7 @@ mod xform;
 #[derive(MergedObject, Default)]
 struct Query(
     acsys::ACSysQueries,
+    bbm::BBMQueries,
     devdb::DevDBQueries,
     scanner::ScannerQueries,
 );
