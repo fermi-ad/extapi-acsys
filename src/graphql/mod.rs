@@ -11,7 +11,7 @@ mod scanner;
 mod types;
 mod xform;
 
-/// Fields in this sections return data and won't cause side-effects in the control system. Some queries may require privileges, but none will affect the accelerator.
+#[doc = "Fields in this section return data and won't cause side-effects in the control system. Some queries may require privileges, but none will affect the accelerator."]
 #[derive(MergedObject, Default)]
 struct Query(
     acsys::ACSysQueries,
@@ -20,11 +20,11 @@ struct Query(
     scanner::ScannerQueries,
 );
 
-/// Fields in the section will affect the control system; updating database tables and/or controlling accelerator hardware are possible with these queries. These requests will always need to be accompanied by an authentication token and will, most-likely, be tracked and audited.
+#[doc = "Queries in this section will affect the control system; updating database tables and/or controlling accelerator hardware are possible. These requests will always need to be accompanied by an authentication token and will, most-likely, be tracked and audited."]
 #[derive(MergedObject, Default)]
 struct Mutation(acsys::ACSysMutations, scanner::ScannerMutations);
 
-/// This section contains requests that return a stream of results. These requests are similar to Queries in that they don't affect the state of the accelerator or any other state of the control system.
+#[doc = "This section contains requests that return a stream of results. These requests are similar to Queries in that they don't affect the state of the accelerator or any other state of the control system."]
 #[derive(MergedSubscription, Default)]
 struct Subscription(
     acsys::ACSysSubscriptions,
