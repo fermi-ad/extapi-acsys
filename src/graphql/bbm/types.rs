@@ -20,13 +20,13 @@ pub struct BeamBudgetData;
 impl BeamBudgetData {
     #[doc = "Contains all the information requested in the query."]
     pub async fn info(
-	&self,
-	#[graphql(
-	    desc = "If `null`, beam budget information for all beamlines will be returned. If not `null`, it must be a list of machines. The contents will contain information only for the specified machines."
-	)]
-	_which: Option<Vec<Beamline>>
+        &self,
+        #[graphql(
+            desc = "If `null`, beam budget information for all beamlines will be returned. If not `null`, it must be a list of machines. The contents will contain information only for the specified machines."
+        )]
+        _which: Option<Vec<Beamline>>,
     ) -> Vec<BudgetInfo> {
-	vec![]
+        vec![]
     }
 }
 
@@ -39,16 +39,18 @@ pub struct BudgetInfo {
 impl BudgetInfo {
     #[doc = "Indicates which machine the data is associated."]
     async fn beamline(&self) -> Beamline {
-	self.beamline
+        self.beamline
     }
 
     #[doc = "Contains the history of the  associated machine."]
     async fn history(
-	&self,
-	#[graphql(desc = "Specifies which run's budget to return. If `null`, the latest run's totals are returned.")]
-	_run: Option<i32>
+        &self,
+        #[graphql(
+            desc = "Specifies which run's budget to return. If `null`, the latest run's totals are returned."
+        )]
+        _run: Option<i32>,
     ) -> Vec<BeamHistory> {
-	vec![]
+        vec![]
     }
 }
 

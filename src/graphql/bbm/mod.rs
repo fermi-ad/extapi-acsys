@@ -14,6 +14,6 @@ pub struct BBMQueries;
 impl BBMQueries {
     #[doc = "Retrieves beam budget information."]
     async fn get_beam_budget_info(&self) -> types::BeamBudgetData {
-	types::BeamBudgetData { }
+        types::BeamBudgetData {}
     }
 }
