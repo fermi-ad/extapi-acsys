@@ -95,7 +95,7 @@ pub async fn start_service() {
     // Start the server on port 8000!
 
     axum_server::tls_rustls::bind_rustls(
-        "0.0.0.0:8080".parse().unwrap(),
+        "0.0.0.0:8001".parse().unwrap(),
         config,
     )
     .serve(app.into_make_service())
