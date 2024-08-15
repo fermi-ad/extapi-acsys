@@ -40,6 +40,15 @@ struct Subscription(
 // wrapped with CORS support from the `warp` crate.
 
 pub async fn start_service() {
+    use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+
+    #[cfg(not(debug_assertions))]
+    const BIND_ADDR: SocketAddr =
+        SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 8000));
+    #[cfg(debug_assertions)]
+    const BIND_ADDR: SocketAddr =
+        SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 8001));
+
     let config = axum_server::tls_rustls::RustlsConfig::from_pem_file(
         "/etc/ssl/private/acsys-proxy.fnal.gov/cert.pem",
         "/etc/ssl/private/acsys-proxy.fnal.gov/key.pem",
@@ -94,11 +103,8 @@ pub async fn start_service() {
 
     // Start the server on port 8000!
 
-    axum_server::tls_rustls::bind_rustls(
-        "0.0.0.0:8001".parse().unwrap(),
-        config,
-    )
-    .serve(app.into_make_service())
-    .await
-    .unwrap();
+    axum_server::tls_rustls::bind_rustls(BIND_ADDR, config)
+        .serve(app.into_make_service())
+        .await
+        .unwrap();
 }
