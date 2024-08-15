@@ -40,7 +40,9 @@ struct Subscription(
 // wrapped with CORS support from the `warp` crate.
 
 pub async fn start_service() {
+    use ::http::{header, Method};
     use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+    use tower_http::cors::{Any, CorsLayer};
 
     #[cfg(not(debug_assertions))]
     const BIND_ADDR: SocketAddr =
@@ -49,24 +51,14 @@ pub async fn start_service() {
     const BIND_ADDR: SocketAddr =
         SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 8001));
 
+    // Load TLS certificate information. If there's an error, we panic.
+
     let config = axum_server::tls_rustls::RustlsConfig::from_pem_file(
         "/etc/ssl/private/acsys-proxy.fnal.gov/cert.pem",
         "/etc/ssl/private/acsys-proxy.fnal.gov/key.pem",
     )
     .await
-    .unwrap();
-
-    //let filter = filter("acsys").with(
-    //    warp::cors()
-    //        .allow_any_origin()
-    //        .allow_headers(vec![
-    //            AUTH_HEADER,
-    //            "content-type",
-    //            "Access-Control-Allow-Origin",
-    //            "Sec-WebSocket-Protocol",
-    //        ])
-    //        .allow_methods(vec!["OPTIONS", "GET", "POST"]),
-    //);
+    .expect("couldn't load certificate info from PEM file(s)");
 
     const Q_ENDPOINT: &str = "/acsys";
     const S_ENDPOINT: &str = "/acsys/s";
@@ -99,7 +91,17 @@ pub async fn start_service() {
             Q_ENDPOINT,
             get(graphiql).post_service(GraphQL::new(schema.clone())),
         )
-        .route_service(S_ENDPOINT, GraphQLSubscription::new(schema));
+        .route_service(S_ENDPOINT, GraphQLSubscription::new(schema))
+        .layer(
+            CorsLayer::new()
+                .allow_methods([Method::OPTIONS, Method::GET, Method::POST])
+                .allow_headers([
+                    header::CONTENT_TYPE,
+                    header::SEC_WEBSOCKET_PROTOCOL,
+                    header::ACCESS_CONTROL_ALLOW_ORIGIN,
+                ])
+                .allow_origin(Any),
+        );
 
     // Start the server on port 8000!
 

@@ -19,14 +19,14 @@ async-graphql = { version = "7", features = ["chrono"] }
 async-graphql-axum = "7"
 axum = { version = "0.7", features = ["ws"] }
 axum-server = { version = "0.7", features = ["tls-rustls"] }
+tower-http = { version = "0.5", features = ["cors", "compression-deflate", "decompression-deflate"] }
+http = "1"
 
 chrono = "0.4"
 
 tonic = "0.12"
 prost = "0.13"
 prost-types = "0.13"
-
-#sqlx = { version = "0.6", features = ["postgres", "runtime-tokio-rustls"] }
 
 [profile.release]
 incremental = false
