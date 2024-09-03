@@ -12,18 +12,17 @@ mod xform;
 
 #[doc = "Fields in this section return data and won't cause side-effects in the control system. Some queries may require privileges, but none will affect the accelerator."]
 #[derive(MergedObject, Default)]
-struct Query(acsys::ACSysQueries, scanner::ScannerQueries);
+struct Query(acsys::ACSysQueries);
 
 #[doc = "Queries in this section will affect the control system; updating database tables and/or controlling accelerator hardware are possible. These requests will always need to be accompanied by an authentication token and will, most-likely, be tracked and audited."]
 #[derive(MergedObject, Default)]
-struct Mutation(acsys::ACSysMutations, scanner::ScannerMutations);
+struct Mutation(acsys::ACSysMutations);
 
 #[doc = "This section contains requests that return a stream of results. These requests are similar to Queries in that they don't affect the state of the accelerator or any other state of the control system."]
 #[derive(MergedSubscription, Default)]
 struct Subscription(
     acsys::ACSysSubscriptions,
     clock::ClockSubscriptions,
-    scanner::ScannerSubscriptions,
     xform::XFormSubscriptions,
 );
 
@@ -64,6 +63,8 @@ pub async fn start_service() {
     const S_BBM_ENDPOINT: &str = "/bbm/s";
     const Q_DEVDB_ENDPOINT: &str = "/devdb";
     const S_DEVDB_ENDPOINT: &str = "/devdb/s";
+    const Q_WSCAN_ENDPOINT: &str = "/wscan";
+    const S_WSCAN_ENDPOINT: &str = "/wscan/s";
 
     // Build GraphQL schemas for each of the APIs.
 
@@ -74,19 +75,20 @@ pub async fn start_service() {
     )
     .finish();
 
-    let bbm_schema = Schema::build(
-        bbm::BbmQueries,
-        EmptyMutation,
-        EmptySubscription,
-    )
-    .finish();
+    let bbm_schema =
+        Schema::build(bbm::BbmQueries, EmptyMutation, EmptySubscription)
+            .finish();
 
-    let devdb_schema = Schema::build(
-        devdb::DevDBQueries,
-        EmptyMutation,
-        EmptySubscription,
+    let devdb_schema =
+        Schema::build(devdb::DevDBQueries, EmptyMutation, EmptySubscription)
+            .register_output_type::<devdb::types::DeviceProperty>()
+            .finish();
+
+    let wscan_schema = Schema::build(
+        scanner::ScannerQueries,
+        scanner::ScannerMutations,
+        scanner::ScannerSubscriptions,
     )
-    .register_output_type::<devdb::types::DeviceProperty>()
     .finish();
 
     // Create a handlers that provides GraphQL editors for each, major
@@ -113,6 +115,13 @@ pub async fn start_service() {
             .finish(),
     );
 
+    let wscan_graphiql = axum::response::Html(
+        async_graphql::http::GraphiQLSource::build()
+            .endpoint(Q_WSCAN_ENDPOINT)
+            .subscription_endpoint(S_WSCAN_ENDPOINT)
+            .finish(),
+    );
+
     // Build up the routes for the site.
 
     let app = Router::new()
@@ -133,6 +142,12 @@ pub async fn start_service() {
                 .post_service(GraphQL::new(devdb_schema.clone())),
         )
         .route_service(S_DEVDB_ENDPOINT, GraphQLSubscription::new(devdb_schema))
+        .route(
+            Q_WSCAN_ENDPOINT,
+            get(wscan_graphiql)
+                .post_service(GraphQL::new(wscan_schema.clone())),
+        )
+        .route_service(S_WSCAN_ENDPOINT, GraphQLSubscription::new(wscan_schema))
         .layer(
             CorsLayer::new()
                 .allow_methods([Method::OPTIONS, Method::GET, Method::POST])
