@@ -12,11 +12,7 @@ mod xform;
 
 #[doc = "Fields in this section return data and won't cause side-effects in the control system. Some queries may require privileges, but none will affect the accelerator."]
 #[derive(MergedObject, Default)]
-struct Query(
-    acsys::ACSysQueries,
-    devdb::DevDBQueries,
-    scanner::ScannerQueries,
-);
+struct Query(acsys::ACSysQueries, scanner::ScannerQueries);
 
 #[doc = "Queries in this section will affect the control system; updating database tables and/or controlling accelerator hardware are possible. These requests will always need to be accompanied by an authentication token and will, most-likely, be tracked and audited."]
 #[derive(MergedObject, Default)]
@@ -66,6 +62,8 @@ pub async fn start_service() {
     const S_ACSYS_ENDPOINT: &str = "/acsys/s";
     const Q_BBM_ENDPOINT: &str = "/bbm";
     const S_BBM_ENDPOINT: &str = "/bbm/s";
+    const Q_DEVDB_ENDPOINT: &str = "/devdb";
+    const S_DEVDB_ENDPOINT: &str = "/devdb/s";
 
     // Build GraphQL schemas for each of the APIs.
 
@@ -74,14 +72,21 @@ pub async fn start_service() {
         Mutation::default(),
         Subscription::default(),
     )
-    .register_output_type::<devdb::types::DeviceProperty>()
     .finish();
 
     let bbm_schema = Schema::build(
-        bbm::BbmQueries::default(),
+        bbm::BbmQueries,
         EmptyMutation,
         EmptySubscription,
     )
+    .finish();
+
+    let devdb_schema = Schema::build(
+        devdb::DevDBQueries,
+        EmptyMutation,
+        EmptySubscription,
+    )
+    .register_output_type::<devdb::types::DeviceProperty>()
     .finish();
 
     // Create a handlers that provides GraphQL editors for each, major
@@ -101,6 +106,13 @@ pub async fn start_service() {
             .finish(),
     );
 
+    let devdb_graphiql = axum::response::Html(
+        async_graphql::http::GraphiQLSource::build()
+            .endpoint(Q_DEVDB_ENDPOINT)
+            .subscription_endpoint(S_DEVDB_ENDPOINT)
+            .finish(),
+    );
+
     // Build up the routes for the site.
 
     let app = Router::new()
@@ -115,6 +127,12 @@ pub async fn start_service() {
             get(bbm_graphiql).post_service(GraphQL::new(bbm_schema.clone())),
         )
         .route_service(S_BBM_ENDPOINT, GraphQLSubscription::new(bbm_schema))
+        .route(
+            Q_DEVDB_ENDPOINT,
+            get(devdb_graphiql)
+                .post_service(GraphQL::new(devdb_schema.clone())),
+        )
+        .route_service(S_DEVDB_ENDPOINT, GraphQLSubscription::new(devdb_schema))
         .layer(
             CorsLayer::new()
                 .allow_methods([Method::OPTIONS, Method::GET, Method::POST])
