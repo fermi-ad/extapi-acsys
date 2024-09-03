@@ -1,6 +1,6 @@
 use async_graphql::*;
 use async_graphql_axum::{GraphQL, GraphQLSubscription};
-use axum::{routing::get, Router};
+use axum::{response::Html, routing::get, Router};
 
 mod acsys;
 mod bbm;
@@ -25,6 +25,27 @@ struct Subscription(
     clock::ClockSubscriptions,
     xform::XFormSubscriptions,
 );
+
+// Returns an HTML document that has links to the various GraphQL APIs.
+
+async fn base_page() -> Html<&'static str> {
+    Html(
+        r#"
+<html>
+  <body>
+    <p>Some quick links:</p>
+
+    <ul>
+      <li><a href="/acsys">ACSys</a> (data acquisition)</li>
+      <li><a href="/bbm">Beam Budget monitoring</a></li>
+      <li><a href="/devdb">Device Database</a></li>
+      <li><a href="/wscan">Wire Scanner</a></li>
+    </ul>
+  </body>
+</html>
+"#,
+    )
+}
 
 // Starts the web server that receives GraphQL queries. The
 // configuration of the server is pulled together by obtaining
@@ -125,6 +146,7 @@ pub async fn start_service() {
     // Build up the routes for the site.
 
     let app = Router::new()
+        .route("/", get(base_page))
         .route(
             Q_ACSYS_ENDPOINT,
             get(acsys_graphiql)
