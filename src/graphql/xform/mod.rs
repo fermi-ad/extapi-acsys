@@ -29,7 +29,7 @@ fn xlat_expr(expr: &types::XFormExpr) -> Option<Box<xform::proto::Operation>> {
             op: Some(xform::proto::operation::Op::Avg(Box::new(
                 xform::proto::Average {
                     n: *n,
-                    op: xlat_expr(&*expr),
+                    op: xlat_expr(expr),
                 },
             ))),
         })),
