@@ -14,7 +14,6 @@ mod xform;
 #[derive(MergedObject, Default)]
 struct Query(
     acsys::ACSysQueries,
-    bbm::BBMQueries,
     devdb::DevDBQueries,
     scanner::ScannerQueries,
 );
@@ -32,8 +31,6 @@ struct Subscription(
     xform::XFormSubscriptions,
 );
 
-//const AUTH_HEADER: &str = "acsys-auth-jwt";
-
 // Starts the web server that receives GraphQL queries. The
 // configuration of the server is pulled together by obtaining
 // configuration information from the submodules. All accesses are
@@ -43,6 +40,9 @@ pub async fn start_service() {
     use ::http::{header, Method};
     use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
     use tower_http::cors::{Any, CorsLayer};
+
+    // Define the binding address for the web service. The address is
+    // different between the operational and development versions.
 
     #[cfg(not(debug_assertions))]
     const BIND_ADDR: SocketAddr =
@@ -60,13 +60,16 @@ pub async fn start_service() {
     .await
     .expect("couldn't load certificate info from PEM file(s)");
 
-    const Q_ENDPOINT: &str = "/acsys";
-    const S_ENDPOINT: &str = "/acsys/s";
+    // Define the URL paths for each of the API services.
 
-    // Build the GraphQL schema. Also, define the GraphQL interface
-    // (DeviceProperty) that we use in the schema.
+    const Q_ACSYS_ENDPOINT: &str = "/acsys";
+    const S_ACSYS_ENDPOINT: &str = "/acsys/s";
+    const Q_BBM_ENDPOINT: &str = "/bbm";
+    const S_BBM_ENDPOINT: &str = "/bbm/s";
 
-    let schema = Schema::build(
+    // Build GraphQL schemas for each of the APIs.
+
+    let acsys_schema = Schema::build(
         Query::default(),
         Mutation::default(),
         Subscription::default(),
@@ -74,13 +77,27 @@ pub async fn start_service() {
     .register_output_type::<devdb::types::DeviceProperty>()
     .finish();
 
-    // Create a handler that provides a GraphQL editor so people don't
-    // have to install their own.
+    let bbm_schema = Schema::build(
+        bbm::BbmQueries::default(),
+        EmptyMutation,
+        EmptySubscription,
+    )
+    .finish();
 
-    let graphiql = axum::response::Html(
+    // Create a handlers that provides GraphQL editors for each, major
+    // API section so people don't have to install their own editors.
+
+    let acsys_graphiql = axum::response::Html(
         async_graphql::http::GraphiQLSource::build()
-            .endpoint(Q_ENDPOINT)
-            .subscription_endpoint(S_ENDPOINT)
+            .endpoint(Q_ACSYS_ENDPOINT)
+            .subscription_endpoint(S_ACSYS_ENDPOINT)
+            .finish(),
+    );
+
+    let bbm_graphiql = axum::response::Html(
+        async_graphql::http::GraphiQLSource::build()
+            .endpoint(Q_BBM_ENDPOINT)
+            .subscription_endpoint(S_BBM_ENDPOINT)
             .finish(),
     );
 
@@ -88,10 +105,16 @@ pub async fn start_service() {
 
     let app = Router::new()
         .route(
-            Q_ENDPOINT,
-            get(graphiql).post_service(GraphQL::new(schema.clone())),
+            Q_ACSYS_ENDPOINT,
+            get(acsys_graphiql)
+                .post_service(GraphQL::new(acsys_schema.clone())),
         )
-        .route_service(S_ENDPOINT, GraphQLSubscription::new(schema))
+        .route_service(S_ACSYS_ENDPOINT, GraphQLSubscription::new(acsys_schema))
+        .route(
+            Q_BBM_ENDPOINT,
+            get(bbm_graphiql).post_service(GraphQL::new(bbm_schema.clone())),
+        )
+        .route_service(S_BBM_ENDPOINT, GraphQLSubscription::new(bbm_schema))
         .layer(
             CorsLayer::new()
                 .allow_methods([Method::OPTIONS, Method::GET, Method::POST])
@@ -103,7 +126,7 @@ pub async fn start_service() {
                 .allow_origin(Any),
         );
 
-    // Start the server on port 8000!
+    // Start the server.
 
     axum_server::tls_rustls::bind_rustls(BIND_ADDR, config)
         .serve(app.into_make_service())
