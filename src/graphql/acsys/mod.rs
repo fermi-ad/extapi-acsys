@@ -15,6 +15,34 @@ use super::types as global;
 
 pub mod types;
 
+fn mk_xlater(
+    names: Vec<String>,
+) -> Box<
+    dyn (FnMut(Result<dpm::proto::Reading, Status>) -> global::DataReply)
+        + Send
+        + Sync,
+> {
+    Box::new(move |e: Result<dpm::proto::Reading, Status>| {
+        let e = e.unwrap();
+
+        if let Some(data) = e.data {
+            global::DataReply {
+                ref_id: e.index as i32,
+                cycle: 1,
+                data: global::DataInfo {
+                    timestamp: std::time::SystemTime::now().into(),
+                    result: data.into(),
+                    di: 0,
+                    name: names[e.index as usize].clone(),
+                },
+            }
+        } else {
+            warn!("returned data: {:?}", &e.data);
+            unreachable!()
+        }
+    })
+}
+
 // Create a zero-sized struct to attach the GraphQL handlers.
 
 #[derive(Default)]
@@ -23,13 +51,16 @@ pub struct ACSysQueries;
 // Define the schema's query entry points. Any methods defined in this
 // section will appear in the schema.
 
+#[doc = "These queries are used to access accelerator data."]
 #[Object]
 impl ACSysQueries {
-    #[doc = "Retrieve the next data point for the specified devices. Depending upon the event in the DRF string, the data may come back immediately or after a delay."]
+    #[doc = "Retrieve the next data point for the specified devices. Depending upon the event in the DRF string, the data may come back immediately or after a delay.
+
+*NOTE: This query hasn't been implemented yet.*"]
     async fn accelerator_data(
         &self,
         #[graphql(
-            desc = "An array of DRF strings. The device readings will be in the same order as specified in this array."
+            desc = "An array of DRF strings. No event field should be specified, since it will be stripped off. The returned values will be in the same order as specified in this array."
         )]
         _drfs: Vec<String>,
     ) -> Vec<global::DataReply> {
@@ -75,34 +106,6 @@ Not all devices can be set -- most are read-only. To be able to set a device, yo
             },
         }
     }
-}
-
-fn mk_xlater(
-    names: Vec<String>,
-) -> Box<
-    dyn (FnMut(Result<dpm::proto::Reading, Status>) -> global::DataReply)
-        + Send
-        + Sync,
-> {
-    Box::new(move |e: Result<dpm::proto::Reading, Status>| {
-        let e = e.unwrap();
-
-        if let Some(data) = e.data {
-            global::DataReply {
-                ref_id: e.index as i32,
-                cycle: 1,
-                data: global::DataInfo {
-                    timestamp: std::time::SystemTime::now().into(),
-                    result: data.into(),
-                    di: 0,
-                    name: names[e.index as usize].clone(),
-                },
-            }
-        } else {
-            warn!("returned data: {:?}", &e.data);
-            unreachable!()
-        }
-    })
 }
 
 type DataStream = Pin<Box<dyn Stream<Item = global::DataReply> + Send>>;
