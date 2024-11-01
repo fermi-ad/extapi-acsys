@@ -179,9 +179,9 @@ impl ACSysSubscriptions {
     ) -> PlotStream {
         let r = x_min.unwrap_or(0)..x_max.unwrap_or(N);
         let step = window_size
-            .filter(|v| *v > 0)
-            .map(|v| r.len() / v)
-            .unwrap_or(0);
+            .filter(|v| *v > 0 && *v <= r.len())
+            .map(|v| (r.len() + v - 1) / v)
+            .unwrap_or(1);
         let r = r.step_by(step);
 
         let reply = drf_list.iter().fold(
