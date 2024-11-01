@@ -165,18 +165,25 @@ impl ACSysSubscriptions {
         #[graphql(
             desc = "Indicates how much data the client is able to display. If the plot generates more points than this window, the service will decimate the data set to fit. The data is first filtered by the `xMin` and `xMax` parameters before being decimated. If this parameter is `null`, all data will be returned."
         )]
-        _window_size: Option<usize>,
+        window_size: Option<usize>,
         #[graphql(desc = "The delay between points in a waveform.")]
         _update_delay: Option<usize>,
         #[graphql(
             desc = "Minimum timestamp. All data before this timestamp will be filtered from the result set."
         )]
-        _x_min: Option<usize>,
+        x_min: Option<usize>,
         #[graphql(
             desc = "Maximum timestamp. All data after this timestamp will be filtered from the result set."
         )]
-        _x_max: Option<usize>,
+        x_max: Option<usize>,
     ) -> PlotStream {
+        let r = x_min.unwrap_or(0)..x_max.unwrap_or(N);
+        let step = window_size
+            .filter(|v| *v > 0 && *v <= r.len())
+            .map(|v| (r.len() + v - 1) / v)
+            .unwrap_or(1);
+        let r = r.step_by(step);
+
         let reply = drf_list.iter().fold(
             types::PlotReplyData {
                 plot_id: "demo".into(),
@@ -187,12 +194,22 @@ impl ACSysSubscriptions {
                     "const" => types::PlotChannelData {
                         channel_units: "A".into(),
                         channel_status: 0,
-                        channel_data: const_data(0..N, 5.0),
+                        channel_data: const_data(&mut r.clone(), 5.0),
+                    },
+                    "ramp" => types::PlotChannelData {
+                        channel_units: "V".into(),
+                        channel_status: 0,
+                        channel_data: ramp_data(&mut r.clone()),
+                    },
+                    "parabola" => types::PlotChannelData {
+                        channel_units: "A".into(),
+                        channel_status: 0,
+                        channel_data: parabola_data(&mut r.clone()),
                     },
                     "sine" => types::PlotChannelData {
                         channel_units: "V".into(),
                         channel_status: 0,
-                        channel_data: sine_data(0..N),
+                        channel_data: sine_data(&mut r.clone()),
                     },
                     _ => types::PlotChannelData {
                         channel_units: "".into(),
@@ -209,20 +226,40 @@ impl ACSysSubscriptions {
 }
 
 fn const_data(
-    rng: std::ops::Range<usize>, y: f64,
+    r: &mut dyn Iterator<Item = usize>, y: f64,
 ) -> Vec<types::PlotDataPoint> {
-    (std::cmp::max(rng.start, 0)..std::cmp::min(rng.end, N))
-        .map(|idx| types::PlotDataPoint { x: idx as f64, y })
+    r.map(|idx| types::PlotDataPoint { x: idx as f64, y })
         .collect()
 }
 
-fn sine_data(rng: std::ops::Range<usize>) -> Vec<types::PlotDataPoint> {
+fn ramp_data(r: &mut dyn Iterator<Item = usize>) -> Vec<types::PlotDataPoint> {
+    r.map(|idx| types::PlotDataPoint {
+        x: idx as f64,
+        y: idx as f64,
+    })
+    .collect()
+}
+
+fn parabola_data(
+    r: &mut dyn Iterator<Item = usize>,
+) -> Vec<types::PlotDataPoint> {
+    r.map(|idx| {
+        let x = idx as f64;
+
+        types::PlotDataPoint {
+            x,
+            y: (x * x) / 125.0 - 4.0 * x + 500.0,
+        }
+    })
+    .collect()
+}
+
+fn sine_data(r: &mut dyn Iterator<Item = usize>) -> Vec<types::PlotDataPoint> {
     let k = (std::f64::consts::PI * 2.0) / (N as f64);
 
-    (std::cmp::max(rng.start, 0)..std::cmp::min(rng.end, N))
-        .map(|idx| types::PlotDataPoint {
-            x: idx as f64,
-            y: f64::sin(k * (idx as f64)),
-        })
-        .collect()
+    r.map(|idx| types::PlotDataPoint {
+        x: idx as f64,
+        y: f64::sin(k * (idx as f64)),
+    })
+    .collect()
 }
