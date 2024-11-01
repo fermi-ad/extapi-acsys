@@ -8,6 +8,8 @@ use tokio::time::Instant;
 use tonic::Status;
 use tracing::{error, info, warn};
 
+const N: usize = 500;
+
 // Pull in global types.
 
 use super::types as global;
@@ -114,6 +116,7 @@ Not all devices can be set -- most are read-only. To be able to set a device, yo
 }
 
 type DataStream = Pin<Box<dyn Stream<Item = global::DataReply> + Send>>;
+type PlotStream = Pin<Box<dyn Stream<Item = types::PlotReplyData> + Send>>;
 
 #[derive(Default)]
 pub struct ACSysSubscriptions;
@@ -151,4 +154,75 @@ impl ACSysSubscriptions {
         info!("{} => rpc: {} μs", hdr, now.elapsed().as_micros());
         stream
     }
+
+    #[doc = ""]
+    async fn start_plot(
+        &self,
+        #[graphql(
+            desc = "List of DRF strings that indicate the devices and return rates in which the client is interested."
+        )]
+        drf_list: Vec<String>,
+        #[graphql(
+            desc = "Indicates how much data the client is able to display. If the plot generates more points than this window, the service will decimate the data set to fit. The data is first filtered by the `xMin` and `xMax` parameters before being decimated. If this parameter is `null`, all data will be returned."
+        )]
+        _window_size: Option<usize>,
+        #[graphql(desc = "The delay between points in a waveform.")]
+        _update_delay: Option<usize>,
+        #[graphql(
+            desc = "Minimum timestamp. All data before this timestamp will be filtered from the result set."
+        )]
+        _x_min: Option<usize>,
+        #[graphql(
+            desc = "Maximum timestamp. All data after this timestamp will be filtered from the result set."
+        )]
+        _x_max: Option<usize>,
+    ) -> PlotStream {
+        let reply = drf_list.iter().fold(
+            types::PlotReplyData {
+                plot_id: "demo".into(),
+                data: vec![],
+            },
+            |mut acc, device| {
+                acc.data.push(match device.as_str() {
+                    "const" => types::PlotChannelData {
+                        channel_units: "A".into(),
+                        channel_status: 0,
+                        channel_data: const_data(0..N, 5.0),
+                    },
+                    "sine" => types::PlotChannelData {
+                        channel_units: "V".into(),
+                        channel_status: 0,
+                        channel_data: sine_data(0..N),
+                    },
+                    _ => types::PlotChannelData {
+                        channel_units: "".into(),
+                        channel_status: -1,
+                        channel_data: vec![],
+                    },
+                });
+                acc
+            },
+        );
+
+        Box::pin(stream::once(async { reply })) as PlotStream
+    }
+}
+
+fn const_data(
+    rng: std::ops::Range<usize>, y: f64,
+) -> Vec<types::PlotDataPoint> {
+    (std::cmp::max(rng.start, 0)..std::cmp::min(rng.end, N))
+        .map(|idx| types::PlotDataPoint { x: idx as f64, y })
+        .collect()
+}
+
+fn sine_data(rng: std::ops::Range<usize>) -> Vec<types::PlotDataPoint> {
+    let k = (std::f64::consts::PI * 2.0) / (N as f64);
+
+    (std::cmp::max(rng.start, 0)..std::cmp::min(rng.end, N))
+        .map(|idx| types::PlotDataPoint {
+            x: idx as f64,
+            y: f64::sin(k * (idx as f64)),
+        })
+        .collect()
 }
