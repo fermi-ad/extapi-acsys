@@ -196,6 +196,16 @@ impl ACSysSubscriptions {
                         channel_status: 0,
                         channel_data: const_data(&mut r.clone(), 5.0),
                     },
+                    "ramp" => types::PlotChannelData {
+                        channel_units: "V".into(),
+                        channel_status: 0,
+                        channel_data: ramp_data(&mut r.clone()),
+                    },
+                    "parabola" => types::PlotChannelData {
+                        channel_units: "A".into(),
+                        channel_status: 0,
+                        channel_data: parabola_data(&mut r.clone()),
+                    },
                     "sine" => types::PlotChannelData {
                         channel_units: "V".into(),
                         channel_status: 0,
@@ -215,9 +225,33 @@ impl ACSysSubscriptions {
     }
 }
 
-fn const_data(r: &mut dyn Iterator<Item = usize>, y: f64) -> Vec<types::PlotDataPoint> {
+fn const_data(
+    r: &mut dyn Iterator<Item = usize>, y: f64,
+) -> Vec<types::PlotDataPoint> {
     r.map(|idx| types::PlotDataPoint { x: idx as f64, y })
         .collect()
+}
+
+fn ramp_data(r: &mut dyn Iterator<Item = usize>) -> Vec<types::PlotDataPoint> {
+    r.map(|idx| types::PlotDataPoint {
+        x: idx as f64,
+        y: idx as f64,
+    })
+    .collect()
+}
+
+fn parabola_data(
+    r: &mut dyn Iterator<Item = usize>,
+) -> Vec<types::PlotDataPoint> {
+    r.map(|idx| {
+        let x = idx as f64;
+
+        types::PlotDataPoint {
+            x,
+            y: (x * x) / 125.0 - 4.0 * x + 500.0,
+        }
+    })
+    .collect()
 }
 
 fn sine_data(r: &mut dyn Iterator<Item = usize>) -> Vec<types::PlotDataPoint> {
