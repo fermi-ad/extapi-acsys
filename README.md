@@ -1,6 +1,6 @@
 # `extapi-acsys`
 
-Provides the public API to the Fermilab control system. This service exposes a GraphQL API that clients may use to retrieve control system data and, in some cases, make changes to the control system. This service is currently running on *acsys-proxy.fnal.gov* on port 8000.
+Provides public APIs to the Fermilab control system. This service exposes several GraphQL endpoints for various, logical APIs that clients may use to retrieve control system data and, in some cases, make changes to the control system. This service is currently running on *acsys-proxy.fnal.gov* on port 8000 with the development instance on port 8001.
 
 The middle layer of the control system uses gRPCs for communications. The GraphQL resolvers of this service use various gRPC services to obtain the information that is returned. This uses the `async-graphql` and `warp` crates to provide GraphQL over http support. The resolvers use the `tonic` crate for gRPC client support.
 
