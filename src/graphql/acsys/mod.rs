@@ -191,22 +191,22 @@ impl ACSysSubscriptions {
             },
             |mut acc, device| {
                 acc.data.push(match device.as_str() {
-                    "const" => types::PlotChannelData {
+                    "API TEST CONST" => types::PlotChannelData {
                         channel_units: "A".into(),
                         channel_status: 0,
                         channel_data: const_data(&mut r.clone(), 5.0),
                     },
-                    "ramp" => types::PlotChannelData {
+                    "API TEST RAMP" => types::PlotChannelData {
                         channel_units: "V".into(),
                         channel_status: 0,
                         channel_data: ramp_data(&mut r.clone()),
                     },
-                    "parabola" => types::PlotChannelData {
+                    "API TEST PARABOLA" => types::PlotChannelData {
                         channel_units: "A".into(),
                         channel_status: 0,
                         channel_data: parabola_data(&mut r.clone()),
                     },
-                    "sine" => types::PlotChannelData {
+                    "API TEST SINE" => types::PlotChannelData {
                         channel_units: "V".into(),
                         channel_status: 0,
                         channel_data: sine_data(&mut r.clone()),
