@@ -121,11 +121,11 @@ use crate::g_rpc::dpm::proto;
 use tracing::warn;
 
 // Defining this trait allows us to convert a `DevValue` into a
-// `proto::Data` type by using the `.into()` method.
+// `proto::Data` type.
 
-impl Into<proto::Data> for DevValue {
-    fn into(self) -> proto::Data {
-        match self {
+impl From<DevValue> for proto::Data {
+    fn from(val: DevValue) -> Self {
+        match val {
             DevValue {
                 int_val: Some(v),
                 scalar_val: _,
@@ -205,11 +205,11 @@ impl Into<proto::Data> for DevValue {
 }
 
 // Defining this trait allows us to convert a `proto::Data` type into a
-// `DataType` by using the `.into()` method.
+// `DataType`.
 
-impl Into<DataType> for proto::Data {
-    fn into(self) -> DataType {
-        match self.value {
+impl From<proto::Data> for DataType {
+    fn from(val: proto::Data) -> Self {
+        match val.value {
             Some(proto::data::Value::Scalar(v)) => {
                 DataType::Scalar(Scalar { scalar_value: v })
             }
