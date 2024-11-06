@@ -177,7 +177,7 @@ impl ACSysSubscriptions {
         )]
         x_max: Option<usize>,
     ) -> PlotStream {
-        let r = x_min.unwrap_or(0)..x_max.unwrap_or(N);
+        let r = x_min.unwrap_or(0)..(x_max.map(|v| v + 1).unwrap_or(N));
         let step = window_size
             .filter(|v| *v > 0 && *v <= r.len())
             .map(|v| (r.len() + v - 1) / v)
