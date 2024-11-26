@@ -57,17 +57,23 @@ pub struct ACSysQueries;
 #[doc = "These queries are used to access accelerator data."]
 #[Object]
 impl ACSysQueries {
-    #[doc = "Retrieve the next data point for the specified devices. Depending upon the event in the DRF string, the data may come back immediately or after a delay.
+    #[doc = "Retrieve the next data point for the specified devices. \
+	     Depending upon the event in the DRF string, the data may \
+	     come back immediately or after a delay.
 
 *NOTE: This query hasn't been implemented yet.*"]
     async fn accelerator_data(
         &self,
         #[graphql(
-            desc = "An array of device names. The returned values will be in the same order as specified in this array."
+            desc = "An array of device names. The returned values will be \
+		    in the same order as specified in this array."
         )]
         _device_list: Vec<String>,
         #[graphql(
-            desc = "Returns device values that are equal to or greater than this timestamp. If this parameter is `null`, then the current, live value is returned. NOTE: THIS FEATURE HAS NOT BEEN ADDED YET."
+            desc = "Returns device values that are equal to or greater than \
+		    this timestamp. If this parameter is `null`, then the \
+		    current, live value is returned. NOTE: THIS FEATURE HAS \
+		    NOT BEEN ADDED YET."
         )]
         _when: Option<DateTime<Utc>>,
     ) -> Vec<global::DataReply> {
@@ -82,11 +88,16 @@ pub struct ACSysMutations;
 impl ACSysMutations {
     #[doc = "Sends a setting to a device.
 
-Not all devices can be set -- most are read-only. To be able to set a device, your SSO account must be associated with every device you may want to set."]
+Not all devices can be set -- most are read-only. To be able to set a \
+device, your SSO account must be associated with every device you may \
+want to set."]
     async fn set_device(
         &self,
         #[graphql(
-            desc = "The device to be set. This parameter should be expressed as a DRF entity. For instance, for ACNET devices, the device name should be appended with `.SETTING` or `.CONTROL`."
+            desc = "The device to be set. This parameter should be expressed \
+		    as a DRF entity. For instance, for ACNET devices, the \
+		    device name should be appended with `.SETTING` or \
+		    `.CONTROL`."
         )]
         device: String,
         #[graphql(desc = "The value of the setting.")] value: global::DevValue,
@@ -127,15 +138,26 @@ impl ACSysSubscriptions {
     async fn accelerator_data(
         &self,
         #[graphql(
-            desc = "A array of DRF strings. Each entry of the returned stream will have a index to associate the reading with the DRF that started it."
+            desc = "A array of DRF strings. Each entry of the returned stream \
+		    will have a index to associate the reading with the DRF \
+		    that started it."
         )]
         drfs: Vec<String>,
         #[graphql(
-            desc = "The stream will return device data starting at this timestamp. If the control system cannot find data at the actual timestamp, it will return the oldest data it has that's greater then the timestamp. If this parameter is `null`, it will simply return live data. NOTE: THIS FEATURE HAS NOT BEEN ADDED YET."
+            desc = "The stream will return device data starting at this \
+		    timestamp. If the control system cannot find data at \
+		    the actual timestamp, it will return the oldest data \
+		    it has that's greater then the timestamp. If this \
+		    parameter is `null`, it will simply return live data. \
+		    NOTE: THIS FEATURE HAS NOT BEEN ADDED YET."
         )]
         _start_time: Option<DateTime<Utc>>,
         #[graphql(
-            desc = "The stream will close once the device data's timestamp reaches this value. This parameter must be greater than the `startTime` parameter. If this parameter is `null`, the stream will return live data until the client closes it. NOTE: THIS FEATURE HAS NOT BEEN ADDED YET."
+            desc = "The stream will close once the device data's timestamp \
+		    reaches this value. This parameter must be greater than \
+		    the `startTime` parameter. If this parameter is `null`, \
+		    the stream will return live data until the client closes \
+		    it. NOTE: THIS FEATURE HAS NOT BEEN ADDED YET."
         )]
         _end_time: Option<DateTime<Utc>>,
     ) -> DataStream {
@@ -159,21 +181,31 @@ impl ACSysSubscriptions {
     async fn start_plot(
         &self,
         #[graphql(
-            desc = "List of DRF strings that indicate the devices and return rates in which the client is interested."
+            desc = "List of DRF strings that indicate the devices and return \
+		    rates in which the client is interested."
         )]
         drf_list: Vec<String>,
         #[graphql(
-            desc = "Indicates how much data the client is able to display. If the plot generates more points than this window, the service will decimate the data set to fit. The data is first filtered by the `xMin` and `xMax` parameters before being decimated. If this parameter is `null`, all data will be returned."
+            desc = "Indicates how much data the client is able to display. \
+		    If the plot generates more points than this window, the \
+		    service will decimate the data set to fit. The data is \
+		    first filtered by the `xMin` and `xMax` parameters before \
+		    being decimated. If this parameter is `null`, all data \
+		    will be returned."
         )]
         window_size: Option<usize>,
-        #[graphql(desc = "The delay between points in a waveform.")]
-        _update_delay: Option<usize>,
         #[graphql(
-            desc = "Minimum timestamp. All data before this timestamp will be filtered from the result set."
+            desc = "The delay, in milliseconds, between points in a waveform."
+        )]
+        update_delay: Option<usize>,
+        #[graphql(
+            desc = "Minimum timestamp. All data before this timestamp will be \
+		    filtered from the result set."
         )]
         x_min: Option<usize>,
         #[graphql(
-            desc = "Maximum timestamp. All data after this timestamp will be filtered from the result set."
+            desc = "Maximum timestamp. All data after this timestamp will be \
+		    filtered from the result set."
         )]
         x_max: Option<usize>,
     ) -> PlotStream {
