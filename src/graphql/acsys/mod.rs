@@ -126,6 +126,13 @@ want to set."]
     }
 }
 
+// Returns the portion of the DRF string that precedes any event
+// specification.
+
+fn strip_event(drf: &str) -> &str {
+    &drf[0..drf.find('@').unwrap_or_else(|| drf.len())]
+}
+
 type DataStream = Pin<Box<dyn Stream<Item = global::DataReply> + Send>>;
 type PlotStream = Pin<Box<dyn Stream<Item = types::PlotReplyData> + Send>>;
 
@@ -294,4 +301,15 @@ fn sine_data(r: &mut dyn Iterator<Item = usize>) -> Vec<types::PlotDataPoint> {
         y: f64::sin(k * (idx as f64)),
     })
     .collect()
+}
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn test_removing_event() {
+	use super::strip_event;
+
+	assert_eq!(strip_event("abc"), "abc");
+	assert_eq!(strip_event("abc@e,23"), "abc");
+    }
 }
