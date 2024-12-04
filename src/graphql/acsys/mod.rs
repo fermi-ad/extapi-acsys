@@ -18,6 +18,8 @@ use super::types as global;
 
 pub mod types;
 
+use crate::g_rpc::dpm::Connection;
+
 fn mk_xlater(
     names: Vec<String>,
 ) -> Box<
@@ -92,7 +94,7 @@ Not all devices can be set -- most are read-only. To be able to set a \
 device, your SSO account must be associated with every device you may \
 want to set."]
     async fn set_device(
-        &self,
+        &self, ctxt: &Context<'_>,
         #[graphql(
             desc = "The device to be set. This parameter should be expressed \
 		    as a DRF entity. For instance, for ACNET devices, the \
@@ -103,8 +105,13 @@ want to set."]
         #[graphql(desc = "The value of the setting.")] value: global::DevValue,
     ) -> global::StatusReply {
         let now = Instant::now();
-        let result =
-            dpm::set_device("DEADBEEF", device.clone(), value.into()).await;
+        let result = dpm::set_device(
+            ctxt.data::<Connection>().unwrap(),
+            "DEADBEEF",
+            device.clone(),
+            value.into(),
+        )
+        .await;
 
         info!(
             "setDevice({}) => rpc: {} μs",
@@ -140,10 +147,10 @@ type PlotStream = Pin<Box<dyn Stream<Item = types::PlotReplyData> + Send>>;
 pub struct ACSysSubscriptions;
 
 #[Subscription]
-impl ACSysSubscriptions {
+impl<'ctx> ACSysSubscriptions {
     #[doc = ""]
     async fn accelerator_data(
-        &self,
+        &self, ctxt: &Context<'ctx>,
         #[graphql(
             desc = "A array of DRF strings. Each entry of the returned stream \
 		    will have a index to associate the reading with the DRF \
@@ -170,7 +177,13 @@ impl ACSysSubscriptions {
     ) -> DataStream {
         let hdr = format!("monitoring({:?})", &drfs);
         let now = Instant::now();
-        let stream = match dpm::acquire_devices("", drfs.clone()).await {
+        let stream = match dpm::acquire_devices(
+            ctxt.data::<Connection>().unwrap(),
+            "",
+            drfs.clone(),
+        )
+        .await
+        {
             Ok(s) => {
                 Box::pin(s.into_inner().map(mk_xlater(drfs))) as DataStream
             }

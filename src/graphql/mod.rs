@@ -2,6 +2,8 @@ use async_graphql::*;
 use async_graphql_axum::{GraphQL, GraphQLSubscription};
 use axum::{response::Html, routing::get, Router};
 
+use crate::g_rpc::dpm::build_connection;
+
 mod acsys;
 mod bbm;
 mod clock;
@@ -94,6 +96,7 @@ pub async fn start_service() {
         Mutation::default(),
         Subscription::default(),
     )
+    .data(build_connection().await.unwrap())
     .finish();
 
     let bbm_schema =
