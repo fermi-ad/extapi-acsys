@@ -1,7 +1,6 @@
 use proto::{
     dpm_client::DpmClient, AcquisitionList, Setting, SettingList, StatusList,
 };
-use tokio::sync::Mutex;
 use tonic::transport::{Channel, Error};
 use tracing::info;
 
@@ -9,15 +8,15 @@ pub mod proto {
     tonic::include_proto!("dpm");
 }
 
-pub struct Connection(Mutex<DpmClient<Channel>>);
+pub struct Connection(DpmClient<Channel>);
 
 // Builds a sharable connection to the DPM pool. All instances will use the
 // same connection.
 
 pub async fn build_connection() -> Result<Connection, Error> {
-    Ok(Connection(Mutex::new(
+    Ok(Connection(
         DpmClient::connect("http://dce09.fnal.gov:50051/").await?,
-    )))
+    ))
 }
 
 pub async fn acquire_devices(
@@ -27,9 +26,8 @@ pub async fn acquire_devices(
         session_id: session_id.to_owned(),
         req: devices,
     };
-    let mut client = conn.0.lock().await;
 
-    client.start_acquisition(req).await
+    conn.0.clone().start_acquisition(req).await
 }
 
 // This function wraps the logic needed to make the `ApplySettings()`
@@ -52,8 +50,8 @@ pub async fn set_device(
         event: "".to_owned(),
     };
 
-    let mut client = conn.0.lock().await;
-    let StatusList { status } = client.apply_settings(req).await?.into_inner();
+    let StatusList { status } =
+        conn.0.clone().apply_settings(req).await?.into_inner();
 
     if status.len() == 1 {
         Ok(status[0])
