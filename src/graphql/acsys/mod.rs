@@ -399,7 +399,7 @@ will return waveforms until the client cancels the subscription."
                     }
                 });
 
-                if let Some(n) = n_acquisitions.map(|v| v.min(1)) {
+                if let Some(n) = n_acquisitions.map(|v| v.max(1)) {
                     Box::pin(s.take(n)) as PlotStream
                 } else {
                     Box::pin(s) as PlotStream
