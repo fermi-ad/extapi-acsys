@@ -298,9 +298,23 @@ impl<'ctx> ACSysSubscriptions {
         )]
         window_size: Option<usize>,
         #[graphql(
-            desc = "The delay, in milliseconds, between points in a waveform."
+            desc = "The number of waveforms to return. If omitted, the service \
+will return waveforms until the client cancels the subscription."
+        )]
+        n_acquisitions: Option<usize>,
+        #[graphql(
+            desc = "If `triggerEvent` is null, this parameter specifies the \
+delay, in milliseconds, between points in a waveform. If a trigger event is \
+specified, then this specifies the delay after the event when the signal \
+should be sampled. If this parameter is null, then there will be no delay \
+after a trigger event or a 1 Hz sample rate will be used."
         )]
         update_delay: Option<usize>,
+        #[graphql(
+            desc = "The number of waveforms to return. If omitted, the service \
+will return waveforms until the client cancels the subscription."
+        )]
+        trigger_event: Option<u8>,
         #[graphql(
             desc = "Minimum timestamp. All data before this timestamp will be \
 		    filtered from the result set."
