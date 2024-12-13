@@ -171,8 +171,8 @@ fn add_event(
 ) -> impl Fn(&str) -> String {
     let event = match (delay, event) {
         (_, None) => format!("p,{}", delay.unwrap_or(1000)),
-        (None, Some(e)) => format!("e,{:X}", e),
-        (Some(d), Some(e)) => format!("e,{:X},{}", e, d),
+        (None, Some(e)) => format!("e,{:X},e", e),
+        (Some(d), Some(e)) => format!("e,{:X},e,{}", e, d),
     };
 
     // If we're using the faked sources, we still need to reserve the slot
