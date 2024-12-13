@@ -10,6 +10,10 @@ pub mod proto {
 
 pub struct Connection(DpmClient<Channel>);
 
+type TonicStreamResult<T> =
+    Result<tonic::Response<tonic::Streaming<T>>, tonic::Status>;
+type TonicQueryResult<T> = Result<T, tonic::Status>;
+
 // Builds a sharable connection to the DPM pool. All instances will use the
 // same connection.
 
@@ -21,7 +25,7 @@ pub async fn build_connection() -> Result<Connection, Error> {
 
 pub async fn acquire_devices(
     conn: &Connection, session_id: &str, devices: Vec<String>,
-) -> Result<tonic::Response<tonic::Streaming<proto::Reading>>, tonic::Status> {
+) -> TonicStreamResult<proto::Reading> {
     let req = AcquisitionList {
         session_id: session_id.to_owned(),
         req: devices,
@@ -35,7 +39,7 @@ pub async fn acquire_devices(
 
 pub async fn set_device(
     conn: &Connection, session_id: &str, device: String, value: proto::Data,
-) -> Result<i32, tonic::Status> {
+) -> TonicQueryResult<i32> {
     info!("setting device {} to {:?}", &device, &value);
 
     // Build the setting request. This function only sets one device, so the
