@@ -166,12 +166,24 @@ const SINE_WAVEFORM: &str = "API TEST SINE";
 // delay indicates the number of milliseconds. If the delay is None, then
 // the delay is 1 second.
 
-fn add_periodic(delay: Option<usize>) -> impl Fn(&str) -> String {
+fn add_event(
+    delay: Option<usize>, event: Option<u8>,
+) -> impl Fn(&str) -> String {
+    let event = match (delay, event) {
+        (_, None) => format!("p,{}", delay.unwrap_or(1000)),
+        (None, Some(e)) => format!("e,{:X}", e),
+        (Some(d), Some(e)) => format!("e,{:X},{}", e, d),
+    };
+
+    // If we're using the faked sources, we still need to reserve the slot
+    // in the array of devices. So we insert a DRF string that uses the
+    // "never" event.
+
     move |device| match device {
         CONST_WAVEFORM | RAMP_WAVEFORM | PARABOLA_WAVEFORM | SINE_WAVEFORM => {
             NULL_WAVEFORM.into()
         }
-        _ => format!("{device}@p,{}", delay.unwrap_or(1000)),
+        _ => format!("{device}@{}", event),
     }
 }
 
@@ -334,7 +346,7 @@ will return waveforms until the client cancels the subscription."
         let drfs: Vec<_> = drf_list
             .iter()
             .map(|v| strip_event(&v))
-            .map(add_periodic(update_delay))
+            .map(add_event(update_delay, trigger_event))
             .collect();
 
         let r = x_min.unwrap_or(0)..(x_max.map(|v| v + 1).unwrap_or(N));
@@ -455,23 +467,57 @@ mod test {
 
     #[test]
     fn test_add_periodic() {
-        use super::add_periodic;
+        use super::add_event;
         use super::{
             CONST_WAVEFORM, NULL_WAVEFORM, PARABOLA_WAVEFORM, RAMP_WAVEFORM,
             SINE_WAVEFORM,
         };
 
-        assert_eq!(add_periodic(None)(CONST_WAVEFORM), NULL_WAVEFORM);
-        assert_eq!(add_periodic(None)(RAMP_WAVEFORM), NULL_WAVEFORM);
-        assert_eq!(add_periodic(None)(PARABOLA_WAVEFORM), NULL_WAVEFORM);
-        assert_eq!(add_periodic(None)(SINE_WAVEFORM), NULL_WAVEFORM);
+        assert_eq!(add_event(None, None)(CONST_WAVEFORM), NULL_WAVEFORM);
+        assert_eq!(add_event(None, None)(RAMP_WAVEFORM), NULL_WAVEFORM);
+        assert_eq!(add_event(None, None)(PARABOLA_WAVEFORM), NULL_WAVEFORM);
+        assert_eq!(add_event(None, None)(SINE_WAVEFORM), NULL_WAVEFORM);
 
-        assert_eq!(add_periodic(Some(1234))(CONST_WAVEFORM), NULL_WAVEFORM);
-        assert_eq!(add_periodic(Some(1234))(RAMP_WAVEFORM), NULL_WAVEFORM);
-        assert_eq!(add_periodic(Some(1234))(PARABOLA_WAVEFORM), NULL_WAVEFORM);
-        assert_eq!(add_periodic(Some(1234))(SINE_WAVEFORM), NULL_WAVEFORM);
+        assert_eq!(add_event(Some(1234), None)(CONST_WAVEFORM), NULL_WAVEFORM);
+        assert_eq!(add_event(Some(1234), None)(RAMP_WAVEFORM), NULL_WAVEFORM);
+        assert_eq!(
+            add_event(Some(1234), None)(PARABOLA_WAVEFORM),
+            NULL_WAVEFORM
+        );
+        assert_eq!(add_event(Some(1234), None)(SINE_WAVEFORM), NULL_WAVEFORM);
 
-        assert_eq!(add_periodic(None)("M:OUTTMP"), "M:OUTTMP@p,1000");
-        assert_eq!(add_periodic(Some(1234))("M:OUTTMP"), "M:OUTTMP@p,1234");
+        assert_eq!(add_event(None, None)("M:OUTTMP"), "M:OUTTMP@p,1000");
+        assert_eq!(add_event(Some(1234), None)("M:OUTTMP"), "M:OUTTMP@p,1234");
+
+        assert_eq!(add_event(None, Some(0x2))(CONST_WAVEFORM), NULL_WAVEFORM);
+        assert_eq!(add_event(None, Some(0xff))(RAMP_WAVEFORM), NULL_WAVEFORM);
+        assert_eq!(
+            add_event(None, Some(0x0))(PARABOLA_WAVEFORM),
+            NULL_WAVEFORM
+        );
+        assert_eq!(add_event(None, Some(0x10))(SINE_WAVEFORM), NULL_WAVEFORM);
+
+        assert_eq!(
+            add_event(Some(1234), Some(0x02))(CONST_WAVEFORM),
+            NULL_WAVEFORM
+        );
+        assert_eq!(
+            add_event(Some(1234), Some(0x8f))(RAMP_WAVEFORM),
+            NULL_WAVEFORM
+        );
+        assert_eq!(
+            add_event(Some(1234), Some(0x29))(PARABOLA_WAVEFORM),
+            NULL_WAVEFORM
+        );
+        assert_eq!(
+            add_event(Some(1234), Some(0x30))(SINE_WAVEFORM),
+            NULL_WAVEFORM
+        );
+
+        assert_eq!(add_event(None, Some(0x02))("M:OUTTMP"), "M:OUTTMP@e,2");
+        assert_eq!(
+            add_event(Some(1234), Some(0x8f))("M:OUTTMP"),
+            "M:OUTTMP@e,8F,1234"
+        );
     }
 }
