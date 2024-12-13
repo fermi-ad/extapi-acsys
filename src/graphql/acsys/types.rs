@@ -18,7 +18,9 @@ pub struct PlotChannelData {
 /// Contains plot data for a given plot request.
 #[derive(SimpleObject)]
 pub struct PlotReplyData {
-    /// A unique identifier for the plot request. This identifier will be cached for a limited time. Other clients can specify it to re-use the configuration.
+    #[doc = "A unique identifier for the plot request. This identifier will \
+	     be cached for a limited time. Other clients can specify it to \
+	     re-use the configuration."]
     pub plot_id: String,
 
     pub data: Vec<PlotChannelData>,
