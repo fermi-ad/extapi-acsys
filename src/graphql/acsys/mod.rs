@@ -258,9 +258,11 @@ impl<'ctx> ACSysSubscriptions {
         )]
         _end_time: Option<DateTime<Utc>>,
     ) -> DataStream {
-        let hdr = format!("monitoring({:?})", &drfs);
         let now = Instant::now();
-        let stream = match dpm::acquire_devices(
+
+        info!("monitoring {:?}", &drfs);
+
+        match dpm::acquire_devices(
             ctxt.data::<Connection>().unwrap(),
             "",
             drfs.clone(),
@@ -268,16 +270,14 @@ impl<'ctx> ACSysSubscriptions {
         .await
         {
             Ok(s) => {
+                info!("rpc: {} μs", now.elapsed().as_micros());
                 Box::pin(s.into_inner().map(mk_xlater(drfs))) as DataStream
             }
             Err(e) => {
                 error!("{}", &e);
                 Box::pin(stream::empty()) as DataStream
             }
-        };
-
-        info!("{} => rpc: {} μs", hdr, now.elapsed().as_micros());
-        stream
+        }
     }
 
     #[doc = ""]
