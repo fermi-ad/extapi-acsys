@@ -243,7 +243,10 @@ pub struct ACSysSubscriptions;
 
 #[Subscription]
 impl<'ctx> ACSysSubscriptions {
-    #[doc = ""]
+    #[doc = "Retrieve data from accelerator devices.
+
+Accepts a list of DRF strings and streams the resulting data as it gets \
+generated."]
     async fn accelerator_data(
         &self, ctxt: &Context<'ctx>,
         #[graphql(
@@ -292,7 +295,12 @@ impl<'ctx> ACSysSubscriptions {
         }
     }
 
-    #[doc = ""]
+    #[doc = "Retrieve correlated plot data.
+
+This query sets up a request which returns a stream of data, presumably used \
+for plotting. Unlike the `acceleratorData` query, this stream returns data \
+for all the devices in one reply. Since the data is correlated, all the \
+devices are collected on the same event."]
     async fn start_plot(
         &self, ctxt: &Context<'ctx>,
         #[graphql(
