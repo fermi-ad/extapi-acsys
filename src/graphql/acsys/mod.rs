@@ -514,10 +514,10 @@ mod test {
             NULL_WAVEFORM
         );
 
-        assert_eq!(add_event(None, Some(0x02))("M:OUTTMP"), "M:OUTTMP@e,2");
+        assert_eq!(add_event(None, Some(0x02))("M:OUTTMP"), "M:OUTTMP@e,2,e");
         assert_eq!(
             add_event(Some(1234), Some(0x8f))("M:OUTTMP"),
-            "M:OUTTMP@e,8F,1234"
+            "M:OUTTMP@e,8F,e,1234"
         );
     }
 }
