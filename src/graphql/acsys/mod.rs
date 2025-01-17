@@ -4,8 +4,9 @@ use async_graphql::*;
 use chrono::{DateTime, Utc};
 use futures::future;
 use futures_util::{stream, Stream, StreamExt};
-use std::pin::Pin;
-use tokio::time::Instant;
+use std::collections::HashMap;
+use std::{pin::Pin, sync::Arc};
+use tokio::{sync::Mutex, time::Instant};
 use tonic::Status;
 use tracing::{error, info, warn};
 
@@ -20,6 +21,38 @@ use super::types as global;
 pub mod types;
 
 use crate::g_rpc::dpm::Connection;
+
+pub struct PlotConfigDb(
+    Arc<Mutex<HashMap<usize, types::PlotConfigurationSnapshot>>>,
+);
+
+impl PlotConfigDb {
+    pub fn new() -> Self {
+        PlotConfigDb(Arc::new(Mutex::new(HashMap::new())))
+    }
+
+    pub async fn find(
+        &self, id: Option<usize>,
+    ) -> Vec<types::PlotConfigurationSnapshot> {
+        let guard = self.0.lock().await;
+
+        if let Some(id) = id {
+            guard.get(&id).iter().map(|v| (*v).clone()).collect()
+        } else {
+            guard.values().cloned().collect()
+        }
+    }
+
+    pub async fn update(&self, cfg: types::PlotConfigurationSnapshot) {
+        let mut guard = self.0.lock().await;
+        let _ = guard.insert(cfg.configuration_id, cfg);
+    }
+
+    pub async fn remove(&self, id: &usize) {
+        let mut guard = self.0.lock().await;
+        let _ = guard.remove(id);
+    }
+}
 
 fn mk_xlater(
     names: Vec<String>,
@@ -97,6 +130,14 @@ impl ACSysQueries {
     ) -> Vec<global::DataReply> {
         vec![]
     }
+
+    async fn plot_configuration(
+        &self, ctxt: &Context<'_>, configuration_id: Option<usize>,
+    ) -> Vec<types::PlotConfigurationSnapshot> {
+        ctxt.data_unchecked::<PlotConfigDb>()
+            .find(configuration_id)
+            .await
+    }
 }
 
 #[derive(Default)]
@@ -146,6 +187,27 @@ want to set."]
                 }
             },
         }
+    }
+
+    async fn update_plot_configuration(
+        &self, ctxt: &Context<'_>, config: types::PlotConfigurationSnapshot,
+    ) -> global::StatusReply {
+        info!(
+            "updating plot config -- id: {}, name: {}",
+            config.configuration_id, &config.configuration_name
+        );
+        ctxt.data_unchecked::<PlotConfigDb>().update(config).await;
+        global::StatusReply { status: 0 }
+    }
+
+    async fn delete_plot_configuration(
+        &self, ctxt: &Context<'_>, configuration_id: usize,
+    ) -> global::StatusReply {
+        info!("deleting plot config -- id: {}", configuration_id);
+        ctxt.data_unchecked::<PlotConfigDb>()
+            .remove(&configuration_id)
+            .await;
+        global::StatusReply { status: 0 }
     }
 }
 
@@ -318,46 +380,50 @@ devices are collected on the same event."]
         )]
         window_size: Option<usize>,
         #[graphql(
-            desc = "The number of waveforms to return. If omitted, the service \
-will return waveforms until the client cancels the subscription."
+            desc = "The number of waveforms to return. If omitted, the \
+		    service will return waveforms until the client cancels \
+		    the subscription."
         )]
         n_acquisitions: Option<usize>,
         #[graphql(
             desc = "If `triggerEvent` is null, this parameter specifies the \
-delay, in milliseconds, between points in a waveform. If a trigger event is \
-specified, then this specifies the delay after the event when the signal \
-should be sampled. If this parameter is null, then there will be no delay \
-after a trigger event or a 1 Hz sample rate will be used."
+		    delay, in milliseconds, between points in a waveform. If \
+		    a trigger event is specified, then this specifies the \
+		    delay after the event when the signal should be sampled. \
+		    If this parameter is null, then there will be no delay \
+		    after a trigger event or a 1 Hz sample rate will be used."
         )]
         update_delay: Option<usize>,
         #[graphql(
-            desc = "The number of waveforms to return. If omitted, the service \
-will return waveforms until the client cancels the subscription."
+            desc = "The number of waveforms to return. If omitted, the \
+		    service will return waveforms until the client cancels \
+		    the subscription."
         )]
         trigger_event: Option<u8>,
         #[graphql(
             desc = "Minimum timestamp. All data before this timestamp will be \
 		    filtered from the result set."
         )]
-        x_min: Option<usize>,
+        x_min: Option<f64>,
         #[graphql(
             desc = "Maximum timestamp. All data after this timestamp will be \
 		    filtered from the result set."
         )]
-        x_max: Option<usize>,
+        x_max: Option<f64>,
     ) -> PlotStream {
-        info!("incoming plot with delay {:?}", &update_delay);
+        info!("incoming plot with delay {:?}", update_delay);
 
         // Add the periodic rate to each of the device names after stripping
         // any event specifier.
 
         let drfs: Vec<_> = drf_list
             .iter()
-            .map(|v| strip_event(&v))
+            .map(|v| strip_event(v))
             .map(add_event(update_delay, trigger_event))
             .collect();
 
-        let r = x_min.unwrap_or(0)..(x_max.map(|v| v + 1).unwrap_or(N));
+        let r = x_min.map(|v| v as usize).unwrap_or(0)
+            ..(x_max.map(|v| (v as usize) + 1).unwrap_or(N));
         let mut reply = types::PlotReplyData {
             plot_id: "demo".into(),
             data: drfs
