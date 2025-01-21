@@ -39,7 +39,7 @@ pub struct ChannelSettingSnapshot {
 #[graphql(input_name = "PlotConfigurationSnapshotIn")]
 pub struct PlotConfigurationSnapshot {
     #[doc = "Unique identifier for the plot configuration"]
-    pub configuration_id: usize,
+    pub configuration_id: Option<usize>,
     pub configuration_name: String,
     pub channels: Vec<ChannelSettingSnapshot>,
     pub x_min: Option<f64>,

@@ -43,9 +43,44 @@ impl PlotConfigDb {
         }
     }
 
-    pub async fn update(&self, cfg: types::PlotConfigurationSnapshot) {
+    pub async fn update(&self, cfg: types::PlotConfigurationSnapshot) -> Option<usize> {
         let mut guard = self.0.lock().await;
-        let _ = guard.insert(cfg.configuration_id, cfg);
+
+	if let Some(id) = cfg.configuration_id {
+	    // If an ID is specified, we need to make sure the name
+	    // isn't associated with another ID.
+
+	    for (k, v) in guard.iter() {
+		if *k != id && v.configuration_name == cfg.configuration_name {
+		    return None;
+		}
+	    }
+
+	    // Save the ID and then insert the (possibly updated) record in
+	    // the DB.
+
+	    let result = cfg.configuration_id;
+	    let _ = guard.insert(id, cfg);
+
+	    result
+	} else {
+	    // This is to be a new entry. Make sure the name isn't
+	    // already used.
+
+	    for v in guard.values() {
+		if v.configuration_name == cfg.configuration_name {
+		    return None;
+		}
+	    }
+
+	    // Copy the record, but insert the new ID.
+
+	    let id = guard.keys().reduce(std::cmp::max).unwrap_or(&0usize) + 1;
+	    let cfg = types::PlotConfigurationSnapshot { configuration_id: Some(id), .. cfg};
+	    let _ = guard.insert(id, cfg);
+
+	    Some(id)
+	}
     }
 
     pub async fn remove(&self, id: &usize) {
@@ -191,13 +226,12 @@ want to set."]
 
     async fn update_plot_configuration(
         &self, ctxt: &Context<'_>, config: types::PlotConfigurationSnapshot,
-    ) -> global::StatusReply {
+    ) -> Option<usize> {
         info!(
-            "updating plot config -- id: {}, name: {}",
+            "updating plot config -- id: {:?}, name: {}",
             config.configuration_id, &config.configuration_name
         );
-        ctxt.data_unchecked::<PlotConfigDb>().update(config).await;
-        global::StatusReply { status: 0 }
+        ctxt.data_unchecked::<PlotConfigDb>().update(config).await
     }
 
     async fn delete_plot_configuration(
