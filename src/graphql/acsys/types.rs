@@ -32,7 +32,7 @@ pub struct PlotReplyData {
 pub struct ChannelSettingSnapshot {
     pub device: String,
     pub line_color: Option<u32>,
-    pub marker_index: Option<String>,
+    pub marker_index: Option<u32>,
 }
 
 #[derive(InputObject, SimpleObject, Debug, Clone)]
