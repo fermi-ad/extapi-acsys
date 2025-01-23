@@ -43,44 +43,49 @@ impl PlotConfigDb {
         }
     }
 
-    pub async fn update(&self, cfg: types::PlotConfigurationSnapshot) -> Option<usize> {
+    pub async fn update(
+        &self, cfg: types::PlotConfigurationSnapshot,
+    ) -> Option<usize> {
         let mut guard = self.0.lock().await;
 
-	if let Some(id) = cfg.configuration_id {
-	    // If an ID is specified, we need to make sure the name
-	    // isn't associated with another ID.
+        if let Some(id) = cfg.configuration_id {
+            // If an ID is specified, we need to make sure the name
+            // isn't associated with another ID.
 
-	    for (k, v) in guard.iter() {
-		if *k != id && v.configuration_name == cfg.configuration_name {
-		    return None;
-		}
-	    }
+            for (k, v) in guard.iter() {
+                if *k != id && v.configuration_name == cfg.configuration_name {
+                    return None;
+                }
+            }
 
-	    // Save the ID and then insert the (possibly updated) record in
-	    // the DB.
+            // Save the ID and then insert the (possibly updated) record in
+            // the DB.
 
-	    let result = cfg.configuration_id;
-	    let _ = guard.insert(id, cfg);
+            let result = cfg.configuration_id;
+            let _ = guard.insert(id, cfg);
 
-	    result
-	} else {
-	    // This is to be a new entry. Make sure the name isn't
-	    // already used.
+            result
+        } else {
+            // This is to be a new entry. Make sure the name isn't
+            // already used.
 
-	    for v in guard.values() {
-		if v.configuration_name == cfg.configuration_name {
-		    return None;
-		}
-	    }
+            for v in guard.values() {
+                if v.configuration_name == cfg.configuration_name {
+                    return None;
+                }
+            }
 
-	    // Copy the record, but insert the new ID.
+            // Copy the record, but insert the new ID.
 
-	    let id = guard.keys().reduce(std::cmp::max).unwrap_or(&0usize) + 1;
-	    let cfg = types::PlotConfigurationSnapshot { configuration_id: Some(id), .. cfg};
-	    let _ = guard.insert(id, cfg);
+            let id = guard.keys().reduce(std::cmp::max).unwrap_or(&0usize) + 1;
+            let cfg = types::PlotConfigurationSnapshot {
+                configuration_id: Some(id),
+                ..cfg
+            };
+            let _ = guard.insert(id, cfg);
 
-	    Some(id)
-	}
+            Some(id)
+        }
     }
 
     pub async fn remove(&self, id: &usize) {
