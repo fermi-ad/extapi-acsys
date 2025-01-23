@@ -254,7 +254,7 @@ want to set."]
 // specification.
 
 fn strip_event(drf: &str) -> &str {
-    &drf[0..drf.find('@').unwrap_or_else(|| drf.len())]
+    &drf[0..drf.find('@').unwrap_or(drf.len())]
 }
 
 const NULL_WAVEFORM: &str = "Z:CACHE@N";
