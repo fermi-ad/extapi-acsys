@@ -31,6 +31,10 @@ impl PlotConfigDb {
         PlotConfigDb(Arc::new(Mutex::new(HashMap::new())))
     }
 
+    fn user_config(cfg: &types::PlotConfigurationSnapshot) -> bool {
+        cfg.configuration_name.starts_with('_')
+    }
+
     pub async fn find(
         &self, id: Option<usize>,
     ) -> Vec<types::PlotConfigurationSnapshot> {
@@ -39,7 +43,11 @@ impl PlotConfigDb {
         if let Some(id) = id {
             guard.get(&id).iter().map(|v| (*v).clone()).collect()
         } else {
-            guard.values().cloned().collect()
+            guard
+                .values()
+                .filter(|v| !PlotConfigDb::user_config(v))
+                .cloned()
+                .collect()
         }
     }
 
