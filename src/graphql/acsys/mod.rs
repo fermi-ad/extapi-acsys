@@ -56,8 +56,21 @@ impl PlotConfigDb {
     ) -> Vec<types::PlotConfigurationSnapshot> {
         let guard = self.0.lock().await;
 
+        // If there's an ID specified, we're searching for one record.
+
         if let Some(id) = id {
-            guard.get(&id).iter().map(|v| (*v).clone()).collect()
+            // If the record exists and it's not a user configuration,
+            // return it. Otherwise return an empty list.
+
+            if let Some(cfg) = guard.get(&id) {
+                if !PlotConfigDb::user_config(cfg) {
+                    vec![cfg.clone()]
+                } else {
+                    vec![]
+                }
+            } else {
+                vec![]
+            }
         } else {
             guard
                 .values()
@@ -65,6 +78,19 @@ impl PlotConfigDb {
                 .cloned()
                 .collect()
         }
+    }
+
+    pub async fn find_user(
+        &self, user: &str,
+    ) -> Option<types::PlotConfigurationSnapshot> {
+        let guard = self.0.lock().await;
+
+        for v in guard.values() {
+            if v.configuration_name == user {
+                return Some(v.clone());
+            }
+        }
+        None
     }
 
     // Adds a configuration to the database. This function makes sure
@@ -113,6 +139,35 @@ impl PlotConfigDb {
 
             Some(id)
         }
+    }
+
+    pub async fn update_user(
+        &self, user: &str, cfg: types::PlotConfigurationSnapshot,
+    ) {
+        let mut guard = self.0.lock().await;
+
+        // Find the user's configuration. If we find it, update it and return.
+
+        for (id, v) in guard.iter_mut() {
+            if v.configuration_name == user {
+                *v = types::PlotConfigurationSnapshot {
+                    configuration_id: Some(*id),
+                    configuration_name: user.into(),
+                    ..cfg
+                };
+                return;
+            }
+        }
+
+        // Didn't find it so we need to make a new entry.
+
+        let id = guard.keys().reduce(std::cmp::max).unwrap_or(&0usize) + 1;
+        let cfg = types::PlotConfigurationSnapshot {
+            configuration_id: Some(id),
+            configuration_name: user.into(),
+            ..cfg
+        };
+        let _ = guard.insert(id, cfg);
     }
 
     pub async fn remove(&self, id: &usize) {
@@ -216,7 +271,9 @@ that is included in the request.
     async fn users_last_configuration(
         &self, ctxt: &Context<'_>,
     ) -> Option<types::PlotConfigurationSnapshot> {
-        None
+        ctxt.data_unchecked::<PlotConfigDb>()
+            .find_user("_user")
+            .await
     }
 }
 
@@ -272,11 +329,15 @@ want to set."]
     async fn update_plot_configuration(
         &self, ctxt: &Context<'_>, config: types::PlotConfigurationSnapshot,
     ) -> Option<usize> {
-        info!(
-            "updating plot config -- id: {:?}, name: {}",
-            config.configuration_id, &config.configuration_name
-        );
-        ctxt.data_unchecked::<PlotConfigDb>().update(config).await
+        if !PlotConfigDb::user_config(&config) {
+            info!(
+                "updating plot config -- id: {:?}, name: {}",
+                config.configuration_id, &config.configuration_name
+            );
+            ctxt.data_unchecked::<PlotConfigDb>().update(config).await
+        } else {
+            None
+        }
     }
 
     async fn delete_plot_configuration(
@@ -300,6 +361,9 @@ the authentication token that accompanies the request.
     async fn users_configuration(
         &self, ctxt: &Context<'_>, config: types::PlotConfigurationSnapshot,
     ) -> global::StatusReply {
+        ctxt.data_unchecked::<PlotConfigDb>()
+            .update_user("_user", config)
+            .await;
         global::StatusReply { status: 0 }
     }
 }
