@@ -22,18 +22,34 @@ pub mod types;
 
 use crate::g_rpc::dpm::Connection;
 
+// Temporary solution for storing plot configurations. The final
+// solution will be to use PostgreSQL, but this is a quick and dirty
+// solution to get something for the app developers to use.
+
 pub struct PlotConfigDb(
     Arc<Mutex<HashMap<usize, types::PlotConfigurationSnapshot>>>,
 );
 
 impl PlotConfigDb {
+    // Creates a new, empty "database".
+
     pub fn new() -> Self {
         PlotConfigDb(Arc::new(Mutex::new(HashMap::new())))
     }
 
+    // Helper function which returns `true` or `false`, depending on
+    // whether the configuration is a user's default config. We use a
+    // naming convention to indicate that a config is tied to a user
+    // account.
+
     fn user_config(cfg: &types::PlotConfigurationSnapshot) -> bool {
         cfg.configuration_name.starts_with('_')
     }
+
+    // Returns an array of configurations based on a search
+    // parameter. If an ID is provided, the array will contain 0 or 1
+    // entries. If no ID is given, than all non-user-account
+    // configurations are returned.
 
     pub async fn find(
         &self, id: Option<usize>,
@@ -50,6 +66,9 @@ impl PlotConfigDb {
                 .collect()
         }
     }
+
+    // Adds a configuration to the database. This function makes sure
+    // that the configuration names in the database are all unique.
 
     pub async fn update(
         &self, cfg: types::PlotConfigurationSnapshot,
