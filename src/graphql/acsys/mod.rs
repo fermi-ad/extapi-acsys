@@ -205,6 +205,19 @@ impl ACSysQueries {
             .find(configuration_id)
             .await
     }
+
+    #[doc = "Obtain the user's last configuration.
+
+If the application saved the user's last plot configuration, this query \
+will return it. If there is no configuration for the user, `null` is \
+returned. The user's account is retrieved from the authentication token \
+that is included in the request.
+"]
+    async fn users_last_configuration(
+        &self, ctxt: &Context<'_>,
+    ) -> Option<types::PlotConfigurationSnapshot> {
+        None
+    }
 }
 
 #[derive(Default)]
@@ -273,6 +286,20 @@ want to set."]
         ctxt.data_unchecked::<PlotConfigDb>()
             .remove(&configuration_id)
             .await;
+        global::StatusReply { status: 0 }
+    }
+
+    #[doc = "Sets the user's default configuration.
+
+The content of the configuration are used to set the default configuration \
+for the user. All fields, except the ID and name fields, are used (the \
+latter two will be set to internal values so it can be retrieved with the \
+`usersLastConfiguration` query. The user's account name is obtained from \
+the authentication token that accompanies the request.
+"]
+    async fn users_configuration(
+        &self, ctxt: &Context<'_>, config: types::PlotConfigurationSnapshot,
+    ) -> global::StatusReply {
         global::StatusReply { status: 0 }
     }
 }
