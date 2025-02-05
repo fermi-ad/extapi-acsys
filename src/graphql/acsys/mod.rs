@@ -22,28 +22,20 @@ pub mod types;
 
 use crate::g_rpc::dpm::Connection;
 
+type GenMap = HashMap<usize, types::PlotConfigurationSnapshot>;
+type UserMap = HashMap<String, types::PlotConfigurationSnapshot>;
+
 // Temporary solution for storing plot configurations. The final
 // solution will be to use PostgreSQL, but this is a quick and dirty
 // solution to get something for the app developers to use.
 
-pub struct PlotConfigDb(
-    Arc<Mutex<HashMap<usize, types::PlotConfigurationSnapshot>>>,
-);
+pub struct PlotConfigDb(Arc<Mutex<(GenMap, UserMap)>>);
 
 impl PlotConfigDb {
     // Creates a new, empty "database".
 
     pub fn new() -> Self {
-        PlotConfigDb(Arc::new(Mutex::new(HashMap::new())))
-    }
-
-    // Helper function which returns `true` or `false`, depending on
-    // whether the configuration is a user's default config. We use a
-    // naming convention to indicate that a config is tied to a user
-    // account.
-
-    fn user_config(cfg: &types::PlotConfigurationSnapshot) -> bool {
-        cfg.configuration_name.starts_with('_')
+        PlotConfigDb(Arc::new(Mutex::new((HashMap::new(), HashMap::new()))))
     }
 
     // Returns an array of configurations based on a search
@@ -62,21 +54,9 @@ impl PlotConfigDb {
             // If the record exists and it's not a user configuration,
             // return it. Otherwise return an empty list.
 
-            if let Some(cfg) = guard.get(&id) {
-                if !PlotConfigDb::user_config(cfg) {
-                    vec![cfg.clone()]
-                } else {
-                    vec![]
-                }
-            } else {
-                vec![]
-            }
+            guard.0.get(&id).iter().map(|v| (*v).clone()).collect()
         } else {
-            guard
-                .values()
-                .filter(|v| !PlotConfigDb::user_config(v))
-                .cloned()
-                .collect()
+            guard.0.values().cloned().collect()
         }
     }
 
@@ -85,12 +65,7 @@ impl PlotConfigDb {
     ) -> Option<types::PlotConfigurationSnapshot> {
         let guard = self.0.lock().await;
 
-        for v in guard.values() {
-            if v.configuration_name == user {
-                return Some(v.clone());
-            }
-        }
-        None
+        guard.1.get(user).cloned()
     }
 
     // Adds a configuration to the database. This function makes sure
@@ -105,7 +80,7 @@ impl PlotConfigDb {
             // If an ID is specified, we need to make sure the name
             // isn't associated with another ID.
 
-            for (k, v) in guard.iter() {
+            for (k, v) in guard.0.iter() {
                 if *k != id && v.configuration_name == cfg.configuration_name {
                     return None;
                 }
@@ -115,14 +90,14 @@ impl PlotConfigDb {
             // the DB.
 
             let result = cfg.configuration_id;
-            let _ = guard.insert(id, cfg);
+            let _ = guard.0.insert(id, cfg);
 
             result
         } else {
             // This is to be a new entry. Make sure the name isn't
             // already used.
 
-            for v in guard.values() {
+            for v in guard.0.values() {
                 if v.configuration_name == cfg.configuration_name {
                     return None;
                 }
@@ -130,12 +105,13 @@ impl PlotConfigDb {
 
             // Copy the record, but insert the new ID.
 
-            let id = guard.keys().reduce(std::cmp::max).unwrap_or(&0usize) + 1;
+            let id =
+                guard.0.keys().reduce(std::cmp::max).unwrap_or(&0usize) + 1;
             let cfg = types::PlotConfigurationSnapshot {
                 configuration_id: Some(id),
                 ..cfg
             };
-            let _ = guard.insert(id, cfg);
+            let _ = guard.0.insert(id, cfg);
 
             Some(id)
         }
@@ -148,10 +124,10 @@ impl PlotConfigDb {
 
         // Find the user's configuration. If we find it, update it and return.
 
-        for (id, v) in guard.iter_mut() {
+        for (_, v) in guard.1.iter_mut() {
             if v.configuration_name == user {
                 *v = types::PlotConfigurationSnapshot {
-                    configuration_id: Some(*id),
+                    configuration_id: None,
                     configuration_name: user.into(),
                     ..cfg
                 };
@@ -161,18 +137,17 @@ impl PlotConfigDb {
 
         // Didn't find it so we need to make a new entry.
 
-        let id = guard.keys().reduce(std::cmp::max).unwrap_or(&0usize) + 1;
         let cfg = types::PlotConfigurationSnapshot {
-            configuration_id: Some(id),
+            configuration_id: None,
             configuration_name: user.into(),
             ..cfg
         };
-        let _ = guard.insert(id, cfg);
+        let _ = guard.1.insert(user.into(), cfg);
     }
 
     pub async fn remove(&self, id: &usize) {
         let mut guard = self.0.lock().await;
-        let _ = guard.remove(id);
+        let _ = guard.0.remove(id);
     }
 }
 
@@ -329,15 +304,11 @@ want to set."]
     async fn update_plot_configuration(
         &self, ctxt: &Context<'_>, config: types::PlotConfigurationSnapshot,
     ) -> Option<usize> {
-        if !PlotConfigDb::user_config(&config) {
-            info!(
-                "updating plot config -- id: {:?}, name: {}",
-                config.configuration_id, &config.configuration_name
-            );
-            ctxt.data_unchecked::<PlotConfigDb>().update(config).await
-        } else {
-            None
-        }
+        info!(
+            "updating plot config -- id: {:?}, name: {}",
+            config.configuration_id, &config.configuration_name
+        );
+        ctxt.data_unchecked::<PlotConfigDb>().update(config).await
     }
 
     async fn delete_plot_configuration(
