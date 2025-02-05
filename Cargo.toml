@@ -9,7 +9,12 @@ tonic-build = "0.12"
 [dependencies]
 futures = "0.3.27"
 futures-util = { version = "0.3", features = ["tokio-io"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "rt", "time"] }
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "macros",
+    "rt",
+    "time",
+] }
 
 tracing = { version = "0.1", features = ["log"] }
 tracing-subscriber = "0.3"
@@ -17,9 +22,13 @@ tracing-futures = "0.2"
 
 async-graphql = { version = "7", features = ["chrono"] }
 async-graphql-axum = "7"
-axum = { version = "0.7", features = ["ws"] }
+axum = { version = "0.8", features = ["ws"] }
 axum-server = { version = "0.7", features = ["tls-rustls"] }
-tower-http = { version = "0.5", features = ["cors", "compression-deflate", "decompression-deflate"] }
+tower-http = { version = "0.6", features = [
+    "cors",
+    "compression-deflate",
+    "decompression-deflate",
+] }
 http = "1"
 
 chrono = "0.4"
