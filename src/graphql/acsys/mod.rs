@@ -63,9 +63,7 @@ impl PlotConfigDb {
     pub async fn find_user(
         &self, user: &str,
     ) -> Option<types::PlotConfigurationSnapshot> {
-        let guard = self.0.lock().await;
-
-        guard.1.get(user).cloned()
+        self.0.lock().await.1.get(user).cloned()
     }
 
     // Adds a configuration to the database. This function makes sure
@@ -146,8 +144,7 @@ impl PlotConfigDb {
     }
 
     pub async fn remove(&self, id: &usize) {
-        let mut guard = self.0.lock().await;
-        let _ = guard.0.remove(id);
+        let _ = self.0.lock().await.0.remove(id);
     }
 }
 
