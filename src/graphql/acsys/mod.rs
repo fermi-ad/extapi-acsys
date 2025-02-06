@@ -70,7 +70,7 @@ impl PlotConfigDb {
     // that the configuration names in the database are all unique.
 
     pub async fn update(
-        &self, cfg: types::PlotConfigurationSnapshot,
+        &self, mut cfg: types::PlotConfigurationSnapshot,
     ) -> Option<usize> {
         let mut guard = self.0.lock().await;
 
@@ -101,14 +101,14 @@ impl PlotConfigDb {
                 }
             }
 
-            // Copy the record, but insert the new ID.
+            // Find the next available ID. Update the configuration
+            // with the new ID and then insert it in the map.
 
             let id =
                 guard.0.keys().reduce(std::cmp::max).unwrap_or(&0usize) + 1;
-            let cfg = types::PlotConfigurationSnapshot {
-                configuration_id: Some(id),
-                ..cfg
-            };
+
+	    cfg.configuration_id = Some(id);
+
             let _ = guard.0.insert(id, cfg);
 
             Some(id)
