@@ -116,31 +116,18 @@ impl PlotConfigDb {
     }
 
     pub async fn update_user(
-        &self, user: &str, cfg: types::PlotConfigurationSnapshot,
+        &self, user: &str, mut cfg: types::PlotConfigurationSnapshot,
     ) {
-        let mut guard = self.0.lock().await;
+        let key: String = user.into();
 
-        // Find the user's configuration. If we find it, update it and return.
+        cfg.configuration_id = None;
+        cfg.configuration_name = "".into();
 
-        for (_, v) in guard.1.iter_mut() {
-            if v.configuration_name == user {
-                *v = types::PlotConfigurationSnapshot {
-                    configuration_id: None,
-                    configuration_name: user.into(),
-                    ..cfg
-                };
-                return;
-            }
-        }
-
-        // Didn't find it so we need to make a new entry.
-
-        let cfg = types::PlotConfigurationSnapshot {
-            configuration_id: None,
-            configuration_name: user.into(),
-            ..cfg
-        };
-        let _ = guard.1.insert(user.into(), cfg);
+        self.0
+            .lock()
+            .await				// wait for mutex
+            .1
+            .insert(key, cfg);
     }
 
     pub async fn remove(&self, id: &usize) {
