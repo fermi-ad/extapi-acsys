@@ -4,9 +4,8 @@ use async_graphql::*;
 use chrono::{DateTime, Utc};
 use futures::future;
 use futures_util::{stream, Stream, StreamExt};
-use std::collections::HashMap;
-use std::{pin::Pin, sync::Arc};
-use tokio::{sync::Mutex, time::Instant};
+use std::pin::Pin;
+use tokio::time::Instant;
 use tonic::Status;
 use tracing::{error, info, warn};
 
@@ -18,122 +17,14 @@ use super::types as global;
 
 // Pull in our local types.
 
+mod plotconfigdb;
 pub mod types;
 
-use crate::g_rpc::dpm::Connection;
-
-type GenMap = HashMap<usize, types::PlotConfigurationSnapshot>;
-type UserMap = HashMap<String, types::PlotConfigurationSnapshot>;
-
-// Temporary solution for storing plot configurations. The final
-// solution will be to use PostgreSQL, but this is a quick and dirty
-// solution to get something for the app developers to use.
-
-pub struct PlotConfigDb(Arc<Mutex<(GenMap, UserMap)>>);
-
-impl PlotConfigDb {
-    // Creates a new, empty "database".
-
-    pub fn new() -> Self {
-        PlotConfigDb(Arc::new(Mutex::new((HashMap::new(), HashMap::new()))))
-    }
-
-    // Returns an array of configurations based on a search
-    // parameter. If an ID is provided, the array will contain 0 or 1
-    // entries. If no ID is given, than all non-user-account
-    // configurations are returned.
-
-    pub async fn find(
-        &self, id: Option<usize>,
-    ) -> Vec<types::PlotConfigurationSnapshot> {
-        let guard = self.0.lock().await;
-
-        // If there's an ID specified, we're searching for one record.
-
-        if let Some(id) = id {
-            // If the record exists and it's not a user configuration,
-            // return it. Otherwise return an empty list.
-
-            guard.0.get(&id).iter().map(|v| (*v).clone()).collect()
-        } else {
-            guard.0.values().cloned().collect()
-        }
-    }
-
-    pub async fn find_user(
-        &self, user: &str,
-    ) -> Option<types::PlotConfigurationSnapshot> {
-        self.0.lock().await.1.get(user).cloned()
-    }
-
-    // Adds a configuration to the database. This function makes sure
-    // that the configuration names in the database are all unique.
-
-    pub async fn update(
-        &self, mut cfg: types::PlotConfigurationSnapshot,
-    ) -> Option<usize> {
-        let mut guard = self.0.lock().await;
-
-        if let Some(id) = cfg.configuration_id {
-            // If an ID is specified, we need to make sure the name
-            // isn't associated with another ID.
-
-            for (k, v) in guard.0.iter() {
-                if *k != id && v.configuration_name == cfg.configuration_name {
-                    return None;
-                }
-            }
-
-            // Save the ID and then insert the (possibly updated) record in
-            // the DB.
-
-            let result = cfg.configuration_id;
-            let _ = guard.0.insert(id, cfg);
-
-            result
-        } else {
-            // This is to be a new entry. Make sure the name isn't
-            // already used.
-
-            for v in guard.0.values() {
-                if v.configuration_name == cfg.configuration_name {
-                    return None;
-                }
-            }
-
-            // Find the next available ID. Update the configuration
-            // with the new ID and then insert it in the map.
-
-            let id =
-                guard.0.keys().reduce(std::cmp::max).unwrap_or(&0usize) + 1;
-
-	    cfg.configuration_id = Some(id);
-
-            let _ = guard.0.insert(id, cfg);
-
-            Some(id)
-        }
-    }
-
-    pub async fn update_user(
-        &self, user: &str, mut cfg: types::PlotConfigurationSnapshot,
-    ) {
-        let key: String = user.into();
-
-        cfg.configuration_id = None;
-        cfg.configuration_name = "".into();
-
-        self.0
-            .lock()
-            .await				// wait for mutex
-            .1
-            .insert(key, cfg);
-    }
-
-    pub async fn remove(&self, id: &usize) {
-        let _ = self.0.lock().await.0.remove(id);
-    }
+pub fn new_context() -> plotconfigdb::T {
+    plotconfigdb::T::new()
 }
+
+use crate::g_rpc::dpm::Connection;
 
 fn mk_xlater(
     names: Vec<String>,
@@ -215,7 +106,7 @@ impl ACSysQueries {
     async fn plot_configuration(
         &self, ctxt: &Context<'_>, configuration_id: Option<usize>,
     ) -> Vec<types::PlotConfigurationSnapshot> {
-        ctxt.data_unchecked::<PlotConfigDb>()
+        ctxt.data_unchecked::<plotconfigdb::T>()
             .find(configuration_id)
             .await
     }
@@ -230,7 +121,7 @@ that is included in the request.
     async fn users_last_configuration(
         &self, ctxt: &Context<'_>,
     ) -> Option<types::PlotConfigurationSnapshot> {
-        ctxt.data_unchecked::<PlotConfigDb>()
+        ctxt.data_unchecked::<plotconfigdb::T>()
             .find_user("_user")
             .await
     }
@@ -292,14 +183,16 @@ want to set."]
             "updating plot config -- id: {:?}, name: {}",
             config.configuration_id, &config.configuration_name
         );
-        ctxt.data_unchecked::<PlotConfigDb>().update(config).await
+        ctxt.data_unchecked::<plotconfigdb::T>()
+            .update(config)
+            .await
     }
 
     async fn delete_plot_configuration(
         &self, ctxt: &Context<'_>, configuration_id: usize,
     ) -> global::StatusReply {
         info!("deleting plot config -- id: {}", configuration_id);
-        ctxt.data_unchecked::<PlotConfigDb>()
+        ctxt.data_unchecked::<plotconfigdb::T>()
             .remove(&configuration_id)
             .await;
         global::StatusReply { status: 0 }
@@ -316,7 +209,7 @@ the authentication token that accompanies the request.
     async fn users_configuration(
         &self, ctxt: &Context<'_>, config: types::PlotConfigurationSnapshot,
     ) -> global::StatusReply {
-        ctxt.data_unchecked::<PlotConfigDb>()
+        ctxt.data_unchecked::<plotconfigdb::T>()
             .update_user("_user", config)
             .await;
         global::StatusReply { status: 0 }

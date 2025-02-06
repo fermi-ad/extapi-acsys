@@ -35,7 +35,7 @@ pub struct ChannelSettingSnapshot {
     pub marker_index: Option<u32>,
 }
 
-#[derive(InputObject, SimpleObject, Debug, Clone)]
+#[derive(InputObject, SimpleObject, Debug, Clone, Default)]
 #[graphql(input_name = "PlotConfigurationSnapshotIn")]
 pub struct PlotConfigurationSnapshot {
     #[doc = "Unique identifier for the plot configuration"]

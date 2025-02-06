@@ -97,7 +97,7 @@ pub async fn start_service() {
         Subscription::default(),
     )
     .data(build_connection().await.unwrap())
-    .data(acsys::PlotConfigDb::new())
+    .data(acsys::new_context())
     .finish();
 
     let bbm_schema =
