@@ -121,6 +121,10 @@ that is included in the request.
     async fn users_last_configuration(
         &self, ctxt: &Context<'_>,
     ) -> Option<types::PlotConfigurationSnapshot> {
+        if let Ok(auth) = ctxt.data::<super::AuthInfo>() {
+            info!("token: {:?}", &auth.0);
+        }
+
         ctxt.data_unchecked::<plotconfigdb::T>()
             .find_user("_user")
             .await

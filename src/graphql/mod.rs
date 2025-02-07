@@ -1,6 +1,14 @@
 use async_graphql::*;
-use async_graphql_axum::{GraphQL, GraphQLSubscription};
-use axum::{response::Html, routing::get, Router};
+use async_graphql_axum::{
+    GraphQLRequest, GraphQLResponse, GraphQLSubscription,
+};
+use axum::{
+    extract::State,
+    http::header::{HeaderMap, AUTHORIZATION},
+    response::Html,
+    routing::get,
+    Router,
+};
 
 use crate::g_rpc::dpm::build_connection;
 
@@ -27,6 +35,28 @@ struct Subscription(
     clock::ClockSubscriptions,
     xform::XFormSubscriptions,
 );
+
+struct AuthInfo(Option<String>);
+
+async fn graphql_handler<Q, M, S>(
+    State(schema): State<Schema<Q, M, S>>, headers: HeaderMap,
+    req: GraphQLRequest,
+) -> GraphQLResponse
+where
+    Q: ObjectType + Send + Sync + 'static,
+    M: ObjectType + Send + Sync + 'static,
+    S: SubscriptionType + Send + Sync + 'static,
+{
+    let mut req = req.into_inner();
+
+    req = req.data(AuthInfo(
+        headers
+            .get(AUTHORIZATION)
+            .map(|v| v.to_str().unwrap().to_string()),
+    ));
+
+    schema.execute(req).await.into()
+}
 
 // Returns an HTML document that has links to the various GraphQL APIs.
 
@@ -154,24 +184,29 @@ pub async fn start_service() {
         .route(
             Q_ACSYS_ENDPOINT,
             get(acsys_graphiql)
-                .post_service(GraphQL::new(acsys_schema.clone())),
+                .post(graphql_handler)
+                .with_state(acsys_schema.clone()),
         )
         .route_service(S_ACSYS_ENDPOINT, GraphQLSubscription::new(acsys_schema))
         .route(
             Q_BBM_ENDPOINT,
-            get(bbm_graphiql).post_service(GraphQL::new(bbm_schema.clone())),
+            get(bbm_graphiql)
+                .post(graphql_handler)
+                .with_state(bbm_schema.clone()),
         )
         .route_service(S_BBM_ENDPOINT, GraphQLSubscription::new(bbm_schema))
         .route(
             Q_DEVDB_ENDPOINT,
             get(devdb_graphiql)
-                .post_service(GraphQL::new(devdb_schema.clone())),
+                .post(graphql_handler)
+                .with_state(devdb_schema.clone()),
         )
         .route_service(S_DEVDB_ENDPOINT, GraphQLSubscription::new(devdb_schema))
         .route(
             Q_WSCAN_ENDPOINT,
             get(wscan_graphiql)
-                .post_service(GraphQL::new(wscan_schema.clone())),
+                .post(graphql_handler)
+                .with_state(wscan_schema.clone()),
         )
         .route_service(S_WSCAN_ENDPOINT, GraphQLSubscription::new(wscan_schema))
         .layer(
