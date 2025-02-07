@@ -79,34 +79,11 @@ async fn base_page() -> Html<&'static str> {
     )
 }
 
-// Starts the web server that receives GraphQL queries. The
-// configuration of the server is pulled together by obtaining
-// configuration information from the submodules. All accesses are
-// wrapped with CORS support from the `warp` crate.
+// Creates the web site for the various GraphQL APIs.
 
-pub async fn start_service() {
+async fn create_app() -> Router {
     use ::http::{header, Method};
-    use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
     use tower_http::cors::{Any, CorsLayer};
-
-    // Define the binding address for the web service. The address is
-    // different between the operational and development versions.
-
-    #[cfg(not(debug_assertions))]
-    const BIND_ADDR: SocketAddr =
-        SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 8000));
-    #[cfg(debug_assertions)]
-    const BIND_ADDR: SocketAddr =
-        SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 8001));
-
-    // Load TLS certificate information. If there's an error, we panic.
-
-    let config = axum_server::tls_rustls::RustlsConfig::from_pem_file(
-        "/etc/ssl/private/acsys-proxy.fnal.gov/cert.pem",
-        "/etc/ssl/private/acsys-proxy.fnal.gov/key.pem",
-    )
-    .await
-    .expect("couldn't load certificate info from PEM file(s)");
 
     // Define the URL paths for each of the API services.
 
@@ -118,33 +95,6 @@ pub async fn start_service() {
     const S_DEVDB_ENDPOINT: &str = "/devdb/s";
     const Q_WSCAN_ENDPOINT: &str = "/wscan";
     const S_WSCAN_ENDPOINT: &str = "/wscan/s";
-
-    // Build GraphQL schemas for each of the APIs.
-
-    let acsys_schema = Schema::build(
-        Query::default(),
-        Mutation::default(),
-        Subscription::default(),
-    )
-    .data(build_connection().await.unwrap())
-    .data(acsys::new_context())
-    .finish();
-
-    let bbm_schema =
-        Schema::build(bbm::BbmQueries, EmptyMutation, EmptySubscription)
-            .finish();
-
-    let devdb_schema =
-        Schema::build(devdb::DevDBQueries, EmptyMutation, EmptySubscription)
-            .register_output_type::<devdb::types::DeviceProperty>()
-            .finish();
-
-    let wscan_schema = Schema::build(
-        scanner::ScannerQueries,
-        scanner::ScannerMutations,
-        scanner::ScannerSubscriptions,
-    )
-    .finish();
 
     // Create a handlers that provides GraphQL editors for each, major
     // API section so people don't have to install their own editors.
@@ -177,9 +127,34 @@ pub async fn start_service() {
             .finish(),
     );
 
-    // Build up the routes for the site.
+    // Build GraphQL schemas for each of the APIs.
 
-    let app = Router::new()
+    let acsys_schema = Schema::build(
+        Query::default(),
+        Mutation::default(),
+        Subscription::default(),
+    )
+    .data(build_connection().await.unwrap())
+    .data(acsys::new_context())
+    .finish();
+
+    let bbm_schema =
+        Schema::build(bbm::BbmQueries, EmptyMutation, EmptySubscription)
+            .finish();
+
+    let devdb_schema =
+        Schema::build(devdb::DevDBQueries, EmptyMutation, EmptySubscription)
+            .register_output_type::<devdb::types::DeviceProperty>()
+            .finish();
+
+    let wscan_schema = Schema::build(
+        scanner::ScannerQueries,
+        scanner::ScannerMutations,
+        scanner::ScannerSubscriptions,
+    )
+    .finish();
+
+    Router::new()
         .route("/", get(base_page))
         .route(
             Q_ACSYS_ENDPOINT,
@@ -218,7 +193,39 @@ pub async fn start_service() {
                     header::ACCESS_CONTROL_ALLOW_ORIGIN,
                 ])
                 .allow_origin(Any),
-        );
+        )
+}
+
+// Starts the web server that receives GraphQL queries. The
+// configuration of the server is pulled together by obtaining
+// configuration information from the submodules. All accesses are
+// wrapped with CORS support from the `warp` crate.
+
+pub async fn start_service() {
+    use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+
+    // Define the binding address for the web service. The address is
+    // different between the operational and development versions.
+
+    #[cfg(not(debug_assertions))]
+    const BIND_ADDR: SocketAddr =
+        SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 8000));
+    #[cfg(debug_assertions)]
+    const BIND_ADDR: SocketAddr =
+        SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 8001));
+
+    // Load TLS certificate information. If there's an error, we panic.
+
+    let config = axum_server::tls_rustls::RustlsConfig::from_pem_file(
+        "/etc/ssl/private/acsys-proxy.fnal.gov/cert.pem",
+        "/etc/ssl/private/acsys-proxy.fnal.gov/key.pem",
+    )
+    .await
+    .expect("couldn't load certificate info from PEM file(s)");
+
+    // Build up the routes for the site.
+
+    let app = create_app().await;
 
     // Start the server.
 
