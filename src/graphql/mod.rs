@@ -45,6 +45,9 @@ struct Subscription(
 
 struct AuthInfo(Option<String>);
 
+// Generic function which adds `AuthInfo` to the context. This
+// function can be used for all the GraphQL schemas.
+
 async fn graphql_handler<Q, M, S>(
     State(schema): State<Schema<Q, M, S>>, headers: HeaderMap,
     req: GraphQLRequest,
@@ -211,11 +214,6 @@ fn create_wscan_router() -> Router {
 async fn create_app() -> Router {
     use ::http::{header, Method};
     use tower_http::cors::{Any, CorsLayer};
-
-    // Create a handlers that provides GraphQL editors for each, major
-    // API section so people don't have to install their own editors.
-
-    // Build GraphQL schemas for each of the APIs.
 
     Router::new()
         .route("/", get(base_page))
