@@ -79,55 +79,11 @@ async fn base_page() -> Html<&'static str> {
     )
 }
 
-// Creates the web site for the various GraphQL APIs.
+// Creates the portion of the site map that handles the ACSys GraphQL API.
 
-async fn create_app() -> Router {
-    use ::http::{header, Method};
-    use tower_http::cors::{Any, CorsLayer};
-
-    // Define the URL paths for each of the API services.
-
+async fn create_acsys_router() -> Router {
     const Q_ACSYS_ENDPOINT: &str = "/acsys";
     const S_ACSYS_ENDPOINT: &str = "/acsys/s";
-    const Q_BBM_ENDPOINT: &str = "/bbm";
-    const S_BBM_ENDPOINT: &str = "/bbm/s";
-    const Q_DEVDB_ENDPOINT: &str = "/devdb";
-    const S_DEVDB_ENDPOINT: &str = "/devdb/s";
-    const Q_WSCAN_ENDPOINT: &str = "/wscan";
-    const S_WSCAN_ENDPOINT: &str = "/wscan/s";
-
-    // Create a handlers that provides GraphQL editors for each, major
-    // API section so people don't have to install their own editors.
-
-    let acsys_graphiql = axum::response::Html(
-        async_graphql::http::GraphiQLSource::build()
-            .endpoint(Q_ACSYS_ENDPOINT)
-            .subscription_endpoint(S_ACSYS_ENDPOINT)
-            .finish(),
-    );
-
-    let bbm_graphiql = axum::response::Html(
-        async_graphql::http::GraphiQLSource::build()
-            .endpoint(Q_BBM_ENDPOINT)
-            .subscription_endpoint(S_BBM_ENDPOINT)
-            .finish(),
-    );
-
-    let devdb_graphiql = axum::response::Html(
-        async_graphql::http::GraphiQLSource::build()
-            .endpoint(Q_DEVDB_ENDPOINT)
-            .subscription_endpoint(S_DEVDB_ENDPOINT)
-            .finish(),
-    );
-
-    let wscan_graphiql = axum::response::Html(
-        async_graphql::http::GraphiQLSource::build()
-            .endpoint(Q_WSCAN_ENDPOINT)
-            .subscription_endpoint(S_WSCAN_ENDPOINT)
-            .finish(),
-    );
-
-    // Build GraphQL schemas for each of the APIs.
 
     let acsys_schema = Schema::build(
         Query::default(),
@@ -138,14 +94,86 @@ async fn create_app() -> Router {
     .data(acsys::new_context())
     .finish();
 
+    let acsys_graphiql = axum::response::Html(
+        async_graphql::http::GraphiQLSource::build()
+            .endpoint(Q_ACSYS_ENDPOINT)
+            .subscription_endpoint(S_ACSYS_ENDPOINT)
+            .finish(),
+    );
+
+    Router::new()
+        .route(
+            Q_ACSYS_ENDPOINT,
+            get(acsys_graphiql)
+                .post(graphql_handler)
+                .with_state(acsys_schema.clone()),
+        )
+        .route_service(S_ACSYS_ENDPOINT, GraphQLSubscription::new(acsys_schema))
+}
+
+// Creates the portion of the site map that handles the Beam Budget
+// Monitoring GraphQL API.
+
+fn create_bbm_router() -> Router {
+    const Q_BBM_ENDPOINT: &str = "/bbm";
+    const S_BBM_ENDPOINT: &str = "/bbm/s";
+
     let bbm_schema =
         Schema::build(bbm::BbmQueries, EmptyMutation, EmptySubscription)
             .finish();
+
+    let bbm_graphiql = axum::response::Html(
+        async_graphql::http::GraphiQLSource::build()
+            .endpoint(Q_BBM_ENDPOINT)
+            .subscription_endpoint(S_BBM_ENDPOINT)
+            .finish(),
+    );
+
+    Router::new()
+        .route(
+            Q_BBM_ENDPOINT,
+            get(bbm_graphiql)
+                .post(graphql_handler)
+                .with_state(bbm_schema.clone()),
+        )
+        .route_service(S_BBM_ENDPOINT, GraphQLSubscription::new(bbm_schema))
+}
+
+// Creates the portion of the site map that handles the Device Database
+// GraphQL API.
+
+fn create_devdb_router() -> Router {
+    const Q_DEVDB_ENDPOINT: &str = "/devdb";
+    const S_DEVDB_ENDPOINT: &str = "/devdb/s";
 
     let devdb_schema =
         Schema::build(devdb::DevDBQueries, EmptyMutation, EmptySubscription)
             .register_output_type::<devdb::types::DeviceProperty>()
             .finish();
+
+    let devdb_graphiql = axum::response::Html(
+        async_graphql::http::GraphiQLSource::build()
+            .endpoint(Q_DEVDB_ENDPOINT)
+            .subscription_endpoint(S_DEVDB_ENDPOINT)
+            .finish(),
+    );
+
+    Router::new()
+        .route(
+            Q_DEVDB_ENDPOINT,
+            get(devdb_graphiql)
+                .post(graphql_handler)
+                .with_state(devdb_schema.clone()),
+        )
+        .route_service(S_DEVDB_ENDPOINT, GraphQLSubscription::new(devdb_schema))
+}
+
+// Creates the portion of the site map that handles the Wire Scanner GraphQL
+// API.
+
+fn create_wscan_router() -> Router {
+    const Q_WSCAN_ENDPOINT: &str = "/wscan";
+    const S_WSCAN_ENDPOINT: &str = "/wscan/s";
 
     let wscan_schema = Schema::build(
         scanner::ScannerQueries,
@@ -154,29 +182,14 @@ async fn create_app() -> Router {
     )
     .finish();
 
+    let wscan_graphiql = axum::response::Html(
+        async_graphql::http::GraphiQLSource::build()
+            .endpoint(Q_WSCAN_ENDPOINT)
+            .subscription_endpoint(S_WSCAN_ENDPOINT)
+            .finish(),
+    );
+
     Router::new()
-        .route("/", get(base_page))
-        .route(
-            Q_ACSYS_ENDPOINT,
-            get(acsys_graphiql)
-                .post(graphql_handler)
-                .with_state(acsys_schema.clone()),
-        )
-        .route_service(S_ACSYS_ENDPOINT, GraphQLSubscription::new(acsys_schema))
-        .route(
-            Q_BBM_ENDPOINT,
-            get(bbm_graphiql)
-                .post(graphql_handler)
-                .with_state(bbm_schema.clone()),
-        )
-        .route_service(S_BBM_ENDPOINT, GraphQLSubscription::new(bbm_schema))
-        .route(
-            Q_DEVDB_ENDPOINT,
-            get(devdb_graphiql)
-                .post(graphql_handler)
-                .with_state(devdb_schema.clone()),
-        )
-        .route_service(S_DEVDB_ENDPOINT, GraphQLSubscription::new(devdb_schema))
         .route(
             Q_WSCAN_ENDPOINT,
             get(wscan_graphiql)
@@ -184,6 +197,25 @@ async fn create_app() -> Router {
                 .with_state(wscan_schema.clone()),
         )
         .route_service(S_WSCAN_ENDPOINT, GraphQLSubscription::new(wscan_schema))
+}
+
+// Creates the web site for the various GraphQL APIs.
+
+async fn create_app() -> Router {
+    use ::http::{header, Method};
+    use tower_http::cors::{Any, CorsLayer};
+
+    // Create a handlers that provides GraphQL editors for each, major
+    // API section so people don't have to install their own editors.
+
+    // Build GraphQL schemas for each of the APIs.
+
+    Router::new()
+        .route("/", get(base_page))
+        .merge(create_acsys_router().await)
+        .merge(create_bbm_router())
+        .merge(create_devdb_router())
+        .merge(create_wscan_router())
         .layer(
             CorsLayer::new()
                 .allow_methods([Method::OPTIONS, Method::GET, Method::POST])
