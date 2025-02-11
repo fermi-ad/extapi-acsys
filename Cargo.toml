@@ -37,6 +37,9 @@ tonic = "0.12"
 prost = "0.13"
 prost-types = "0.13"
 
+[dev-dependencies]
+tower = "0.5"
+
 [profile.release]
 incremental = false
 opt-level = 'z'

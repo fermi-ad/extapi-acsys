@@ -225,6 +225,7 @@ async fn create_site() -> Router {
             CorsLayer::new()
                 .allow_methods([Method::OPTIONS, Method::GET, Method::POST])
                 .allow_headers([
+                    header::AUTHORIZATION,
                     header::CONTENT_TYPE,
                     header::SEC_WEBSOCKET_PROTOCOL,
                     header::ACCESS_CONTROL_ALLOW_ORIGIN,
@@ -270,4 +271,111 @@ pub async fn start_service() {
         .serve(app.into_make_service())
         .await
         .unwrap();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{graphql_handler, AuthInfo};
+    use async_graphql::{
+        Context, EmptyMutation, EmptySubscription, Object, Schema,
+    };
+    use axum::{routing::post, Router};
+
+    // Create a simple GraphQL site. This site is more for testing the
+    // meta information than testing GraphQL (we assume the authors of
+    // the async-graphql crate are testing their product.)
+
+    #[derive(Default)]
+    pub struct TestQuery;
+
+    #[Object]
+    impl TestQuery {
+        async fn authenticated(&self, ctxt: &Context<'_>) -> bool {
+            ctxt.data_unchecked::<AuthInfo>().0.is_some()
+        }
+    }
+
+    // Build a simple, crappy GraphQL endpoint.
+
+    fn mk_test_site() -> Router {
+        const Q_ENDPOINT: &str = "/test";
+
+        let schema = Schema::build(
+            TestQuery::default(),
+            EmptyMutation,
+            EmptySubscription,
+        )
+        .finish();
+
+        Router::new()
+            .route(Q_ENDPOINT, post(graphql_handler).with_state(schema))
+    }
+
+    // This test checks to see whether a GraphQL resolver will be able
+    // to see the authorization information passed in via the
+    // AUTHORIZATION header. This test doesn't make any requests to
+    // KeyCloak -- it's just making sure it can pull the authorization
+    // info from the http headers.
+
+    #[tokio::test]
+    async fn test_authentication() {
+        use axum::{
+            body::{to_bytes, Body},
+            http::{Request, StatusCode},
+        };
+        use http::header::AUTHORIZATION;
+        use tower::Service;
+
+        let mut site = Router::new().merge(mk_test_site());
+        let query = r#"{ "query" : "{ authenticated }" }"#;
+
+	{
+            let response = site
+		.as_service()
+		.call(
+                    Request::builder()
+			.method("POST")
+			.uri("/test")
+			.header("content-type", "application/json")
+			.body(Body::from(query))
+			.unwrap(),
+		)
+		.await
+		.unwrap();
+
+            assert_eq!(response.status(), StatusCode::OK);
+
+            let body = response.into_body();
+
+            assert_eq!(
+		to_bytes(body, 1024).await.unwrap(),
+		b"{\"data\":{\"authenticated\":false}}"[..]
+            );
+	}
+
+	{
+            let response = site
+		.as_service()
+		.call(
+                    Request::builder()
+			.method("POST")
+			.uri("/test")
+			.header("content-type", "application/json")
+			.header(AUTHORIZATION, "Bearer MYJWTTOKEN")
+			.body(Body::from(query))
+			.unwrap(),
+		)
+		.await
+		.unwrap();
+
+            assert_eq!(response.status(), StatusCode::OK);
+
+            let body = response.into_body();
+
+            assert_eq!(
+		to_bytes(body, 1024).await.unwrap(),
+		b"{\"data\":{\"authenticated\":true}}"[..]
+            );
+	}
+    }
 }
