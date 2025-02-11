@@ -79,9 +79,9 @@ async fn base_page() -> Html<&'static str> {
 
     <ul>
       <li><a href="/acsys">ACSys</a> (data acquisition)</li>
-      <li><a href="/bbm">Beam Budget monitoring</a></li>
+      <li><a href="/bbm">Beam Budget monitoring</a> (WIP)</li>
       <li><a href="/devdb">Device Database</a></li>
-      <li><a href="/wscan">Wire Scanner</a></li>
+      <li><a href="/wscan">Wire Scanner</a> (WIP)</li>
     </ul>
   </body>
 </html>
