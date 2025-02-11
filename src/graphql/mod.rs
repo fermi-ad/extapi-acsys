@@ -329,53 +329,53 @@ mod tests {
         let mut site = Router::new().merge(mk_test_site());
         let query = r#"{ "query" : "{ authenticated }" }"#;
 
-	{
+        {
             let response = site
-		.as_service()
-		.call(
+                .as_service()
+                .call(
                     Request::builder()
-			.method("POST")
-			.uri("/test")
-			.header("content-type", "application/json")
-			.body(Body::from(query))
-			.unwrap(),
-		)
-		.await
-		.unwrap();
+                        .method("POST")
+                        .uri("/test")
+                        .header("content-type", "application/json")
+                        .body(Body::from(query))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
 
             assert_eq!(response.status(), StatusCode::OK);
 
             let body = response.into_body();
 
             assert_eq!(
-		to_bytes(body, 1024).await.unwrap(),
-		b"{\"data\":{\"authenticated\":false}}"[..]
+                to_bytes(body, 1024).await.unwrap(),
+                b"{\"data\":{\"authenticated\":false}}"[..]
             );
-	}
+        }
 
-	{
+        {
             let response = site
-		.as_service()
-		.call(
+                .as_service()
+                .call(
                     Request::builder()
-			.method("POST")
-			.uri("/test")
-			.header("content-type", "application/json")
-			.header(AUTHORIZATION, "Bearer MYJWTTOKEN")
-			.body(Body::from(query))
-			.unwrap(),
-		)
-		.await
-		.unwrap();
+                        .method("POST")
+                        .uri("/test")
+                        .header("content-type", "application/json")
+                        .header(AUTHORIZATION, "Bearer MYJWTTOKEN")
+                        .body(Body::from(query))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
 
             assert_eq!(response.status(), StatusCode::OK);
 
             let body = response.into_body();
 
             assert_eq!(
-		to_bytes(body, 1024).await.unwrap(),
-		b"{\"data\":{\"authenticated\":true}}"[..]
+                to_bytes(body, 1024).await.unwrap(),
+                b"{\"data\":{\"authenticated\":true}}"[..]
             );
-	}
+        }
     }
 }
