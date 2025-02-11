@@ -359,6 +359,31 @@ mod tests {
                         .method("POST")
                         .uri("/test")
                         .header("content-type", "application/json")
+                        .header(AUTHORIZATION, "Basic MYJWTTOKEN")
+                        .body(Body::from(query))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::OK);
+
+            let body = response.into_body();
+
+            assert_eq!(
+                to_bytes(body, 1024).await.unwrap(),
+                b"{\"data\":{\"authenticated\":false}}"[..]
+            );
+        }
+
+        {
+            let response = site
+                .as_service()
+                .call(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/test")
+                        .header("content-type", "application/json")
                         .header(AUTHORIZATION, "Bearer MYJWTTOKEN")
                         .body(Body::from(query))
                         .unwrap(),

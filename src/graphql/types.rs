@@ -5,7 +5,13 @@ pub struct AuthInfo(Option<String>);
 
 impl AuthInfo {
     pub fn new(info: &Option<String>) -> Self {
-	AuthInfo(info.clone())
+        AuthInfo(info.as_ref().and_then(|v| {
+            if let ["Bearer", token] = v.split(' ').collect::<Vec<&str>>()[..] {
+                Some(token.to_string())
+            } else {
+                None
+            }
+        }))
     }
 
     pub fn has_token(&self) -> bool {
