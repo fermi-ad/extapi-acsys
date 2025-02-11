@@ -1,7 +1,21 @@
 use async_graphql::*;
 use chrono::*;
 
-pub struct AuthInfo(pub Option<String>);
+pub struct AuthInfo(Option<String>);
+
+impl AuthInfo {
+    pub fn new(info: &Option<String>) -> Self {
+	AuthInfo(info.clone())
+    }
+
+    pub fn has_token(&self) -> bool {
+        self.0.is_some()
+    }
+
+    pub fn token<'a>(&'a self) -> Option<&'a str> {
+        self.0.as_ref().map(|x| x.as_str())
+    }
+}
 
 /// Contains an informative message describing why a request resulted in an error.
 #[derive(SimpleObject)]

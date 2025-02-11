@@ -122,7 +122,7 @@ that is included in the request.
         &self, ctxt: &Context<'_>,
     ) -> Option<types::PlotConfigurationSnapshot> {
         if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
-            info!("token: {:?}", &auth.0);
+            info!("token: {:?}", auth.token());
         }
 
         ctxt.data_unchecked::<plotconfigdb::T>()

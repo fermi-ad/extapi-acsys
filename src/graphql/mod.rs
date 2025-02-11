@@ -57,8 +57,8 @@ where
 {
     let mut req = req.into_inner();
 
-    req = req.data(types::AuthInfo(
-        headers
+    req = req.data(types::AuthInfo::new(
+        &headers
             .get(AUTHORIZATION)
             .map(|v| v.to_str().unwrap().to_string()),
     ));
@@ -289,7 +289,7 @@ mod tests {
     #[Object]
     impl TestQuery {
         async fn authenticated(&self, ctxt: &Context<'_>) -> bool {
-            ctxt.data_unchecked::<AuthInfo>().0.is_some()
+            ctxt.data_unchecked::<AuthInfo>().has_token()
         }
     }
 
