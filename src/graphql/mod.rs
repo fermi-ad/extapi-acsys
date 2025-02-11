@@ -43,8 +43,6 @@ struct Subscription(
     xform::XFormSubscriptions,
 );
 
-struct AuthInfo(Option<String>);
-
 // Generic function which adds `AuthInfo` to the context. This
 // function can be used for all the GraphQL schemas.
 
@@ -59,7 +57,7 @@ where
 {
     let mut req = req.into_inner();
 
-    req = req.data(AuthInfo(
+    req = req.data(types::AuthInfo(
         headers
             .get(AUTHORIZATION)
             .map(|v| v.to_str().unwrap().to_string()),
@@ -275,7 +273,7 @@ pub async fn start_service() {
 
 #[cfg(test)]
 mod tests {
-    use super::{graphql_handler, AuthInfo};
+    use super::{graphql_handler, types::AuthInfo};
     use async_graphql::{
         Context, EmptyMutation, EmptySubscription, Object, Schema,
     };

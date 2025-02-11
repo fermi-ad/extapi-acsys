@@ -121,7 +121,7 @@ that is included in the request.
     async fn users_last_configuration(
         &self, ctxt: &Context<'_>,
     ) -> Option<types::PlotConfigurationSnapshot> {
-        if let Ok(auth) = ctxt.data::<super::AuthInfo>() {
+        if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
             info!("token: {:?}", &auth.0);
         }
 

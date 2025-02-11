@@ -1,6 +1,8 @@
 use async_graphql::*;
 use chrono::*;
 
+pub struct AuthInfo(pub Option<String>);
+
 /// Contains an informative message describing why a request resulted in an error.
 #[derive(SimpleObject)]
 pub struct ErrorReply {
