@@ -1,7 +1,13 @@
 use async_graphql::*;
 use chrono::*;
+use serde::Deserialize;
 
 pub struct AuthInfo(Option<String>);
+
+#[derive(Deserialize)]
+struct Claims {
+    sub: String,
+}
 
 impl AuthInfo {
     pub fn new(info: &Option<String>) -> Self {
@@ -14,12 +20,33 @@ impl AuthInfo {
         }))
     }
 
+    #[cfg(test)]
     pub fn has_token(&self) -> bool {
         self.0.is_some()
     }
 
     pub fn token(&self) -> Option<String> {
         self.0.clone()
+    }
+
+    pub fn unsafe_account(&self) -> Option<String> {
+        use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
+
+        self.0.as_ref().and_then(|token| {
+            let mut validation = Validation::new(Algorithm::HS256);
+
+            validation.insecure_disable_signature_validation();
+
+            if let Ok(decoded) = decode::<Claims>(
+                token,
+                &DecodingKey::from_secret("".as_ref()), // No secret required
+                &validation,
+            ) {
+                Some(decoded.claims.sub)
+            } else {
+                None
+            }
+        })
     }
 }
 

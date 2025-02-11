@@ -33,6 +33,9 @@ http = "1"
 
 chrono = "0.4"
 
+serde = { version = "1", features = ["derive"] }
+jsonwebtoken = { version = "9.3", default-features = false }
+
 tonic = "0.12"
 prost = "0.13"
 prost-types = "0.13"

@@ -122,12 +122,16 @@ that is included in the request.
         &self, ctxt: &Context<'_>,
     ) -> Option<types::PlotConfigurationSnapshot> {
         if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
-            info!("token: {:?}", auth.token());
-        }
+            if let Some(account) = auth.unsafe_account() {
+                info!("account: {:?}", &account);
 
-        ctxt.data_unchecked::<plotconfigdb::T>()
-            .find_user("_user")
-            .await
+                return ctxt
+                    .data_unchecked::<plotconfigdb::T>()
+                    .find_user(&account)
+                    .await;
+            }
+        }
+        None
     }
 }
 
@@ -213,10 +217,17 @@ the authentication token that accompanies the request.
     async fn users_configuration(
         &self, ctxt: &Context<'_>, config: types::PlotConfigurationSnapshot,
     ) -> global::StatusReply {
-        ctxt.data_unchecked::<plotconfigdb::T>()
-            .update_user("_user", config)
-            .await;
-        global::StatusReply { status: 0 }
+        if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
+            if let Some(account) = auth.unsafe_account() {
+                info!("account: {:?}", &account);
+
+                ctxt.data_unchecked::<plotconfigdb::T>()
+                    .update_user(&account, config)
+                    .await;
+                return global::StatusReply { status: 0 };
+            }
+        }
+        global::StatusReply { status: -1 }
     }
 }
 
