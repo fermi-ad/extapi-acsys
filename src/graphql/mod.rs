@@ -211,7 +211,7 @@ fn create_wscan_router() -> Router {
 
 // Creates the web site for the various GraphQL APIs.
 
-async fn create_app() -> Router {
+async fn create_site() -> Router {
     use ::http::{header, Method};
     use tower_http::cors::{Any, CorsLayer};
 
@@ -262,7 +262,7 @@ pub async fn start_service() {
 
     // Build up the routes for the site.
 
-    let app = create_app().await;
+    let app = create_site().await;
 
     // Start the server.
 
