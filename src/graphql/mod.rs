@@ -92,8 +92,8 @@ async fn base_page() -> Html<&'static str> {
 // Creates the portion of the site map that handles the ACSys GraphQL API.
 
 async fn create_acsys_router() -> Router {
-    const Q_ACSYS_ENDPOINT: &str = "/acsys";
-    const S_ACSYS_ENDPOINT: &str = "/acsys/s";
+    const Q_ENDPOINT: &str = "/acsys";
+    const S_ENDPOINT: &str = "/acsys/s";
 
     let acsys_schema = Schema::build(
         Query::default(),
@@ -106,27 +106,27 @@ async fn create_acsys_router() -> Router {
 
     let acsys_graphiql = axum::response::Html(
         async_graphql::http::GraphiQLSource::build()
-            .endpoint(Q_ACSYS_ENDPOINT)
-            .subscription_endpoint(S_ACSYS_ENDPOINT)
+            .endpoint(Q_ENDPOINT)
+            .subscription_endpoint(S_ENDPOINT)
             .finish(),
     );
 
     Router::new()
         .route(
-            Q_ACSYS_ENDPOINT,
+            Q_ENDPOINT,
             get(acsys_graphiql)
                 .post(graphql_handler)
                 .with_state(acsys_schema.clone()),
         )
-        .route_service(S_ACSYS_ENDPOINT, GraphQLSubscription::new(acsys_schema))
+        .route_service(S_ENDPOINT, GraphQLSubscription::new(acsys_schema))
 }
 
 // Creates the portion of the site map that handles the Beam Budget
 // Monitoring GraphQL API.
 
 fn create_bbm_router() -> Router {
-    const Q_BBM_ENDPOINT: &str = "/bbm";
-    const S_BBM_ENDPOINT: &str = "/bbm/s";
+    const Q_ENDPOINT: &str = "/bbm";
+    const S_ENDPOINT: &str = "/bbm/s";
 
     let bbm_schema =
         Schema::build(bbm::BbmQueries, EmptyMutation, EmptySubscription)
@@ -134,27 +134,27 @@ fn create_bbm_router() -> Router {
 
     let bbm_graphiql = axum::response::Html(
         async_graphql::http::GraphiQLSource::build()
-            .endpoint(Q_BBM_ENDPOINT)
-            .subscription_endpoint(S_BBM_ENDPOINT)
+            .endpoint(Q_ENDPOINT)
+            .subscription_endpoint(S_ENDPOINT)
             .finish(),
     );
 
     Router::new()
         .route(
-            Q_BBM_ENDPOINT,
+            Q_ENDPOINT,
             get(bbm_graphiql)
                 .post(graphql_handler)
                 .with_state(bbm_schema.clone()),
         )
-        .route_service(S_BBM_ENDPOINT, GraphQLSubscription::new(bbm_schema))
+        .route_service(S_ENDPOINT, GraphQLSubscription::new(bbm_schema))
 }
 
 // Creates the portion of the site map that handles the Device Database
 // GraphQL API.
 
 fn create_devdb_router() -> Router {
-    const Q_DEVDB_ENDPOINT: &str = "/devdb";
-    const S_DEVDB_ENDPOINT: &str = "/devdb/s";
+    const Q_ENDPOINT: &str = "/devdb";
+    const S_ENDPOINT: &str = "/devdb/s";
 
     let devdb_schema =
         Schema::build(devdb::DevDBQueries, EmptyMutation, EmptySubscription)
@@ -163,27 +163,27 @@ fn create_devdb_router() -> Router {
 
     let devdb_graphiql = axum::response::Html(
         async_graphql::http::GraphiQLSource::build()
-            .endpoint(Q_DEVDB_ENDPOINT)
-            .subscription_endpoint(S_DEVDB_ENDPOINT)
+            .endpoint(Q_ENDPOINT)
+            .subscription_endpoint(S_ENDPOINT)
             .finish(),
     );
 
     Router::new()
         .route(
-            Q_DEVDB_ENDPOINT,
+            Q_ENDPOINT,
             get(devdb_graphiql)
                 .post(graphql_handler)
                 .with_state(devdb_schema.clone()),
         )
-        .route_service(S_DEVDB_ENDPOINT, GraphQLSubscription::new(devdb_schema))
+        .route_service(S_ENDPOINT, GraphQLSubscription::new(devdb_schema))
 }
 
 // Creates the portion of the site map that handles the Wire Scanner GraphQL
 // API.
 
 fn create_wscan_router() -> Router {
-    const Q_WSCAN_ENDPOINT: &str = "/wscan";
-    const S_WSCAN_ENDPOINT: &str = "/wscan/s";
+    const Q_ENDPOINT: &str = "/wscan";
+    const S_ENDPOINT: &str = "/wscan/s";
 
     let wscan_schema = Schema::build(
         scanner::ScannerQueries,
@@ -194,19 +194,19 @@ fn create_wscan_router() -> Router {
 
     let wscan_graphiql = axum::response::Html(
         async_graphql::http::GraphiQLSource::build()
-            .endpoint(Q_WSCAN_ENDPOINT)
-            .subscription_endpoint(S_WSCAN_ENDPOINT)
+            .endpoint(Q_ENDPOINT)
+            .subscription_endpoint(S_ENDPOINT)
             .finish(),
     );
 
     Router::new()
         .route(
-            Q_WSCAN_ENDPOINT,
+            Q_ENDPOINT,
             get(wscan_graphiql)
                 .post(graphql_handler)
                 .with_state(wscan_schema.clone()),
         )
-        .route_service(S_WSCAN_ENDPOINT, GraphQLSubscription::new(wscan_schema))
+        .route_service(S_ENDPOINT, GraphQLSubscription::new(wscan_schema))
 }
 
 // Creates the web site for the various GraphQL APIs.
