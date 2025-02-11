@@ -155,7 +155,7 @@ want to set."]
         let now = Instant::now();
         let result = dpm::set_device(
             ctxt.data::<Connection>().unwrap(),
-            "DEADBEEF",
+            ctxt.data::<global::AuthInfo>().unwrap().token(),
             device.clone(),
             value.into(),
         )

@@ -18,8 +18,8 @@ impl AuthInfo {
         self.0.is_some()
     }
 
-    pub fn token<'a>(&'a self) -> Option<&'a str> {
-        self.0.as_ref().map(|x| x.as_str())
+    pub fn token(&self) -> Option<String> {
+        self.0.clone()
     }
 }
 
