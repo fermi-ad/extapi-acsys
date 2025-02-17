@@ -225,8 +225,12 @@ the authentication token that accompanies the request.
                     .update_user(&account, config)
                     .await;
                 return global::StatusReply { status: 0 };
-            }
-        }
+            } else {
+		warn!("AuthInfo doesn't have account information");
+	    }
+        } else {
+            error!("no AuthInfo state found");
+	}
         global::StatusReply { status: -1 }
     }
 }
