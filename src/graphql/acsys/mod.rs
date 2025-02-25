@@ -260,7 +260,7 @@ fn add_event(
             format!("p,{}u", delay.filter(|v| *v > 0).unwrap_or(1_000_000))
         }
         (None, Some(e)) => format!("e,{:X},e", e),
-        (Some(d), Some(e)) => format!("e,{:X},e,{}", e, d),
+        (Some(d), Some(e)) => format!("e,{:X},e,{}", e, (d + 500) / 1_000),
     };
 
     // If we're using the faked sources, we still need to reserve the slot
@@ -618,8 +618,16 @@ mod test {
 
         assert_eq!(add_event(None, Some(0x02))("M:OUTTMP"), "M:OUTTMP@e,2,e");
         assert_eq!(
-            add_event(Some(1234), Some(0x8f))("M:OUTTMP"),
-            "M:OUTTMP@e,8F,e,1234"
+            add_event(Some(12345), Some(0x8f))("M:OUTTMP"),
+            "M:OUTTMP@e,8F,e,12"
+        );
+        assert_eq!(
+            add_event(Some(12499), Some(0x8f))("M:OUTTMP"),
+            "M:OUTTMP@e,8F,e,12"
+        );
+        assert_eq!(
+            add_event(Some(12500), Some(0x8f))("M:OUTTMP"),
+            "M:OUTTMP@e,8F,e,13"
         );
     }
 }
