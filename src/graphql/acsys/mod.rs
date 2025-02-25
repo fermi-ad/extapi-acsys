@@ -256,7 +256,9 @@ fn add_event(
     delay: Option<usize>, event: Option<u8>,
 ) -> impl Fn(&str) -> String {
     let event = match (delay, event) {
-        (_, None) => format!("p,{}", delay.unwrap_or(1000)),
+        (_, None) => {
+            format!("p,{}u", delay.filter(|v| *v > 0).unwrap_or(1_000_000))
+        }
         (None, Some(e)) => format!("e,{:X},e", e),
         (Some(d), Some(e)) => format!("e,{:X},e,{}", e, d),
     };
@@ -586,8 +588,8 @@ mod test {
         );
         assert_eq!(add_event(Some(1234), None)(SINE_WAVEFORM), NULL_WAVEFORM);
 
-        assert_eq!(add_event(None, None)("M:OUTTMP"), "M:OUTTMP@p,1000");
-        assert_eq!(add_event(Some(1234), None)("M:OUTTMP"), "M:OUTTMP@p,1234");
+        assert_eq!(add_event(None, None)("M:OUTTMP"), "M:OUTTMP@p,1000000u");
+        assert_eq!(add_event(Some(1234), None)("M:OUTTMP"), "M:OUTTMP@p,1234u");
 
         assert_eq!(add_event(None, Some(0x2))(CONST_WAVEFORM), NULL_WAVEFORM);
         assert_eq!(add_event(None, Some(0xff))(RAMP_WAVEFORM), NULL_WAVEFORM);
