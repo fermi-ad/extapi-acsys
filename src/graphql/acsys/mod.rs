@@ -291,31 +291,33 @@ fn stuff_fake_data(
 fn to_plot_data(
     len: usize, window_size: &Option<usize>, data: &global::DataInfo,
 ) -> (i16, Vec<types::PlotDataPoint>) {
-    let step = window_size
-        .filter(|v| *v > 0 && *v <= len)
-        .map(|v| (len + v - 1) / v)
-        .unwrap_or(1);
-
     match &data.result {
         global::DataType::Scalar(y) => (
             0,
             vec![types::PlotDataPoint {
-                x: 0.0,
+                x: data.timestamp.timestamp_micros() as f64 / 1_000_000.0,
                 y: y.scalar_value,
             }],
         ),
-        global::DataType::ScalarArray(a) => (
-            0,
-            a.scalar_array_value
-                .iter()
-                .enumerate()
-                .step_by(step)
-                .map(|(idx, y)| types::PlotDataPoint {
-                    x: idx as f64,
-                    y: *y,
-                })
-                .collect(),
-        ),
+        global::DataType::ScalarArray(a) => {
+            let step = window_size
+                .filter(|v| *v > 0 && *v <= len)
+                .map(|v| (len + v - 1) / v)
+                .unwrap_or(1);
+
+            (
+                0,
+                a.scalar_array_value
+                    .iter()
+                    .enumerate()
+                    .step_by(step)
+                    .map(|(idx, y)| types::PlotDataPoint {
+                        x: idx as f64,
+                        y: *y,
+                    })
+                    .collect(),
+            )
+        }
         global::DataType::StatusReply(v) => (v.status, vec![]),
         _ => (-1, vec![]),
     }
