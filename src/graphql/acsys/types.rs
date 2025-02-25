@@ -46,6 +46,9 @@ pub struct PlotConfigurationSnapshot {
     pub x_max: Option<f64>,
     pub y_min: Option<f64>,
     pub y_max: Option<f64>,
+    pub time_delta: Option<f64>,
+    pub is_scalar: bool,
+    pub is_one_shot: bool,
     pub is_show_labels: bool,
     #[doc = "If `triggerEvent` is null, this parameter specifies the \
 	     delay, in milliseconds, between points in a waveform. If a \
