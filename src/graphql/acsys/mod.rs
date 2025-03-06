@@ -26,6 +26,34 @@ pub fn new_context() -> plotconfigdb::T {
 
 use crate::g_rpc::dpm::Connection;
 
+// Converts a gRPC proto::Reading structure into a GraphQL
+// global::DataReply object.
+
+fn reading_to_reply(
+    names: &[String], rdg: &dpm::proto::Reading,
+) -> global::DataReply {
+    if let Some(ref data) = rdg.data {
+        global::DataReply {
+            ref_id: rdg.index as i32,
+            cycle: 1,
+            data: global::DataInfo {
+                timestamp: std::time::SystemTime::now().into(),
+                result: data.into(),
+                di: 0,
+                name: names[rdg.index as usize].clone(),
+            },
+        }
+    } else {
+        warn!("returned data: {:?}", &rdg.data);
+        unreachable!()
+    }
+}
+
+// Returns a function that translates a gRPC proto::Reading structures
+// into a GraphQL DataReply object. This is used with the
+// Stream::map() method to translate a stream of gRPC types to GraphQL
+// types.
+
 fn mk_xlater(
     names: Vec<String>,
 ) -> Box<
@@ -34,23 +62,7 @@ fn mk_xlater(
         + Sync,
 > {
     Box::new(move |e: Result<dpm::proto::Reading, Status>| match e {
-        Ok(e) => {
-            if let Some(data) = e.data {
-                global::DataReply {
-                    ref_id: e.index as i32,
-                    cycle: 1,
-                    data: global::DataInfo {
-                        timestamp: std::time::SystemTime::now().into(),
-                        result: data.into(),
-                        di: 0,
-                        name: names[e.index as usize].clone(),
-                    },
-                }
-            } else {
-                warn!("returned data: {:?}", &e.data);
-                unreachable!()
-            }
-        }
+        Ok(e) => reading_to_reply(&names, &e),
         Err(e) => {
             warn!("channel error: {}", &e);
             global::DataReply {
