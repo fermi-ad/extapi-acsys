@@ -159,6 +159,14 @@ come back immediately or after a delay."]
         vec![]
     }
 
+    #[doc = "Retrieve plot configuration(s).
+
+Returns a plot configuration associated with the specified ID. If the \
+ID is `null`, all configurations are returned. Both style of requests \
+return an array result -- it's just that specifying an ID will return \
+an array with 0 or 1 element.
+"]
+
     async fn plot_configuration(
         &self, ctxt: &Context<'_>, configuration_id: Option<usize>,
     ) -> Vec<types::PlotConfigurationSnapshot> {
@@ -471,7 +479,7 @@ devices are collected on the same event."]
         n_acquisitions: Option<usize>,
         #[graphql(
             desc = "If `triggerEvent` is null, this parameter specifies the \
-		    delay, in milliseconds, between points in a waveform. If \
+		    delay, in microseconds, between points in a waveform. If \
 		    a trigger event is specified, then this specifies the \
 		    delay after the event when the signal should be sampled. \
 		    If this parameter is null, then there will be no delay \
