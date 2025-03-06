@@ -368,7 +368,7 @@ fn to_plot_data(
         global::DataType::ScalarArray(a) => {
             let step = window_size
                 .filter(|v| *v > 0 && *v <= len)
-                .map(|v| (len + v - 1) / v)
+                .map(|v| len.div_ceil(v))
                 .unwrap_or(1);
 
             (
