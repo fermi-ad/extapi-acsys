@@ -4,7 +4,7 @@ use async_graphql::*;
 use chrono::{DateTime, Utc};
 use futures::future;
 use futures_util::{stream, Stream, StreamExt};
-use std::pin::Pin;
+use std::{collections::HashSet, pin::Pin};
 use tokio::time::Instant;
 use tonic::Status;
 use tracing::{error, info, warn};
@@ -92,18 +92,17 @@ pub struct ACSysQueries;
 #[doc = "These queries are used to access accelerator data."]
 #[Object]
 impl ACSysQueries {
-    #[doc = "Retrieve the next data point for the specified devices. \
-	     Depending upon the event in the DRF string, the data may \
-	     come back immediately or after a delay.
+    #[doc = "Retrieve the next data point for the specified devices.
 
-*NOTE: This query hasn't been implemented yet.*"]
+Depending upon the event in the DRF string, the data may \
+come back immediately or after a delay."]
     async fn accelerator_data(
-        &self,
+        &self, ctxt: &Context<'_>,
         #[graphql(
             desc = "An array of device names. The returned values will be \
 		    in the same order as specified in this array."
         )]
-        _device_list: Vec<String>,
+        device_list: Vec<String>,
         #[graphql(
             desc = "Returns device values that are equal to or greater than \
 		    this timestamp. If this parameter is `null`, then the \
@@ -112,6 +111,51 @@ impl ACSysQueries {
         )]
         _when: Option<DateTime<Utc>>,
     ) -> Vec<global::DataReply> {
+        // Strip any event designation and append the once-immediate.
+
+        let drfs: Vec<_> = device_list
+            .iter()
+            .map(|v| format!("{}@i", strip_event(v)))
+            .collect();
+
+        // Build a set of integers representing the indices of the request.
+        // As replies arrive, the corresponding index will be removed from
+        // the set. When the set is empty, the stream will close.
+
+        let mut remaining: HashSet<usize> = (0..drfs.len()).collect();
+
+        // Allocate storage for the reply.
+
+        let mut results: Vec<Option<global::DataReply>> =
+            vec![None; drfs.len()];
+
+        let mut s = dpm::acquire_devices(
+            ctxt.data::<Connection>().unwrap(),
+            "",
+            drfs.clone(),
+        )
+        .await
+        .unwrap()
+        .into_inner();
+
+        while let Some(reply) = s.next().await {
+            match reply {
+                Ok(reply) => {
+                    let index = reply.index as usize;
+
+                    results[index] = Some(reading_to_reply(&drfs, &reply));
+
+                    remaining.remove(&index);
+                    if remaining.is_empty() {
+                        return results.drain(..).map(|v| v.unwrap()).collect();
+                    }
+                }
+                Err(e) => {
+                    warn!("one-shot failed : {}", e);
+                    break;
+                }
+            }
+        }
         vec![]
     }
 
