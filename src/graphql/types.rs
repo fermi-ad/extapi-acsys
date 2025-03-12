@@ -2,6 +2,7 @@ use async_graphql::*;
 use chrono::*;
 use serde::Deserialize;
 
+#[derive(Debug)]
 pub struct AuthInfo(Option<String>);
 
 #[derive(Deserialize)]

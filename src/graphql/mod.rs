@@ -57,6 +57,8 @@ where
 {
     let mut req = req.into_inner();
 
+    tracing::info!("adding auth info");
+
     req = req.data(types::AuthInfo::new(
         &headers
             .get(AUTHORIZATION)

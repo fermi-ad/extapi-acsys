@@ -131,7 +131,10 @@ come back immediately or after a delay."]
 
         let mut s = dpm::acquire_devices(
             ctxt.data::<Connection>().unwrap(),
-            "",
+            ctxt.data::<global::AuthInfo>()
+                .ok()
+                .and_then(global::AuthInfo::token)
+                .as_ref(),
             drfs.clone(),
         )
         .await
@@ -433,7 +436,10 @@ generated."]
 
         match dpm::acquire_devices(
             ctxt.data::<Connection>().unwrap(),
-            "",
+            ctxt.data::<global::AuthInfo>()
+                .ok()
+                .and_then(global::AuthInfo::token)
+                .as_ref(),
             drfs.clone(),
         )
         .await
