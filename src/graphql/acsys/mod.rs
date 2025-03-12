@@ -4,7 +4,7 @@ use async_graphql::*;
 use chrono::{DateTime, Utc};
 use futures::future;
 use futures_util::{stream, Stream, StreamExt};
-use std::pin::Pin;
+use std::{collections::HashSet, pin::Pin};
 use tokio::time::Instant;
 use tonic::Status;
 use tracing::{error, info, warn};
@@ -17,9 +17,42 @@ use super::types as global;
 
 // Pull in our local types.
 
+mod plotconfigdb;
 pub mod types;
 
+pub fn new_context() -> plotconfigdb::T {
+    plotconfigdb::T::new()
+}
+
 use crate::g_rpc::dpm::Connection;
+
+// Converts a gRPC proto::Reading structure into a GraphQL
+// global::DataReply object.
+
+fn reading_to_reply(
+    names: &[String], rdg: &dpm::proto::Reading,
+) -> global::DataReply {
+    if let Some(ref data) = rdg.data {
+        global::DataReply {
+            ref_id: rdg.index as i32,
+            cycle: 1,
+            data: global::DataInfo {
+                timestamp: std::time::SystemTime::now().into(),
+                result: data.into(),
+                di: 0,
+                name: names[rdg.index as usize].clone(),
+            },
+        }
+    } else {
+        warn!("returned data: {:?}", &rdg.data);
+        unreachable!()
+    }
+}
+
+// Returns a function that translates a gRPC proto::Reading structures
+// into a GraphQL DataReply object. This is used with the
+// Stream::map() method to translate a stream of gRPC types to GraphQL
+// types.
 
 fn mk_xlater(
     names: Vec<String>,
@@ -29,23 +62,7 @@ fn mk_xlater(
         + Sync,
 > {
     Box::new(move |e: Result<dpm::proto::Reading, Status>| match e {
-        Ok(e) => {
-            if let Some(data) = e.data {
-                global::DataReply {
-                    ref_id: e.index as i32,
-                    cycle: 1,
-                    data: global::DataInfo {
-                        timestamp: std::time::SystemTime::now().into(),
-                        result: data.into(),
-                        di: 0,
-                        name: names[e.index as usize].clone(),
-                    },
-                }
-            } else {
-                warn!("returned data: {:?}", &e.data);
-                unreachable!()
-            }
-        }
+        Ok(e) => reading_to_reply(&names, &e),
         Err(e) => {
             warn!("channel error: {}", &e);
             global::DataReply {
@@ -75,18 +92,17 @@ pub struct ACSysQueries;
 #[doc = "These queries are used to access accelerator data."]
 #[Object]
 impl ACSysQueries {
-    #[doc = "Retrieve the next data point for the specified devices. \
-	     Depending upon the event in the DRF string, the data may \
-	     come back immediately or after a delay.
+    #[doc = "Retrieve the next data point for the specified devices.
 
-*NOTE: This query hasn't been implemented yet.*"]
+Depending upon the event in the DRF string, the data may \
+come back immediately or after a delay."]
     async fn accelerator_data(
-        &self,
+        &self, ctxt: &Context<'_>,
         #[graphql(
             desc = "An array of device names. The returned values will be \
 		    in the same order as specified in this array."
         )]
-        _device_list: Vec<String>,
+        device_list: Vec<String>,
         #[graphql(
             desc = "Returns device values that are equal to or greater than \
 		    this timestamp. If this parameter is `null`, then the \
@@ -95,7 +111,91 @@ impl ACSysQueries {
         )]
         _when: Option<DateTime<Utc>>,
     ) -> Vec<global::DataReply> {
+        // Strip any event designation and append the once-immediate.
+
+        let drfs: Vec<_> = device_list
+            .iter()
+            .map(|v| format!("{}@i", strip_event(v)))
+            .collect();
+
+        // Build a set of integers representing the indices of the request.
+        // As replies arrive, the corresponding index will be removed from
+        // the set. When the set is empty, the stream will close.
+
+        let mut remaining: HashSet<usize> = (0..drfs.len()).collect();
+
+        // Allocate storage for the reply.
+
+        let mut results: Vec<Option<global::DataReply>> =
+            vec![None; drfs.len()];
+
+        let mut s = dpm::acquire_devices(
+            ctxt.data::<Connection>().unwrap(),
+            "",
+            drfs.clone(),
+        )
+        .await
+        .unwrap()
+        .into_inner();
+
+        while let Some(reply) = s.next().await {
+            match reply {
+                Ok(reply) => {
+                    let index = reply.index as usize;
+
+                    results[index] = Some(reading_to_reply(&drfs, &reply));
+
+                    remaining.remove(&index);
+                    if remaining.is_empty() {
+                        return results.drain(..).map(|v| v.unwrap()).collect();
+                    }
+                }
+                Err(e) => {
+                    warn!("one-shot failed : {}", e);
+                    break;
+                }
+            }
+        }
         vec![]
+    }
+
+    #[doc = "Retrieve plot configuration(s).
+
+Returns a plot configuration associated with the specified ID. If the \
+ID is `null`, all configurations are returned. Both style of requests \
+return an array result -- it's just that specifying an ID will return \
+an array with 0 or 1 element.
+"]
+
+    async fn plot_configuration(
+        &self, ctxt: &Context<'_>, configuration_id: Option<usize>,
+    ) -> Vec<types::PlotConfigurationSnapshot> {
+        ctxt.data_unchecked::<plotconfigdb::T>()
+            .find(configuration_id)
+            .await
+    }
+
+    #[doc = "Obtain the user's last configuration.
+
+If the application saved the user's last plot configuration, this query \
+will return it. If there is no configuration for the user, `null` is \
+returned. The user's account is retrieved from the authentication token \
+that is included in the request.
+"]
+    async fn users_last_configuration(
+        &self, ctxt: &Context<'_>,
+    ) -> Option<types::PlotConfigurationSnapshot> {
+        if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
+            if let Some(account) = auth.unsafe_account() {
+                info!("account: {:?}", &account);
+
+                return ctxt
+                    .data_unchecked::<plotconfigdb::T>()
+                    .find_user(&account)
+                    .await;
+            }
+        }
+        None
     }
 }
 
@@ -123,7 +223,7 @@ want to set."]
         let now = Instant::now();
         let result = dpm::set_device(
             ctxt.data::<Connection>().unwrap(),
-            "DEADBEEF",
+            ctxt.data::<global::AuthInfo>().unwrap().token(),
             device.clone(),
             value.into(),
         )
@@ -147,13 +247,63 @@ want to set."]
             },
         }
     }
+
+    async fn update_plot_configuration(
+        &self, ctxt: &Context<'_>, config: types::PlotConfigurationSnapshot,
+    ) -> Option<usize> {
+        info!(
+            "updating plot config -- id: {:?}, name: {}",
+            config.configuration_id, &config.configuration_name
+        );
+        ctxt.data_unchecked::<plotconfigdb::T>()
+            .update(config)
+            .await
+    }
+
+    async fn delete_plot_configuration(
+        &self, ctxt: &Context<'_>, configuration_id: usize,
+    ) -> global::StatusReply {
+        info!("deleting plot config -- id: {}", configuration_id);
+        ctxt.data_unchecked::<plotconfigdb::T>()
+            .remove(&configuration_id)
+            .await;
+        global::StatusReply { status: 0 }
+    }
+
+    #[doc = "Sets the user's default configuration.
+
+The content of the configuration are used to set the default configuration \
+for the user. All fields, except the ID and name fields, are used (the \
+latter two will be set to internal values so it can be retrieved with the \
+`usersLastConfiguration` query. The user's account name is obtained from \
+the authentication token that accompanies the request.
+"]
+    async fn users_configuration(
+        &self, ctxt: &Context<'_>, config: types::PlotConfigurationSnapshot,
+    ) -> global::StatusReply {
+        if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
+            if let Some(account) = auth.unsafe_account() {
+                info!("account: {:?}", &account);
+
+                ctxt.data_unchecked::<plotconfigdb::T>()
+                    .update_user(&account, config)
+                    .await;
+                return global::StatusReply { status: 0 };
+            } else {
+                warn!("AuthInfo doesn't have account information");
+            }
+        } else {
+            error!("no AuthInfo state found");
+        }
+        global::StatusReply { status: -1 }
+    }
 }
 
 // Returns the portion of the DRF string that precedes any event
 // specification.
 
 fn strip_event(drf: &str) -> &str {
-    &drf[0..drf.find('@').unwrap_or_else(|| drf.len())]
+    &drf[0..drf.find('@').unwrap_or(drf.len())]
 }
 
 const NULL_WAVEFORM: &str = "Z:CACHE@N";
@@ -170,9 +320,11 @@ fn add_event(
     delay: Option<usize>, event: Option<u8>,
 ) -> impl Fn(&str) -> String {
     let event = match (delay, event) {
-        (_, None) => format!("p,{}", delay.unwrap_or(1000)),
+        (_, None) => {
+            format!("p,{}u", delay.filter(|v| *v > 0).unwrap_or(1_000_000))
+        }
         (None, Some(e)) => format!("e,{:X},e", e),
-        (Some(d), Some(e)) => format!("e,{:X},e,{}", e, d),
+        (Some(d), Some(e)) => format!("e,{:X},e,{}", e, (d + 500) / 1_000),
     };
 
     // If we're using the faked sources, we still need to reserve the slot
@@ -205,31 +357,33 @@ fn stuff_fake_data(
 fn to_plot_data(
     len: usize, window_size: &Option<usize>, data: &global::DataInfo,
 ) -> (i16, Vec<types::PlotDataPoint>) {
-    let step = window_size
-        .filter(|v| *v > 0 && *v <= len)
-        .map(|v| (len + v - 1) / v)
-        .unwrap_or(1);
-
     match &data.result {
         global::DataType::Scalar(y) => (
             0,
             vec![types::PlotDataPoint {
-                x: 0.0,
+                x: data.timestamp.timestamp_micros() as f64 / 1_000_000.0,
                 y: y.scalar_value,
             }],
         ),
-        global::DataType::ScalarArray(a) => (
-            0,
-            a.scalar_array_value
-                .iter()
-                .enumerate()
-                .step_by(step)
-                .map(|(idx, y)| types::PlotDataPoint {
-                    x: idx as f64,
-                    y: *y,
-                })
-                .collect(),
-        ),
+        global::DataType::ScalarArray(a) => {
+            let step = window_size
+                .filter(|v| *v > 0 && *v <= len)
+                .map(|v| len.div_ceil(v))
+                .unwrap_or(1);
+
+            (
+                0,
+                a.scalar_array_value
+                    .iter()
+                    .enumerate()
+                    .step_by(step)
+                    .map(|(idx, y)| types::PlotDataPoint {
+                        x: idx as f64,
+                        y: *y,
+                    })
+                    .collect(),
+            )
+        }
         global::DataType::StatusReply(v) => (v.status, vec![]),
         _ => (-1, vec![]),
     }
@@ -243,7 +397,10 @@ pub struct ACSysSubscriptions;
 
 #[Subscription]
 impl<'ctx> ACSysSubscriptions {
-    #[doc = ""]
+    #[doc = "Retrieve data from accelerator devices.
+
+Accepts a list of DRF strings and streams the resulting data as it gets \
+generated."]
     async fn accelerator_data(
         &self, ctxt: &Context<'ctx>,
         #[graphql(
@@ -292,7 +449,12 @@ impl<'ctx> ACSysSubscriptions {
         }
     }
 
-    #[doc = ""]
+    #[doc = "Retrieve correlated plot data.
+
+This query sets up a request which returns a stream of data, presumably used \
+for plotting. Unlike the `acceleratorData` query, this stream returns data \
+for all the devices in one reply. Since the data is correlated, all the \
+devices are collected on the same event."]
     async fn start_plot(
         &self, ctxt: &Context<'ctx>,
         #[graphql(
@@ -310,46 +472,50 @@ impl<'ctx> ACSysSubscriptions {
         )]
         window_size: Option<usize>,
         #[graphql(
-            desc = "The number of waveforms to return. If omitted, the service \
-will return waveforms until the client cancels the subscription."
+            desc = "The number of waveforms to return. If omitted, the \
+		    service will return waveforms until the client cancels \
+		    the subscription."
         )]
         n_acquisitions: Option<usize>,
         #[graphql(
             desc = "If `triggerEvent` is null, this parameter specifies the \
-delay, in milliseconds, between points in a waveform. If a trigger event is \
-specified, then this specifies the delay after the event when the signal \
-should be sampled. If this parameter is null, then there will be no delay \
-after a trigger event or a 1 Hz sample rate will be used."
+		    delay, in microseconds, between points in a waveform. If \
+		    a trigger event is specified, then this specifies the \
+		    delay after the event when the signal should be sampled. \
+		    If this parameter is null, then there will be no delay \
+		    after a trigger event or a 1 Hz sample rate will be used."
         )]
         update_delay: Option<usize>,
         #[graphql(
-            desc = "The number of waveforms to return. If omitted, the service \
-will return waveforms until the client cancels the subscription."
+            desc = "The number of waveforms to return. If omitted, the \
+		    service will return waveforms until the client cancels \
+		    the subscription."
         )]
         trigger_event: Option<u8>,
         #[graphql(
             desc = "Minimum timestamp. All data before this timestamp will be \
 		    filtered from the result set."
         )]
-        x_min: Option<usize>,
+        x_min: Option<f64>,
         #[graphql(
             desc = "Maximum timestamp. All data after this timestamp will be \
 		    filtered from the result set."
         )]
-        x_max: Option<usize>,
+        x_max: Option<f64>,
     ) -> PlotStream {
-        info!("incoming plot with delay {:?}", &update_delay);
+        info!("incoming plot with delay {:?}", update_delay);
 
         // Add the periodic rate to each of the device names after stripping
         // any event specifier.
 
         let drfs: Vec<_> = drf_list
             .iter()
-            .map(|v| strip_event(&v))
+            .map(|v| strip_event(v))
             .map(add_event(update_delay, trigger_event))
             .collect();
 
-        let r = x_min.unwrap_or(0)..(x_max.map(|v| v + 1).unwrap_or(N));
+        let r = x_min.map(|v| v as usize).unwrap_or(0)
+            ..(x_max.map(|v| (v as usize) + 1).unwrap_or(N));
         let mut reply = types::PlotReplyData {
             plot_id: "demo".into(),
             data: drfs
@@ -486,8 +652,8 @@ mod test {
         );
         assert_eq!(add_event(Some(1234), None)(SINE_WAVEFORM), NULL_WAVEFORM);
 
-        assert_eq!(add_event(None, None)("M:OUTTMP"), "M:OUTTMP@p,1000");
-        assert_eq!(add_event(Some(1234), None)("M:OUTTMP"), "M:OUTTMP@p,1234");
+        assert_eq!(add_event(None, None)("M:OUTTMP"), "M:OUTTMP@p,1000000u");
+        assert_eq!(add_event(Some(1234), None)("M:OUTTMP"), "M:OUTTMP@p,1234u");
 
         assert_eq!(add_event(None, Some(0x2))(CONST_WAVEFORM), NULL_WAVEFORM);
         assert_eq!(add_event(None, Some(0xff))(RAMP_WAVEFORM), NULL_WAVEFORM);
@@ -516,8 +682,16 @@ mod test {
 
         assert_eq!(add_event(None, Some(0x02))("M:OUTTMP"), "M:OUTTMP@e,2,e");
         assert_eq!(
-            add_event(Some(1234), Some(0x8f))("M:OUTTMP"),
-            "M:OUTTMP@e,8F,e,1234"
+            add_event(Some(12345), Some(0x8f))("M:OUTTMP"),
+            "M:OUTTMP@e,8F,e,12"
+        );
+        assert_eq!(
+            add_event(Some(12499), Some(0x8f))("M:OUTTMP"),
+            "M:OUTTMP@e,8F,e,12"
+        );
+        assert_eq!(
+            add_event(Some(12500), Some(0x8f))("M:OUTTMP"),
+            "M:OUTTMP@e,8F,e,13"
         );
     }
 }

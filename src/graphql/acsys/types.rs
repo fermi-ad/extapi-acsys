@@ -25,3 +25,40 @@ pub struct PlotReplyData {
 
     pub data: Vec<PlotChannelData>,
 }
+
+/// Holds the configuration for a plot channel.
+#[derive(InputObject, SimpleObject, Debug, Clone)]
+#[graphql(input_name = "ChannelSettingSnapshotIn")]
+pub struct ChannelSettingSnapshot {
+    pub device: String,
+    pub line_color: Option<u32>,
+    pub marker_index: Option<u32>,
+}
+
+#[derive(InputObject, SimpleObject, Debug, Clone, Default)]
+#[graphql(input_name = "PlotConfigurationSnapshotIn")]
+pub struct PlotConfigurationSnapshot {
+    #[doc = "Unique identifier for the plot configuration"]
+    pub configuration_id: Option<usize>,
+    pub configuration_name: String,
+    pub channels: Vec<ChannelSettingSnapshot>,
+    pub x_min: Option<f64>,
+    pub x_max: Option<f64>,
+    pub y_min: Option<f64>,
+    pub y_max: Option<f64>,
+    pub time_delta: Option<f64>,
+    pub is_scalar: bool,
+    pub is_one_shot: bool,
+    pub is_show_labels: bool,
+    #[doc = "If `triggerEvent` is null, this parameter specifies the \
+	     delay, in milliseconds, between points in a waveform. If a \
+	     trigger event is specified, then this specifies the delay \
+	     after the event when the signal should be sampled. If this \
+	     parameter is null, then there will be no delay after a trigger \
+	     event or a 1 Hz sample rate will be used."]
+    pub update_delay: Option<usize>,
+    #[doc = "The number of waveforms to return. If omitted, the service \
+	     will return waveforms until the client cancels the subscription."]
+    pub n_acquisitions: Option<usize>,
+    pub tclk_event: Option<u8>,
+}
