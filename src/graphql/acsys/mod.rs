@@ -7,7 +7,7 @@ use futures_util::{stream, Stream, StreamExt};
 use std::{collections::HashSet, pin::Pin};
 use tokio::time::Instant;
 use tonic::Status;
-use tracing::{error, info, warn};
+use tracing::{error, info, instrument, warn};
 
 const N: usize = 500;
 
@@ -96,6 +96,7 @@ impl ACSysQueries {
 
 Depending upon the event in the DRF string, the data may \
 come back immediately or after a delay."]
+    #[instrument(skip(self, ctxt))]
     async fn accelerator_data(
         &self, ctxt: &Context<'_>,
         #[graphql(
@@ -169,10 +170,12 @@ ID is `null`, all configurations are returned. Both style of requests \
 return an array result -- it's just that specifying an ID will return \
 an array with 0 or 1 element.
 "]
-
+    #[instrument(skip(self, ctxt))]
     async fn plot_configuration(
         &self, ctxt: &Context<'_>, configuration_id: Option<usize>,
     ) -> Vec<types::PlotConfigurationSnapshot> {
+        info!("returning plot configuration(s)");
+
         ctxt.data_unchecked::<plotconfigdb::T>()
             .find(configuration_id)
             .await
@@ -185,6 +188,7 @@ will return it. If there is no configuration for the user, `null` is \
 returned. The user's account is retrieved from the authentication token \
 that is included in the request.
 "]
+    #[instrument(skip(self, ctxt))]
     async fn users_last_configuration(
         &self, ctxt: &Context<'_>,
     ) -> Option<types::PlotConfigurationSnapshot> {
@@ -212,6 +216,7 @@ impl ACSysMutations {
 Not all devices can be set -- most are read-only. To be able to set a \
 device, your SSO account must be associated with every device you may \
 want to set."]
+    #[instrument(skip(self, ctxt, value))]
     async fn set_device(
         &self, ctxt: &Context<'_>,
         #[graphql(
@@ -232,18 +237,14 @@ want to set."]
         )
         .await;
 
-        info!(
-            "setDevice({}) => rpc: {} μs",
-            &device,
-            now.elapsed().as_micros()
-        );
+        info!("done in {} μs", now.elapsed().as_micros());
 
         global::StatusReply {
             status: match result {
                 Ok(status) => status as i16,
 
                 Err(e) => {
-                    error!("set_device: {}", &e);
+                    error!("{}", &e);
 
                     -1
                 }
@@ -251,22 +252,21 @@ want to set."]
         }
     }
 
+    #[instrument(skip(self, ctxt))]
     async fn update_plot_configuration(
         &self, ctxt: &Context<'_>, config: types::PlotConfigurationSnapshot,
     ) -> Option<usize> {
-        info!(
-            "updating plot config -- id: {:?}, name: {}",
-            config.configuration_id, &config.configuration_name
-        );
+        info!("updating config");
         ctxt.data_unchecked::<plotconfigdb::T>()
             .update(config)
             .await
     }
 
+    #[instrument(skip(self, ctxt))]
     async fn delete_plot_configuration(
         &self, ctxt: &Context<'_>, configuration_id: usize,
     ) -> global::StatusReply {
-        info!("deleting plot config -- id: {}", configuration_id);
+        info!("deleting config");
         ctxt.data_unchecked::<plotconfigdb::T>()
             .remove(&configuration_id)
             .await;
@@ -281,6 +281,7 @@ latter two will be set to internal values so it can be retrieved with the \
 `usersLastConfiguration` query. The user's account name is obtained from \
 the authentication token that accompanies the request.
 "]
+    #[instrument(skip(self, ctxt))]
     async fn users_configuration(
         &self, ctxt: &Context<'_>, config: types::PlotConfigurationSnapshot,
     ) -> global::StatusReply {
