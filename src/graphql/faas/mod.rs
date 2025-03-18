@@ -1,5 +1,7 @@
 use async_graphql::*;
 
+const CLINK_OFFSET: u64 = (24 * 365 * 2 + 6) * 60 * 60;
+
 #[derive(Default)]
 pub struct FaasQueries;
 
@@ -11,10 +13,12 @@ pub struct FaasQueries;
 #[Object]
 impl FaasQueries {
     async fn clinks_to_unix(&self, clinks: u64) -> u64 {
-        todo!()
+        clinks + CLINK_OFFSET
     }
 
-    async fn unix_to_clinks(&self, time: u64) -> u64 {
-        todo!()
+    async fn unix_to_clinks(&self, time: u64) -> Option<u64> {
+        Some(time)
+            .filter(|v| *v >= CLINK_OFFSET)
+            .map(|v| v - CLINK_OFFSET)
     }
 }
