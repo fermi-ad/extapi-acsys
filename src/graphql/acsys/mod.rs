@@ -134,7 +134,15 @@ come back immediately or after a delay."]
             ctxt.data::<Connection>().unwrap(),
             ctxt.data::<global::AuthInfo>()
                 .ok()
-                .and_then(global::AuthInfo::token)
+                .and_then(|auth| {
+                    if let Some(account) = auth.unsafe_account() {
+                        info!("account: {:?}", &account)
+                    } else {
+                        warn!("couldn't get account info")
+                    }
+
+                    global::AuthInfo::token(auth)
+                })
                 .as_ref(),
             drfs.clone(),
         )
