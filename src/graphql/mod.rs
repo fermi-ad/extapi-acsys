@@ -16,6 +16,7 @@ mod acsys;
 mod bbm;
 mod clock;
 mod devdb;
+mod faas;
 mod scanner;
 mod types;
 mod xform;
@@ -24,7 +25,7 @@ mod xform;
 the control system. Some queries may require privileges, but none will \
 affect the accelerator."]
 #[derive(MergedObject, Default)]
-struct Query(acsys::ACSysQueries);
+struct Query(acsys::ACSysQueries, faas::FaasQueries);
 
 #[doc = "Queries in this section will affect the control system; updating \
 database tables and/or controlling accelerator hardware are possible. These \
@@ -79,6 +80,7 @@ async fn base_page() -> Html<&'static str> {
       <li><a href="/acsys">ACSys</a> (data acquisition)</li>
       <li><a href="/bbm">Beam Budget monitoring</a> (WIP)</li>
       <li><a href="/devdb">Device Database</a></li>
+      <li><a href="/faas">Functions as a Service</a></li>
       <li><a href="/wscan">Wire Scanner</a> (WIP)</li>
     </ul>
   </body>
@@ -168,6 +170,25 @@ fn create_devdb_router() -> Router {
     )
 }
 
+fn create_faas_router() -> Router {
+    const Q_ENDPOINT: &str = "/faas";
+
+    let schema =
+        Schema::build(faas::FaasQueries, EmptyMutation, EmptySubscription)
+            .finish();
+
+    let graphiql = axum::response::Html(
+        async_graphql::http::GraphiQLSource::build()
+            .endpoint(Q_ENDPOINT)
+            .finish(),
+    );
+
+    Router::new().route(
+        Q_ENDPOINT,
+        get(graphiql).post(graphql_handler).with_state(schema),
+    )
+}
+
 // Creates the portion of the site map that handles the Wire Scanner GraphQL
 // API.
 
@@ -210,6 +231,7 @@ async fn create_site() -> Router {
         .merge(create_acsys_router().await)
         .merge(create_bbm_router())
         .merge(create_devdb_router())
+        .merge(create_faas_router())
         .merge(create_wscan_router())
         .layer(
             CorsLayer::new()
