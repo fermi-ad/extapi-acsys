@@ -7,7 +7,7 @@ use futures_util::{stream, Stream, StreamExt};
 use std::{collections::HashSet, pin::Pin};
 use tokio::time::Instant;
 use tonic::Status;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, instrument, warn};
 
 const N: usize = 500;
 
@@ -94,8 +94,9 @@ pub struct ACSysQueries;
 impl ACSysQueries {
     #[doc = "Retrieve the next data point for the specified devices.
 
-Depending upon the event in the DRF string, the data may \
-come back immediately or after a delay."]
+      Depending upon the event in the DRF string, the data may come back \
+      immediately or after a delay."]
+    #[instrument(skip(self, ctxt))]
     async fn accelerator_data(
         &self, ctxt: &Context<'_>,
         #[graphql(
@@ -131,7 +132,18 @@ come back immediately or after a delay."]
 
         let mut s = dpm::acquire_devices(
             ctxt.data::<Connection>().unwrap(),
-            "",
+            ctxt.data::<global::AuthInfo>()
+                .ok()
+                .and_then(|auth| {
+                    if let Some(account) = auth.unsafe_account() {
+                        info!("account: {:?}", &account)
+                    } else {
+                        warn!("couldn't get account info")
+                    }
+
+                    global::AuthInfo::token(auth)
+                })
+                .as_ref(),
             drfs.clone(),
         )
         .await
@@ -161,15 +173,16 @@ come back immediately or after a delay."]
 
     #[doc = "Retrieve plot configuration(s).
 
-Returns a plot configuration associated with the specified ID. If the \
-ID is `null`, all configurations are returned. Both style of requests \
-return an array result -- it's just that specifying an ID will return \
-an array with 0 or 1 element.
-"]
-
+      Returns a plot configuration associated with the specified ID. If the \
+      ID is `null`, all configurations are returned. Both style of requests \
+      return an array result -- it's just that specifying an ID will return \
+      an array with 0 or 1 element."]
+    #[instrument(skip(self, ctxt))]
     async fn plot_configuration(
         &self, ctxt: &Context<'_>, configuration_id: Option<usize>,
     ) -> Vec<types::PlotConfigurationSnapshot> {
+        info!("returning plot configuration(s)");
+
         ctxt.data_unchecked::<plotconfigdb::T>()
             .find(configuration_id)
             .await
@@ -177,11 +190,11 @@ an array with 0 or 1 element.
 
     #[doc = "Obtain the user's last configuration.
 
-If the application saved the user's last plot configuration, this query \
-will return it. If there is no configuration for the user, `null` is \
-returned. The user's account is retrieved from the authentication token \
-that is included in the request.
-"]
+      If the application saved the user's last plot configuration, this query \
+      will return it. If there is no configuration for the user, `null` is \
+      returned. The user's account is retrieved from the authentication token \
+      that is included in the request."]
+    #[instrument(skip(self, ctxt))]
     async fn users_last_configuration(
         &self, ctxt: &Context<'_>,
     ) -> Option<types::PlotConfigurationSnapshot> {
@@ -206,9 +219,10 @@ pub struct ACSysMutations;
 impl ACSysMutations {
     #[doc = "Sends a setting to a device.
 
-Not all devices can be set -- most are read-only. To be able to set a \
-device, your SSO account must be associated with every device you may \
-want to set."]
+      Not all devices can be set -- most are read-only. To be able to set a \
+      device, your SSO account must be associated with every device you may \
+      want to set."]
+    #[instrument(skip(self, ctxt, value))]
     async fn set_device(
         &self, ctxt: &Context<'_>,
         #[graphql(
@@ -229,18 +243,14 @@ want to set."]
         )
         .await;
 
-        info!(
-            "setDevice({}) => rpc: {} μs",
-            &device,
-            now.elapsed().as_micros()
-        );
+        info!("done in {} μs", now.elapsed().as_micros());
 
         global::StatusReply {
             status: match result {
                 Ok(status) => status as i16,
 
                 Err(e) => {
-                    error!("set_device: {}", &e);
+                    error!("{}", &e);
 
                     -1
                 }
@@ -248,22 +258,21 @@ want to set."]
         }
     }
 
+    #[instrument(skip(self, ctxt))]
     async fn update_plot_configuration(
         &self, ctxt: &Context<'_>, config: types::PlotConfigurationSnapshot,
     ) -> Option<usize> {
-        info!(
-            "updating plot config -- id: {:?}, name: {}",
-            config.configuration_id, &config.configuration_name
-        );
+        info!("updating config");
         ctxt.data_unchecked::<plotconfigdb::T>()
             .update(config)
             .await
     }
 
+    #[instrument(skip(self, ctxt))]
     async fn delete_plot_configuration(
         &self, ctxt: &Context<'_>, configuration_id: usize,
     ) -> global::StatusReply {
-        info!("deleting plot config -- id: {}", configuration_id);
+        info!("deleting config");
         ctxt.data_unchecked::<plotconfigdb::T>()
             .remove(&configuration_id)
             .await;
@@ -272,12 +281,13 @@ want to set."]
 
     #[doc = "Sets the user's default configuration.
 
-The content of the configuration are used to set the default configuration \
-for the user. All fields, except the ID and name fields, are used (the \
-latter two will be set to internal values so it can be retrieved with the \
-`usersLastConfiguration` query. The user's account name is obtained from \
-the authentication token that accompanies the request.
-"]
+      The content of the configuration are used to set the default \
+      configuration for the user. All fields, except the ID and name \
+      fields, are used (the latter two will be set to internal values \
+      so it can be retrieved with the `usersLastConfiguration` query.) \
+      The user's account name is obtained from the authentication token \
+      that accompanies the request."]
+    #[instrument(skip(self, ctxt))]
     async fn users_configuration(
         &self, ctxt: &Context<'_>, config: types::PlotConfigurationSnapshot,
     ) -> global::StatusReply {
@@ -340,15 +350,15 @@ fn add_event(
 }
 
 fn stuff_fake_data(
-    r: &mut dyn Iterator<Item = usize>, drfs: &[String],
+    r: &mut dyn Iterator<Item = usize>, drfs: &[String], ts: f64,
     chans: &mut [types::PlotChannelData],
 ) {
     for (idx, chan) in chans.iter_mut().enumerate() {
         match drfs[idx].as_str() {
-            CONST_WAVEFORM => chan.channel_data = const_data(r, 5.0),
-            RAMP_WAVEFORM => chan.channel_data = ramp_data(r),
-            PARABOLA_WAVEFORM => chan.channel_data = parabola_data(r),
-            SINE_WAVEFORM => chan.channel_data = sine_data(r),
+            CONST_WAVEFORM => chan.channel_data = const_data(r, ts, 5.0),
+            RAMP_WAVEFORM => chan.channel_data = ramp_data(r, ts),
+            PARABOLA_WAVEFORM => chan.channel_data = parabola_data(r, ts),
+            SINE_WAVEFORM => chan.channel_data = sine_data(r, ts),
             _ => (),
         }
     }
@@ -361,11 +371,13 @@ fn to_plot_data(
         global::DataType::Scalar(y) => (
             0,
             vec![types::PlotDataPoint {
+                t: None,
                 x: data.timestamp.timestamp_micros() as f64 / 1_000_000.0,
                 y: y.scalar_value,
             }],
         ),
         global::DataType::ScalarArray(a) => {
+            let ts = data.timestamp.timestamp_micros() as f64 / 1_000_000.0;
             let step = window_size
                 .filter(|v| *v > 0 && *v <= len)
                 .map(|v| len.div_ceil(v))
@@ -378,6 +390,7 @@ fn to_plot_data(
                     .enumerate()
                     .step_by(step)
                     .map(|(idx, y)| types::PlotDataPoint {
+                        t: Some(ts),
                         x: idx as f64,
                         y: *y,
                     })
@@ -399,8 +412,9 @@ pub struct ACSysSubscriptions;
 impl<'ctx> ACSysSubscriptions {
     #[doc = "Retrieve data from accelerator devices.
 
-Accepts a list of DRF strings and streams the resulting data as it gets \
-generated."]
+      Accepts a list of DRF strings and streams the resulting data as it gets \
+      generated."]
+
     async fn accelerator_data(
         &self, ctxt: &Context<'ctx>,
         #[graphql(
@@ -433,13 +447,16 @@ generated."]
 
         match dpm::acquire_devices(
             ctxt.data::<Connection>().unwrap(),
-            "",
+            ctxt.data::<global::AuthInfo>()
+                .ok()
+                .and_then(global::AuthInfo::token)
+                .as_ref(),
             drfs.clone(),
         )
         .await
         {
             Ok(s) => {
-                info!("rpc: {} μs", now.elapsed().as_micros());
+                debug!("rpc: {} μs", now.elapsed().as_micros());
                 Box::pin(s.into_inner().map(mk_xlater(drfs))) as DataStream
             }
             Err(e) => {
@@ -451,10 +468,10 @@ generated."]
 
     #[doc = "Retrieve correlated plot data.
 
-This query sets up a request which returns a stream of data, presumably used \
-for plotting. Unlike the `acceleratorData` query, this stream returns data \
-for all the devices in one reply. Since the data is correlated, all the \
-devices are collected on the same event."]
+      This query sets up a request which returns a stream of data, presumably \
+      used for plotting. Unlike the `acceleratorData` query, this stream \
+      returns data for all the devices in one reply. Since the data is \
+      correlated, all the devices are collected on the same event."]
     async fn start_plot(
         &self, ctxt: &Context<'ctx>,
         #[graphql(
@@ -528,7 +545,7 @@ devices are collected on the same event."]
                 .collect(),
         };
 
-        stuff_fake_data(&mut r.clone(), &drf_list, &mut reply.data);
+        stuff_fake_data(&mut r.clone(), &drf_list, 0.0, &mut reply.data);
 
         match self.accelerator_data(ctxt, drfs, None, None).await {
             Ok(strm) => {
@@ -557,6 +574,7 @@ devices are collected on the same event."]
                         stuff_fake_data(
                             &mut r.clone(),
                             &drf_list,
+                            0.0,
                             &mut reply.data,
                         );
                         future::ready(Some(temp))
@@ -580,14 +598,21 @@ devices are collected on the same event."]
 }
 
 fn const_data(
-    r: &mut dyn Iterator<Item = usize>, y: f64,
+    r: &mut dyn Iterator<Item = usize>, ts: f64, y: f64,
 ) -> Vec<types::PlotDataPoint> {
-    r.map(|idx| types::PlotDataPoint { x: idx as f64, y })
-        .collect()
+    r.map(|idx| types::PlotDataPoint {
+        t: Some(ts),
+        x: idx as f64,
+        y,
+    })
+    .collect()
 }
 
-fn ramp_data(r: &mut dyn Iterator<Item = usize>) -> Vec<types::PlotDataPoint> {
+fn ramp_data(
+    r: &mut dyn Iterator<Item = usize>, ts: f64,
+) -> Vec<types::PlotDataPoint> {
     r.map(|idx| types::PlotDataPoint {
+        t: Some(ts),
         x: idx as f64,
         y: idx as f64,
     })
@@ -595,12 +620,13 @@ fn ramp_data(r: &mut dyn Iterator<Item = usize>) -> Vec<types::PlotDataPoint> {
 }
 
 fn parabola_data(
-    r: &mut dyn Iterator<Item = usize>,
+    r: &mut dyn Iterator<Item = usize>, ts: f64,
 ) -> Vec<types::PlotDataPoint> {
     r.map(|idx| {
         let x = idx as f64;
 
         types::PlotDataPoint {
+            t: Some(ts),
             x,
             y: (x * x) / 125.0 - 4.0 * x + 500.0,
         }
@@ -608,10 +634,13 @@ fn parabola_data(
     .collect()
 }
 
-fn sine_data(r: &mut dyn Iterator<Item = usize>) -> Vec<types::PlotDataPoint> {
+fn sine_data(
+    r: &mut dyn Iterator<Item = usize>, ts: f64,
+) -> Vec<types::PlotDataPoint> {
     let k = (std::f64::consts::PI * 2.0) / (N as f64);
 
     r.map(|idx| types::PlotDataPoint {
+        t: Some(ts),
         x: idx as f64,
         y: f64::sin(k * (idx as f64)),
     })

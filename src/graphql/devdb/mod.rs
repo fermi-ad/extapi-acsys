@@ -143,7 +143,11 @@ pub struct DevDBQueries;
 
 #[Object]
 impl DevDBQueries {
-    /// Retrieves device information. The parameter specifies the device. The reply will contain the device's information or an error status indicating why the query failed.
+    #[doc = "Retrieves device information.
+
+      The parameter specifies the device. The reply will contain the \
+      device's information or an error status indicating why the query \
+      failed."]
     async fn device_info(
         &self, devices: Vec<String>,
     ) -> types::DeviceInfoReply {

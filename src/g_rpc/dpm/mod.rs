@@ -2,7 +2,7 @@ use proto::{
     dpm_client::DpmClient, AcquisitionList, Setting, SettingList, StatusList,
 };
 use tonic::transport::{Channel, Error};
-use tracing::info;
+use tracing::{info, warn};
 
 pub mod proto {
     tonic::include_proto!("dpm");
@@ -19,17 +19,31 @@ type TonicQueryResult<T> = Result<T, tonic::Status>;
 
 pub async fn build_connection() -> Result<Connection, Error> {
     Ok(Connection(
-        DpmClient::connect("http://dce09.fnal.gov:50051/").await?,
+        DpmClient::connect("http://dce46.fnal.gov:50051/").await?,
     ))
 }
 
 pub async fn acquire_devices(
-    conn: &Connection, session_id: &str, devices: Vec<String>,
+    conn: &Connection, jwt: Option<&String>, devices: Vec<String>,
 ) -> TonicStreamResult<proto::Reading> {
-    let req = AcquisitionList {
-        session_id: session_id.to_owned(),
+    let mut req = tonic::Request::new(AcquisitionList {
+        session_id: "".to_owned(),
         req: devices,
-    };
+    });
+
+    if let Some(jwt) = jwt {
+        use std::str::FromStr;
+        use tonic::metadata::MetadataValue;
+
+        match MetadataValue::from_str(&format!("Bearer {}", jwt)) {
+            Ok(val) => {
+                req.metadata_mut().insert("authorization", val);
+            }
+            Err(e) => warn!("error creating JWT : {}", e),
+        }
+    } else {
+        warn!("no JWT for this request");
+    }
 
     conn.0.clone().start_acquisition(req).await
 }

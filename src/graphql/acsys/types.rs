@@ -2,6 +2,7 @@ use async_graphql::*;
 
 #[derive(SimpleObject)]
 pub struct PlotDataPoint {
+    pub t: Option<f64>,
     pub x: f64,
     pub y: f64,
 }
@@ -15,7 +16,7 @@ pub struct PlotChannelData {
     pub channel_data: Vec<PlotDataPoint>,
 }
 
-/// Contains plot data for a given plot request.
+#[doc = "Contains plot data for a given plot request."]
 #[derive(SimpleObject)]
 pub struct PlotReplyData {
     #[doc = "A unique identifier for the plot request. This identifier will \
@@ -26,7 +27,7 @@ pub struct PlotReplyData {
     pub data: Vec<PlotChannelData>,
 }
 
-/// Holds the configuration for a plot channel.
+#[doc = "Holds the configuration for a plot channel."]
 #[derive(InputObject, SimpleObject, Debug, Clone)]
 #[graphql(input_name = "ChannelSettingSnapshotIn")]
 pub struct ChannelSettingSnapshot {
