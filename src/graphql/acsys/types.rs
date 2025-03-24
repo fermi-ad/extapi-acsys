@@ -2,6 +2,7 @@ use async_graphql::*;
 
 #[derive(SimpleObject)]
 pub struct PlotDataPoint {
+    pub t: Option<f64>,
     pub x: f64,
     pub y: f64,
 }

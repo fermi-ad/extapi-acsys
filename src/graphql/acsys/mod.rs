@@ -352,15 +352,15 @@ fn add_event(
 }
 
 fn stuff_fake_data(
-    r: &mut dyn Iterator<Item = usize>, drfs: &[String],
+    r: &mut dyn Iterator<Item = usize>, drfs: &[String], ts: f64,
     chans: &mut [types::PlotChannelData],
 ) {
     for (idx, chan) in chans.iter_mut().enumerate() {
         match drfs[idx].as_str() {
-            CONST_WAVEFORM => chan.channel_data = const_data(r, 5.0),
-            RAMP_WAVEFORM => chan.channel_data = ramp_data(r),
-            PARABOLA_WAVEFORM => chan.channel_data = parabola_data(r),
-            SINE_WAVEFORM => chan.channel_data = sine_data(r),
+            CONST_WAVEFORM => chan.channel_data = const_data(r, ts, 5.0),
+            RAMP_WAVEFORM => chan.channel_data = ramp_data(r, ts),
+            PARABOLA_WAVEFORM => chan.channel_data = parabola_data(r, ts),
+            SINE_WAVEFORM => chan.channel_data = sine_data(r, ts),
             _ => (),
         }
     }
@@ -373,11 +373,13 @@ fn to_plot_data(
         global::DataType::Scalar(y) => (
             0,
             vec![types::PlotDataPoint {
+                t: None,
                 x: data.timestamp.timestamp_micros() as f64 / 1_000_000.0,
                 y: y.scalar_value,
             }],
         ),
         global::DataType::ScalarArray(a) => {
+            let ts = data.timestamp.timestamp_micros() as f64 / 1_000_000.0;
             let step = window_size
                 .filter(|v| *v > 0 && *v <= len)
                 .map(|v| len.div_ceil(v))
@@ -390,6 +392,7 @@ fn to_plot_data(
                     .enumerate()
                     .step_by(step)
                     .map(|(idx, y)| types::PlotDataPoint {
+                        t: Some(ts),
                         x: idx as f64,
                         y: *y,
                     })
@@ -544,7 +547,7 @@ impl<'ctx> ACSysSubscriptions {
                 .collect(),
         };
 
-        stuff_fake_data(&mut r.clone(), &drf_list, &mut reply.data);
+        stuff_fake_data(&mut r.clone(), &drf_list, 0.0, &mut reply.data);
 
         match self.accelerator_data(ctxt, drfs, None, None).await {
             Ok(strm) => {
@@ -573,6 +576,7 @@ impl<'ctx> ACSysSubscriptions {
                         stuff_fake_data(
                             &mut r.clone(),
                             &drf_list,
+                            0.0,
                             &mut reply.data,
                         );
                         future::ready(Some(temp))
@@ -596,14 +600,21 @@ impl<'ctx> ACSysSubscriptions {
 }
 
 fn const_data(
-    r: &mut dyn Iterator<Item = usize>, y: f64,
+    r: &mut dyn Iterator<Item = usize>, ts: f64, y: f64,
 ) -> Vec<types::PlotDataPoint> {
-    r.map(|idx| types::PlotDataPoint { x: idx as f64, y })
-        .collect()
+    r.map(|idx| types::PlotDataPoint {
+        t: Some(ts),
+        x: idx as f64,
+        y,
+    })
+    .collect()
 }
 
-fn ramp_data(r: &mut dyn Iterator<Item = usize>) -> Vec<types::PlotDataPoint> {
+fn ramp_data(
+    r: &mut dyn Iterator<Item = usize>, ts: f64,
+) -> Vec<types::PlotDataPoint> {
     r.map(|idx| types::PlotDataPoint {
+        t: Some(ts),
         x: idx as f64,
         y: idx as f64,
     })
@@ -611,12 +622,13 @@ fn ramp_data(r: &mut dyn Iterator<Item = usize>) -> Vec<types::PlotDataPoint> {
 }
 
 fn parabola_data(
-    r: &mut dyn Iterator<Item = usize>,
+    r: &mut dyn Iterator<Item = usize>, ts: f64,
 ) -> Vec<types::PlotDataPoint> {
     r.map(|idx| {
         let x = idx as f64;
 
         types::PlotDataPoint {
+            t: Some(ts),
             x,
             y: (x * x) / 125.0 - 4.0 * x + 500.0,
         }
@@ -624,10 +636,13 @@ fn parabola_data(
     .collect()
 }
 
-fn sine_data(r: &mut dyn Iterator<Item = usize>) -> Vec<types::PlotDataPoint> {
+fn sine_data(
+    r: &mut dyn Iterator<Item = usize>, ts: f64,
+) -> Vec<types::PlotDataPoint> {
     let k = (std::f64::consts::PI * 2.0) / (N as f64);
 
     r.map(|idx| types::PlotDataPoint {
+        t: Some(ts),
         x: idx as f64,
         y: f64::sin(k * (idx as f64)),
     })
