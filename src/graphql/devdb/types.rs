@@ -216,7 +216,7 @@ pub struct DigStatusEntry {
     #[doc = "A string representing the value when it's in a bad state."]
     pub false_str: String,
 
-    #[doc ="The color to use when the status is in a bad state."]
+    #[doc = "The color to use when the status is in a bad state."]
     pub false_color: u32,
 
     #[doc = "A character to display that represents a bad state."]

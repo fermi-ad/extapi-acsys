@@ -177,7 +177,6 @@ impl ACSysQueries {
       ID is `null`, all configurations are returned. Both style of requests \
       return an array result -- it's just that specifying an ID will return \
       an array with 0 or 1 element."]
-
     #[instrument(skip(self, ctxt))]
     async fn plot_configuration(
         &self, ctxt: &Context<'_>, configuration_id: Option<usize>,
@@ -195,7 +194,6 @@ impl ACSysQueries {
       will return it. If there is no configuration for the user, `null` is \
       returned. The user's account is retrieved from the authentication token \
       that is included in the request."]
-
     #[instrument(skip(self, ctxt))]
     async fn users_last_configuration(
         &self, ctxt: &Context<'_>,
