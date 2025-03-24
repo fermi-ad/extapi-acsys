@@ -16,6 +16,7 @@ mod acsys;
 mod bbm;
 mod clock;
 mod devdb;
+mod faas;
 mod scanner;
 mod types;
 mod xform;
@@ -24,7 +25,7 @@ mod xform;
 the control system. Some queries may require privileges, but none will \
 affect the accelerator."]
 #[derive(MergedObject, Default)]
-struct Query(acsys::ACSysQueries);
+struct Query(acsys::ACSysQueries, faas::FaasQueries);
 
 #[doc = "Queries in this section will affect the control system; updating \
 database tables and/or controlling accelerator hardware are possible. These \
@@ -79,6 +80,7 @@ async fn base_page() -> Html<&'static str> {
       <li><a href="/acsys">ACSys</a> (data acquisition)</li>
       <li><a href="/bbm">Beam Budget monitoring</a> (WIP)</li>
       <li><a href="/devdb">Device Database</a></li>
+      <li><a href="/faas">Functions as a Service</a></li>
       <li><a href="/wscan">Wire Scanner</a> (WIP)</li>
     </ul>
   </body>
@@ -93,7 +95,7 @@ async fn create_acsys_router() -> Router {
     const Q_ENDPOINT: &str = "/acsys";
     const S_ENDPOINT: &str = "/acsys/s";
 
-    let acsys_schema = Schema::build(
+    let schema = Schema::build(
         Query::default(),
         Mutation::default(),
         Subscription::default(),
@@ -102,7 +104,7 @@ async fn create_acsys_router() -> Router {
     .data(acsys::new_context())
     .finish();
 
-    let acsys_graphiql = axum::response::Html(
+    let graphiql = axum::response::Html(
         async_graphql::http::GraphiQLSource::build()
             .endpoint(Q_ENDPOINT)
             .subscription_endpoint(S_ENDPOINT)
@@ -112,11 +114,11 @@ async fn create_acsys_router() -> Router {
     Router::new()
         .route(
             Q_ENDPOINT,
-            get(acsys_graphiql)
+            get(graphiql)
                 .post(graphql_handler)
-                .with_state(acsys_schema.clone()),
+                .with_state(schema.clone()),
         )
-        .route_service(S_ENDPOINT, GraphQLSubscription::new(acsys_schema))
+        .route_service(S_ENDPOINT, GraphQLSubscription::new(schema))
 }
 
 // Creates the portion of the site map that handles the Beam Budget
@@ -124,27 +126,23 @@ async fn create_acsys_router() -> Router {
 
 fn create_bbm_router() -> Router {
     const Q_ENDPOINT: &str = "/bbm";
-    const S_ENDPOINT: &str = "/bbm/s";
 
-    let bbm_schema =
+    let schema =
         Schema::build(bbm::BbmQueries, EmptyMutation, EmptySubscription)
             .finish();
 
-    let bbm_graphiql = axum::response::Html(
+    let graphiql = axum::response::Html(
         async_graphql::http::GraphiQLSource::build()
             .endpoint(Q_ENDPOINT)
-            .subscription_endpoint(S_ENDPOINT)
             .finish(),
     );
 
-    Router::new()
-        .route(
-            Q_ENDPOINT,
-            get(bbm_graphiql)
-                .post(graphql_handler)
-                .with_state(bbm_schema.clone()),
-        )
-        .route_service(S_ENDPOINT, GraphQLSubscription::new(bbm_schema))
+    Router::new().route(
+        Q_ENDPOINT,
+        get(graphiql)
+            .post(graphql_handler)
+            .with_state(schema.clone()),
+    )
 }
 
 // Creates the portion of the site map that handles the Device Database
@@ -152,28 +150,43 @@ fn create_bbm_router() -> Router {
 
 fn create_devdb_router() -> Router {
     const Q_ENDPOINT: &str = "/devdb";
-    const S_ENDPOINT: &str = "/devdb/s";
 
-    let devdb_schema =
+    let schema =
         Schema::build(devdb::DevDBQueries, EmptyMutation, EmptySubscription)
             .register_output_type::<devdb::types::DeviceProperty>()
             .finish();
 
-    let devdb_graphiql = axum::response::Html(
+    let graphiql = axum::response::Html(
         async_graphql::http::GraphiQLSource::build()
             .endpoint(Q_ENDPOINT)
-            .subscription_endpoint(S_ENDPOINT)
             .finish(),
     );
 
-    Router::new()
-        .route(
-            Q_ENDPOINT,
-            get(devdb_graphiql)
-                .post(graphql_handler)
-                .with_state(devdb_schema.clone()),
-        )
-        .route_service(S_ENDPOINT, GraphQLSubscription::new(devdb_schema))
+    Router::new().route(
+        Q_ENDPOINT,
+        get(graphiql)
+            .post(graphql_handler)
+            .with_state(schema.clone()),
+    )
+}
+
+fn create_faas_router() -> Router {
+    const Q_ENDPOINT: &str = "/faas";
+
+    let schema =
+        Schema::build(faas::FaasQueries, EmptyMutation, EmptySubscription)
+            .finish();
+
+    let graphiql = axum::response::Html(
+        async_graphql::http::GraphiQLSource::build()
+            .endpoint(Q_ENDPOINT)
+            .finish(),
+    );
+
+    Router::new().route(
+        Q_ENDPOINT,
+        get(graphiql).post(graphql_handler).with_state(schema),
+    )
 }
 
 // Creates the portion of the site map that handles the Wire Scanner GraphQL
@@ -183,14 +196,14 @@ fn create_wscan_router() -> Router {
     const Q_ENDPOINT: &str = "/wscan";
     const S_ENDPOINT: &str = "/wscan/s";
 
-    let wscan_schema = Schema::build(
+    let schema = Schema::build(
         scanner::ScannerQueries,
         scanner::ScannerMutations,
         scanner::ScannerSubscriptions,
     )
     .finish();
 
-    let wscan_graphiql = axum::response::Html(
+    let graphiql = axum::response::Html(
         async_graphql::http::GraphiQLSource::build()
             .endpoint(Q_ENDPOINT)
             .subscription_endpoint(S_ENDPOINT)
@@ -200,11 +213,11 @@ fn create_wscan_router() -> Router {
     Router::new()
         .route(
             Q_ENDPOINT,
-            get(wscan_graphiql)
+            get(graphiql)
                 .post(graphql_handler)
-                .with_state(wscan_schema.clone()),
+                .with_state(schema.clone()),
         )
-        .route_service(S_ENDPOINT, GraphQLSubscription::new(wscan_schema))
+        .route_service(S_ENDPOINT, GraphQLSubscription::new(schema))
 }
 
 // Creates the web site for the various GraphQL APIs.
@@ -218,6 +231,7 @@ async fn create_site() -> Router {
         .merge(create_acsys_router().await)
         .merge(create_bbm_router())
         .merge(create_devdb_router())
+        .merge(create_faas_router())
         .merge(create_wscan_router())
         .layer(
             CorsLayer::new()
