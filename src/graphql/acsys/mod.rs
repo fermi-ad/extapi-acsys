@@ -7,7 +7,7 @@ use futures_util::{stream, Stream, StreamExt};
 use std::{collections::HashSet, pin::Pin};
 use tokio::time::Instant;
 use tonic::Status;
-use tracing::{error, info, instrument, warn};
+use tracing::{debug, error, info, instrument, warn};
 
 const N: usize = 500;
 
@@ -455,7 +455,7 @@ impl<'ctx> ACSysSubscriptions {
         .await
         {
             Ok(s) => {
-                info!("rpc: {} μs", now.elapsed().as_micros());
+                debug!("rpc: {} μs", now.elapsed().as_micros());
                 Box::pin(s.into_inner().map(mk_xlater(drfs))) as DataStream
             }
             Err(e) => {
