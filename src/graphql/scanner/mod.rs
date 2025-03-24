@@ -53,12 +53,16 @@ pub struct ScannerMutations;
 
 #[Object]
 impl ScannerMutations {
-    #[doc = "Requests that a scan be started with the configuration specified by the `id` parameter. If a scan was successfully started, an ID will be returned. If it couldn't be started, `null` is returned."]
+    #[doc = "Requests that a scan be started with the configuration specified \
+	     by the `id` parameter. If a scan was successfully started, an ID \
+	     will be returned. If it couldn't be started, `null` is returned."]
     async fn request_scan(&self, _id: ID) -> Option<ID> {
         None
     }
 
-    #[doc = "Requests that a scan be stopped. The `id` parameter is the value obtained from a previous `request_scan` command or from a scan progress query."]
+    #[doc = "Requests that a scan be stopped. The `id` parameter is the value \
+	     obtained from a previous `request_scan` command or from a scan \
+	     progress query."]
     async fn abort_scan(&self, id: ID) -> bool {
         wscan::abort_scan(id.0.clone()).await.is_ok()
     }

@@ -4,10 +4,11 @@ use chrono::*;
 
 #[derive(SimpleObject)]
 pub struct XFormResult {
-    /// Timestamp representing when the data was sampled. This value is provided as milliseconds since 1970, UTC.
+    #[doc = "Timestamp representing when the data was sampled. This value is \
+	     provided as milliseconds since 1970, UTC."]
     pub timestamp: DateTime<Utc>,
 
-    /// The value of the device when sampled.
+    #[doc = "The value of the device when sampled."]
     pub result: Scalar,
 }
 
