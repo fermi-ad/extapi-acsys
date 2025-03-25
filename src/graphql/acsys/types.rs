@@ -23,7 +23,7 @@ pub struct PlotReplyData {
 	     be cached for a limited time. Other clients can specify it to \
 	     re-use the configuration."]
     pub plot_id: String,
-
+    pub tstamp: f64,
     pub data: Vec<PlotChannelData>,
 }
 

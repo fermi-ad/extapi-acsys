@@ -535,6 +535,7 @@ impl<'ctx> ACSysSubscriptions {
             ..(x_max.map(|v| (v as usize) + 1).unwrap_or(N));
         let mut reply = types::PlotReplyData {
             plot_id: "demo".into(),
+            tstamp: 0.0,
             data: drfs
                 .iter()
                 .map(|_| types::PlotChannelData {
@@ -557,8 +558,14 @@ impl<'ctx> ACSysSubscriptions {
                     if reply.data.iter().all(|e| {
                         e.channel_status != 0 || !e.channel_data.is_empty()
                     }) {
+                        // XXX: All timestamps should be doubles instead of
+                        // converting to and from ASCII ISO values.
+
+                        let ts = e.data.timestamp.timestamp_micros() as f64
+                            / 1_000_000.0;
                         let mut temp = types::PlotReplyData {
                             plot_id: "demo".into(),
+                            tstamp: ts,
                             data: reply
                                 .data
                                 .iter()
@@ -570,11 +577,12 @@ impl<'ctx> ACSysSubscriptions {
                                 .collect(),
                         };
 
+                        reply.tstamp = ts;
                         std::mem::swap(&mut temp, &mut reply);
                         stuff_fake_data(
                             &mut r.clone(),
                             &drf_list,
-                            0.0,
+                            ts,
                             &mut reply.data,
                         );
                         future::ready(Some(temp))
