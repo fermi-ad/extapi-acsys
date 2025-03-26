@@ -410,6 +410,101 @@ type PlotStream = Pin<Box<dyn Stream<Item = types::PlotReplyData> + Send>>;
 #[derive(Default)]
 pub struct ACSysSubscriptions;
 
+// Private methods used by subscriptions.
+
+impl<'ctx> ACSysSubscriptions {
+    async fn handle_continuous(
+        &self, ctxt: &Context<'ctx>, drfs: Vec<String>,
+        window_size: Option<usize>, n_acquisitions: Option<usize>,
+        update_delay: Option<usize>, x_min: Option<f64>, x_max: Option<f64>,
+    ) -> PlotStream {
+        let r = x_min.map(|v| v as usize).unwrap_or(0)
+            ..(x_max.map(|v| (v as usize) + 1).unwrap_or(N));
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_micros() as f64
+            / 1_000_000.0;
+        let mut reply = types::PlotReplyData {
+            plot_id: "demo".into(),
+            tstamp: now,
+            data: drfs
+                .iter()
+                .map(|_| types::PlotChannelData {
+                    channel_units: "V".into(),
+                    channel_status: 0,
+                    channel_data: vec![],
+                })
+                .collect(),
+        };
+
+        stuff_fake_data(&mut r.clone(), &drfs, 0.0, &mut reply.data);
+
+        match self.accelerator_data(ctxt, drfs.clone(), None, None).await {
+            Ok(strm) => {
+                let s = strm.filter_map(move |e: global::DataReply| {
+                    reply.data[e.ref_id as usize].channel_data =
+                        to_plot_data(r.len(), &window_size, None, &e.data).1;
+                    reply.data[e.ref_id as usize].channel_status = 0;
+
+                    if reply.data.iter().all(|e| {
+                        e.channel_status != 0 || !e.channel_data.is_empty()
+                    }) {
+                        // XXX: All timestamps should be doubles instead of
+                        // converting to and from ASCII ISO values.
+
+                        let ts = e.data.timestamp.timestamp_micros() as f64
+                            / 1_000_000.0;
+                        let mut temp = types::PlotReplyData {
+                            plot_id: "demo".into(),
+                            tstamp: now,
+                            data: reply
+                                .data
+                                .iter()
+                                .map(|e| types::PlotChannelData {
+                                    channel_units: e.channel_units.clone(),
+                                    channel_status: e.channel_status,
+                                    channel_data: vec![],
+                                })
+                                .collect(),
+                        };
+
+                        std::mem::swap(&mut temp, &mut reply);
+                        stuff_fake_data(
+                            &mut r.clone(),
+                            &drfs,
+                            ts,
+                            &mut reply.data,
+                        );
+                        future::ready(Some(temp))
+                    } else {
+                        future::ready(None)
+                    }
+                });
+
+                if let Some(n) = n_acquisitions.map(|v| v.max(1)) {
+                    Box::pin(s.take(n)) as PlotStream
+                } else {
+                    Box::pin(s) as PlotStream
+                }
+            }
+            Err(e) => {
+                error!("{:?}", &e);
+                Box::pin(stream::empty()) as PlotStream
+            }
+        }
+    }
+
+    async fn handle_triggered(
+        &self, ctxt: &Context<'ctx>, drf_list: Vec<String>,
+        window_size: Option<usize>, n_acquisitions: Option<usize>,
+        update_delay: Option<usize>, trigger_event: u8, x_min: Option<f64>,
+        x_max: Option<f64>,
+    ) -> PlotStream {
+        todo!()
+    }
+}
+
 #[Subscription]
 impl<'ctx> ACSysSubscriptions {
     #[doc = "Retrieve data from accelerator devices.
@@ -533,80 +628,29 @@ impl<'ctx> ACSysSubscriptions {
             .map(add_event(update_delay, trigger_event))
             .collect();
 
-        let r = x_min.map(|v| v as usize).unwrap_or(0)
-            ..(x_max.map(|v| (v as usize) + 1).unwrap_or(N));
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_micros() as f64
-            / 1_000_000.0;
-        let mut reply = types::PlotReplyData {
-            plot_id: "demo".into(),
-            tstamp: now,
-            data: drfs
-                .iter()
-                .map(|_| types::PlotChannelData {
-                    channel_units: "V".into(),
-                    channel_status: 0,
-                    channel_data: vec![],
-                })
-                .collect(),
-        };
-
-        stuff_fake_data(&mut r.clone(), &drf_list, 0.0, &mut reply.data);
-
-        match self.accelerator_data(ctxt, drfs, None, None).await {
-            Ok(strm) => {
-                let s = strm.filter_map(move |e: global::DataReply| {
-                    reply.data[e.ref_id as usize].channel_data =
-                        to_plot_data(r.len(), &window_size, None, &e.data).1;
-                    reply.data[e.ref_id as usize].channel_status = 0;
-
-                    if reply.data.iter().all(|e| {
-                        e.channel_status != 0 || !e.channel_data.is_empty()
-                    }) {
-                        // XXX: All timestamps should be doubles instead of
-                        // converting to and from ASCII ISO values.
-
-                        let ts = e.data.timestamp.timestamp_micros() as f64
-                            / 1_000_000.0;
-                        let mut temp = types::PlotReplyData {
-                            plot_id: "demo".into(),
-                            tstamp: now,
-                            data: reply
-                                .data
-                                .iter()
-                                .map(|e| types::PlotChannelData {
-                                    channel_units: e.channel_units.clone(),
-                                    channel_status: e.channel_status,
-                                    channel_data: vec![],
-                                })
-                                .collect(),
-                        };
-
-                        std::mem::swap(&mut temp, &mut reply);
-                        stuff_fake_data(
-                            &mut r.clone(),
-                            &drf_list,
-                            ts,
-                            &mut reply.data,
-                        );
-                        future::ready(Some(temp))
-                    } else {
-                        future::ready(None)
-                    }
-                });
-
-                if let Some(n) = n_acquisitions.map(|v| v.max(1)) {
-                    Box::pin(s.take(n)) as PlotStream
-                } else {
-                    Box::pin(s) as PlotStream
-                }
-            }
-            Err(e) => {
-                error!("{:?}", &e);
-                Box::pin(stream::empty()) as PlotStream
-            }
+        if let Some(event) = trigger_event {
+            self.handle_triggered(
+                ctxt,
+                drfs,
+                window_size,
+                n_acquisitions,
+                update_delay,
+                event,
+                x_min,
+                x_max,
+            )
+            .await
+        } else {
+            self.handle_continuous(
+                ctxt,
+                drfs,
+                window_size,
+                n_acquisitions,
+                update_delay,
+                x_min,
+                x_max,
+            )
+            .await
         }
     }
 }
