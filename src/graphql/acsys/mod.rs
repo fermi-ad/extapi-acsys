@@ -416,7 +416,7 @@ impl<'ctx> ACSysSubscriptions {
     async fn handle_continuous(
         &self, ctxt: &Context<'ctx>, drfs: Vec<String>,
         window_size: Option<usize>, n_acquisitions: Option<usize>,
-        update_delay: Option<usize>, x_min: Option<f64>, x_max: Option<f64>,
+        x_min: Option<f64>, x_max: Option<f64>,
     ) -> PlotStream {
         let r = x_min.map(|v| v as usize).unwrap_or(0)
             ..(x_max.map(|v| (v as usize) + 1).unwrap_or(N));
@@ -495,13 +495,165 @@ impl<'ctx> ACSysSubscriptions {
         }
     }
 
+    fn flush(buf: &mut types::PlotReplyData, ts: f64) {
+        for chan in buf.data.iter_mut() {
+            let idx = chan.channel_data.partition_point(|v| v.x >= ts);
+
+            chan.channel_data.drain(0..idx);
+        }
+    }
+
+    fn prep_outgoing(
+        mut remaining: types::PlotReplyData, out: &mut types::PlotReplyData,
+        ts: f64,
+    ) -> types::PlotReplyData {
+        for (out_chan, rem_chan) in
+            out.data.iter_mut().zip(remaining.data.iter_mut())
+        {
+            let idx = out_chan.channel_data.partition_point(|v| v.x >= ts);
+
+            rem_chan.channel_data.clear();
+            rem_chan
+                .channel_data
+                .extend(out_chan.channel_data.drain(idx..));
+        }
+        remaining
+    }
+
     async fn handle_triggered(
-        &self, ctxt: &Context<'ctx>, drf_list: Vec<String>,
-        window_size: Option<usize>, n_acquisitions: Option<usize>,
-        update_delay: Option<usize>, trigger_event: u8, x_min: Option<f64>,
-        x_max: Option<f64>,
+        &self, ctxt: &Context<'ctx>, drfs: Vec<String>, trigger_event: u8,
     ) -> PlotStream {
-        todo!()
+        use crate::g_rpc::clock;
+        use async_stream::stream;
+
+        // This is an empty reply. It is the starting point that is used
+        // to accumulate when the event fires.
+
+        let template = types::PlotReplyData {
+            plot_id: "demo".into(),
+            tstamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_micros() as f64
+                / 1_000_000.0,
+            data: drfs
+                .iter()
+                .map(|_| types::PlotChannelData {
+                    channel_units: "V".into(),
+                    channel_status: 0,
+                    channel_data: vec![],
+                })
+                .collect(),
+        };
+
+        // Subscribe for clock events. Along with the trigger event, we
+        // also subscribe to the $0F event. We do this because we don't
+        // know when the next trigger event is going to occur. However,
+        // the $0F happens at 15Hz and we can use its timestamp to know
+        // whether we can forward the accumulated data (since we know
+        // the next trigger event will have a higher timestamp than the
+        // currently received $0F.)
+
+        let clock_list: &[i32] = if trigger_event != 0x0f {
+            &[0x0f, trigger_event as i32]
+        } else {
+            &[0x0f]
+        };
+        let mut tclk = clock::subscribe(clock_list).await.unwrap().into_inner();
+        let mut dev_data = self
+            .accelerator_data(ctxt, drfs.clone(), None, None)
+            .await
+            .unwrap();
+
+        #[rustfmt::skip]
+        let strm = stream! {
+	    let mut event_time = None;
+	    let mut outgoing = template.clone();
+
+	    // Infinitely loop until one of the streams has an error or
+	    // the client cancels the subscription.
+
+	    loop {
+		tokio::select! {
+		    opt_rdg = dev_data.next() => {
+			if let Some(rdg) = opt_rdg {
+			    let d = rdg.data;
+
+			    // We only handle scalar data for triggered
+			    // plots.
+
+			    if let global::DataType::Scalar(y) = d.result {
+				let ts = d.timestamp.timestamp_micros() as f64
+				    / 1_000_000.0;
+
+				outgoing.data[rdg.ref_id as usize]
+				    .channel_data
+				    .push(types::PlotDataPoint {
+					t: event_time,
+					x: event_time
+					    .map(|v| ts - v)
+					    .unwrap_or(ts),
+					y: y.scalar_value,
+				    })
+			    }
+			} else {
+			    error!("data stream closed");
+			    break
+			}
+		    }
+
+		    // If we receive a tclk event, we need to process our
+		    // accumulated data.
+
+		    opt_ev = tclk.next() => {
+			if let Some(Ok(ei)) = opt_ev {
+			    let ts = ei.stamp.unwrap();
+			    let ts = ts.seconds as f64 + ts.nanos as f64
+				/ 1_000_000_000.0;
+
+			    // If the event time is `None`, we haven't seen
+			    // a trigger yet. In this case, we throw away
+			    // all the data with a timestamp less that this
+			    // clock's.
+
+			    if event_time.is_none() {
+				Self::flush(&mut outgoing, ts)
+			    } else {
+				// Process the outgoing reply. Any data
+				// with a timestamp later than `ts` is
+				// saved in `remaining`.
+
+				let remaining = Self::prep_outgoing(
+				    template.clone(),
+				    &mut outgoing,
+				    ts
+				);
+
+				// Send the reply.
+
+				yield outgoing;
+
+				// The remaining data becomes the new,
+				// outgoing reply.
+
+				outgoing = remaining;
+			    }
+
+			    // If it's our trigger event, update the time.
+
+			    if ei.event == (trigger_event as i32) {
+				event_time = Some(ts);
+			    }
+			} else {
+			    error!("clock stream failed : {:?}", opt_ev);
+			    break
+			}
+		    }
+		}
+	    }
+	};
+
+        Box::pin(strm) as PlotStream
     }
 }
 
@@ -625,28 +777,17 @@ impl<'ctx> ACSysSubscriptions {
         let drfs: Vec<_> = drf_list
             .iter()
             .map(|v| strip_event(v))
-            .map(add_event(update_delay, trigger_event))
+            .map(add_event(update_delay, None))
             .collect();
 
         if let Some(event) = trigger_event {
-            self.handle_triggered(
-                ctxt,
-                drfs,
-                window_size,
-                n_acquisitions,
-                update_delay,
-                event,
-                x_min,
-                x_max,
-            )
-            .await
+            self.handle_triggered(ctxt, drfs, event).await
         } else {
             self.handle_continuous(
                 ctxt,
                 drfs,
                 window_size,
                 n_acquisitions,
-                update_delay,
                 x_min,
                 x_max,
             )

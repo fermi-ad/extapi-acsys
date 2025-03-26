@@ -7,6 +7,7 @@ edition = "2021"
 tonic-build = "0.12"
 
 [dependencies]
+async-stream = "0.3"
 futures = "0.3.27"
 futures-util = { version = "0.3", features = ["tokio-io"] }
 tokio = { version = "1", features = [

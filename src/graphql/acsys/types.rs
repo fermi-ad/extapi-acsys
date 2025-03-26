@@ -1,13 +1,13 @@
 use async_graphql::*;
 
-#[derive(SimpleObject)]
+#[derive(SimpleObject, Clone)]
 pub struct PlotDataPoint {
     pub t: Option<f64>,
     pub x: f64,
     pub y: f64,
 }
 
-#[derive(SimpleObject)]
+#[derive(SimpleObject, Clone)]
 pub struct PlotChannelData {
     pub channel_units: String,
 
@@ -17,7 +17,7 @@ pub struct PlotChannelData {
 }
 
 #[doc = "Contains plot data for a given plot request."]
-#[derive(SimpleObject)]
+#[derive(SimpleObject, Clone)]
 pub struct PlotReplyData {
     #[doc = "A unique identifier for the plot request. This identifier will \
 	     be cached for a limited time. Other clients can specify it to \
