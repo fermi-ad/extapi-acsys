@@ -535,9 +535,14 @@ impl<'ctx> ACSysSubscriptions {
 
         let r = x_min.map(|v| v as usize).unwrap_or(0)
             ..(x_max.map(|v| (v as usize) + 1).unwrap_or(N));
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_micros() as f64
+            / 1_000_000.0;
         let mut reply = types::PlotReplyData {
             plot_id: "demo".into(),
-            tstamp: 0.0,
+            tstamp: now,
             data: drfs
                 .iter()
                 .map(|_| types::PlotChannelData {
@@ -567,7 +572,7 @@ impl<'ctx> ACSysSubscriptions {
                             / 1_000_000.0;
                         let mut temp = types::PlotReplyData {
                             plot_id: "demo".into(),
-                            tstamp: ts,
+                            tstamp: now,
                             data: reply
                                 .data
                                 .iter()
@@ -579,7 +584,6 @@ impl<'ctx> ACSysSubscriptions {
                                 .collect(),
                         };
 
-                        reply.tstamp = ts;
                         std::mem::swap(&mut temp, &mut reply);
                         stuff_fake_data(
                             &mut r.clone(),
