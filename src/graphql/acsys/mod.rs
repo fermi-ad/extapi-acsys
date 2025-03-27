@@ -495,9 +495,13 @@ impl<'ctx> ACSysSubscriptions {
         }
     }
 
+    // This method is used to drop all points before a given timestamp.
+    // This is used when we get a known timestamp, but haven't seen the
+    // event of interest yet.
+
     fn flush(buf: &mut types::PlotReplyData, ts: f64) {
         for chan in buf.data.iter_mut() {
-            let idx = chan.channel_data.partition_point(|v| v.x >= ts);
+            let idx = chan.channel_data.partition_point(|v| v.x < ts);
 
             chan.channel_data.drain(0..idx);
         }
@@ -510,7 +514,7 @@ impl<'ctx> ACSysSubscriptions {
         for (out_chan, rem_chan) in
             out.data.iter_mut().zip(remaining.data.iter_mut())
         {
-            let idx = out_chan.channel_data.partition_point(|v| v.x >= ts);
+            let idx = out_chan.channel_data.partition_point(|v| v.x < ts);
 
             rem_chan.channel_data.clear();
             rem_chan
@@ -848,6 +852,8 @@ fn sine_data(
 
 #[cfg(test)]
 mod test {
+    use super::*;
+
     #[test]
     fn test_removing_event() {
         use super::strip_event;
@@ -920,6 +926,106 @@ mod test {
         assert_eq!(
             add_event(Some(12500), Some(0x8f))("M:OUTTMP"),
             "M:OUTTMP@e,8F,e,13"
+        );
+    }
+
+    #[test]
+    fn test_flush() {
+        let mut buf = types::PlotReplyData {
+            plot_id: "test".to_owned(),
+            tstamp: 0.0,
+            data: vec![types::PlotChannelData {
+                channel_units: "V".to_owned(),
+                channel_status: 0,
+                channel_data: vec![
+                    types::PlotDataPoint {
+                        t: None,
+                        x: 1.0,
+                        y: 10.0,
+                    },
+                    types::PlotDataPoint {
+                        t: None,
+                        x: 2.0,
+                        y: 11.0,
+                    },
+                    types::PlotDataPoint {
+                        t: None,
+                        x: 3.0,
+                        y: 12.0,
+                    },
+                    types::PlotDataPoint {
+                        t: None,
+                        x: 4.0,
+                        y: 13.0,
+                    },
+                    types::PlotDataPoint {
+                        t: None,
+                        x: 5.0,
+                        y: 14.0,
+                    },
+                ],
+            }],
+        };
+
+        ACSysSubscriptions::flush(&mut buf, 0.0);
+
+        assert_eq!(
+            buf.data[0].channel_data,
+            vec![
+                types::PlotDataPoint {
+                    t: None,
+                    x: 1.0,
+                    y: 10.0
+                },
+                types::PlotDataPoint {
+                    t: None,
+                    x: 2.0,
+                    y: 11.0
+                },
+                types::PlotDataPoint {
+                    t: None,
+                    x: 3.0,
+                    y: 12.0
+                },
+                types::PlotDataPoint {
+                    t: None,
+                    x: 4.0,
+                    y: 13.0
+                },
+                types::PlotDataPoint {
+                    t: None,
+                    x: 5.0,
+                    y: 14.0
+                },
+            ],
+            "failure flushing with ts = 0.0"
+        );
+
+        ACSysSubscriptions::flush(&mut buf, 3.5);
+
+        assert_eq!(
+            buf.data[0].channel_data,
+            vec![
+                types::PlotDataPoint {
+                    t: None,
+                    x: 4.0,
+                    y: 13.0
+                },
+                types::PlotDataPoint {
+                    t: None,
+                    x: 5.0,
+                    y: 14.0
+                },
+            ],
+            "failure flushing with ts = 3.5"
+        );
+
+        ACSysSubscriptions::flush(&mut buf, 10.0);
+
+        assert_eq!(
+            buf.data[0].channel_data,
+            vec![],
+            "failure flushing with ts = 10.0"
         );
     }
 }
