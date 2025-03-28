@@ -638,9 +638,15 @@ impl<'ctx> ACSysSubscriptions {
 				    ts
 				);
 
-				// Send the reply.
+				// If there's any data ready to go out,
+				// send it.
 
-				yield outgoing;
+				if !outgoing
+				    .data
+				    .iter()
+				    .all(|v| v.channel_data.is_empty()) {
+				    yield outgoing;
+				}
 
 				// The remaining data becomes the new,
 				// outgoing reply.
