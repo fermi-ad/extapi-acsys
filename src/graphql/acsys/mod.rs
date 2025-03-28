@@ -283,10 +283,8 @@ impl ACSysMutations {
 
       The content of the configuration are used to set the default \
       configuration for the user. All fields, except the ID and name \
-      fields, are used (the latter two will be set to internal values \
-      so it can be retrieved with the `usersLastConfiguration` query.) \
-      The user's account name is obtained from the authentication token \
-      that accompanies the request."]
+      fields, are used. The user's account name is obtained from the \
+      authentication token that accompanies the request."]
     #[instrument(skip(self, ctxt))]
     async fn users_configuration(
         &self, ctxt: &Context<'_>, config: types::PlotConfigurationSnapshot,
@@ -322,9 +320,10 @@ const RAMP_WAVEFORM: &str = "API TEST RAMP";
 const PARABOLA_WAVEFORM: &str = "API TEST PARABOLA";
 const SINE_WAVEFORM: &str = "API TEST SINE";
 
-// Adds a periodic event to a device name to create a DRF specification. The
-// delay indicates the number of milliseconds. If the delay is None, then
-// the delay is 1 second.
+// Adds an event specification to a device name to create a DRF specification.
+// If the `event` parameter is `None`, the `delay` parameter represents the
+// periodic sample time, in microseconds. If an event is specified, the delay
+// represents the millisecond delay after the event to do the sample.
 
 fn add_event(
     delay: Option<usize>, event: Option<u8>,
@@ -348,6 +347,10 @@ fn add_event(
         _ => format!("{device}@{}", event),
     }
 }
+
+// This function is a (long-term) temporary artifact. It generates one of
+// several interesting waveforms that the plot app can use until we get
+// the device API finalized.
 
 fn stuff_fake_data(
     r: &mut dyn Iterator<Item = usize>, drfs: &[String], ts: f64,
@@ -866,7 +869,7 @@ mod test {
     }
 
     #[test]
-    fn test_add_periodic() {
+    fn test_add_event_specification() {
         use super::add_event;
         use super::{
             CONST_WAVEFORM, NULL_WAVEFORM, PARABOLA_WAVEFORM, RAMP_WAVEFORM,
