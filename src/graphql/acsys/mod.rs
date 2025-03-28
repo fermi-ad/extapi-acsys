@@ -934,229 +934,114 @@ mod test {
 
     #[test]
     fn test_flush() {
+	const POINT_DATA: &[types::PlotDataPoint] = &[
+            types::PlotDataPoint {
+                t: None,
+                x: 1.0,
+                y: 10.0,
+            },
+            types::PlotDataPoint {
+                t: None,
+                x: 2.0,
+                y: 11.0,
+            },
+            types::PlotDataPoint {
+                t: None,
+                x: 3.0,
+                y: 12.0,
+            },
+            types::PlotDataPoint {
+                t: None,
+                x: 4.0,
+                y: 13.0,
+            },
+            types::PlotDataPoint {
+                t: None,
+                x: 5.0,
+                y: 14.0,
+            },
+	];
+
         let mut buf = types::PlotReplyData {
             plot_id: "test".to_owned(),
             tstamp: 0.0,
             data: vec![types::PlotChannelData {
                 channel_units: "V".to_owned(),
                 channel_status: 0,
-                channel_data: vec![
-                    types::PlotDataPoint {
-                        t: None,
-                        x: 1.0,
-                        y: 10.0,
-                    },
-                    types::PlotDataPoint {
-                        t: None,
-                        x: 2.0,
-                        y: 11.0,
-                    },
-                    types::PlotDataPoint {
-                        t: None,
-                        x: 3.0,
-                        y: 12.0,
-                    },
-                    types::PlotDataPoint {
-                        t: None,
-                        x: 4.0,
-                        y: 13.0,
-                    },
-                    types::PlotDataPoint {
-                        t: None,
-                        x: 5.0,
-                        y: 14.0,
-                    },
-                ],
-            }],
-        };
+                channel_data: POINT_DATA.to_owned()
+	    }]
+	};
 
         ACSysSubscriptions::flush(&mut buf, 0.0);
 
-        assert_eq!(
-            buf.data[0].channel_data,
-            vec![
-                types::PlotDataPoint {
-                    t: None,
-                    x: 1.0,
-                    y: 10.0
-                },
-                types::PlotDataPoint {
-                    t: None,
-                    x: 2.0,
-                    y: 11.0
-                },
-                types::PlotDataPoint {
-                    t: None,
-                    x: 3.0,
-                    y: 12.0
-                },
-                types::PlotDataPoint {
-                    t: None,
-                    x: 4.0,
-                    y: 13.0
-                },
-                types::PlotDataPoint {
-                    t: None,
-                    x: 5.0,
-                    y: 14.0
-                },
-            ]
-        );
+        assert_eq!(buf.data[0].channel_data, POINT_DATA);
 
         ACSysSubscriptions::flush(&mut buf, 3.5);
 
-        assert_eq!(
-            buf.data[0].channel_data,
-            vec![
-                types::PlotDataPoint {
-                    t: None,
-                    x: 4.0,
-                    y: 13.0
-                },
-                types::PlotDataPoint {
-                    t: None,
-                    x: 5.0,
-                    y: 14.0
-                },
-            ]
-        );
+        assert_eq!(buf.data[0].channel_data, &POINT_DATA[3..]);
 
         ACSysSubscriptions::flush(&mut buf, 10.0);
 
-        assert_eq!(buf.data[0].channel_data, vec![]);
+        assert!(buf.data[0].channel_data.is_empty());
     }
 
     #[test]
     fn test_partitioning() {
+	const POINT_DATA: &[types::PlotDataPoint] = &[
+            types::PlotDataPoint {
+                t: None,
+                x: 1.0,
+                y: 10.0,
+            },
+            types::PlotDataPoint {
+                t: None,
+                x: 2.0,
+                y: 11.0,
+            },
+            types::PlotDataPoint {
+                t: None,
+                x: 3.0,
+                y: 12.0,
+            },
+            types::PlotDataPoint {
+                t: None,
+                x: 4.0,
+                y: 13.0,
+            },
+            types::PlotDataPoint {
+                t: None,
+                x: 5.0,
+                y: 14.0,
+            },
+	];
+
         let mut buf = types::PlotReplyData {
             plot_id: "test".to_owned(),
             tstamp: 0.0,
             data: vec![types::PlotChannelData {
                 channel_units: "V".to_owned(),
                 channel_status: 0,
-                channel_data: vec![
-                    types::PlotDataPoint {
-                        t: None,
-                        x: 1.0,
-                        y: 10.0,
-                    },
-                    types::PlotDataPoint {
-                        t: None,
-                        x: 2.0,
-                        y: 11.0,
-                    },
-                    types::PlotDataPoint {
-                        t: None,
-                        x: 3.0,
-                        y: 12.0,
-                    },
-                    types::PlotDataPoint {
-                        t: None,
-                        x: 4.0,
-                        y: 13.0,
-                    },
-                    types::PlotDataPoint {
-                        t: None,
-                        x: 5.0,
-                        y: 14.0,
-                    },
-                ],
+                channel_data: POINT_DATA.to_owned(),
             }],
         };
 
         let rem = ACSysSubscriptions::prep_outgoing(buf.clone(), &mut buf, 0.0);
 
         assert!(buf.data[0].channel_data.is_empty());
-        assert_eq!(
-            rem.data[0].channel_data,
-            vec![
-                types::PlotDataPoint {
-                    t: None,
-                    x: 1.0,
-                    y: 10.0
-                },
-                types::PlotDataPoint {
-                    t: None,
-                    x: 2.0,
-                    y: 11.0
-                },
-                types::PlotDataPoint {
-                    t: None,
-                    x: 3.0,
-                    y: 12.0
-                },
-                types::PlotDataPoint {
-                    t: None,
-                    x: 4.0,
-                    y: 13.0
-                },
-                types::PlotDataPoint {
-                    t: None,
-                    x: 5.0,
-                    y: 14.0
-                },
-            ]
-        );
+        assert_eq!(rem.data[0].channel_data, POINT_DATA);
 
         buf = rem.clone();
 
         let rem = ACSysSubscriptions::prep_outgoing(rem, &mut buf, 3.5);
 
-        assert_eq!(
-            rem.data[0].channel_data,
-            vec![
-                types::PlotDataPoint {
-                    t: None,
-                    x: 4.0,
-                    y: 13.0
-                },
-                types::PlotDataPoint {
-                    t: None,
-                    x: 5.0,
-                    y: 14.0
-                },
-            ]
-        );
-        assert_eq!(
-            buf.data[0].channel_data,
-            vec![
-                types::PlotDataPoint {
-                    t: None,
-                    x: 1.0,
-                    y: 10.0
-                },
-                types::PlotDataPoint {
-                    t: None,
-                    x: 2.0,
-                    y: 11.0
-                },
-                types::PlotDataPoint {
-                    t: None,
-                    x: 3.0,
-                    y: 12.0
-                },
-            ]
-        );
+        assert_eq!(rem.data[0].channel_data, &POINT_DATA[3..]);
+        assert_eq!(buf.data[0].channel_data, &POINT_DATA[0..3]);
 
         buf = rem.clone();
 
         let rem = ACSysSubscriptions::prep_outgoing(rem, &mut buf, 10.0);
 
         assert!(rem.data[0].channel_data.is_empty());
-        assert_eq!(
-            buf.data[0].channel_data,
-            vec![
-                types::PlotDataPoint {
-                    t: None,
-                    x: 4.0,
-                    y: 13.0
-                },
-                types::PlotDataPoint {
-                    t: None,
-                    x: 5.0,
-                    y: 14.0
-                },
-            ]
-        );
+        assert_eq!(buf.data[0].channel_data, &POINT_DATA[3..]);
     }
 }
