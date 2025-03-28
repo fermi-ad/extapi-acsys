@@ -512,7 +512,7 @@ impl<'ctx> ACSysSubscriptions {
 
     fn prep_outgoing(
         mut remaining: types::PlotReplyData, out: &mut types::PlotReplyData,
-        ts: f64,
+        ev_ts: f64, ts: f64,
     ) -> types::PlotReplyData {
         for (out_chan, rem_chan) in
             out.data.iter_mut().zip(remaining.data.iter_mut())
@@ -523,6 +523,11 @@ impl<'ctx> ACSysSubscriptions {
             rem_chan
                 .channel_data
                 .extend(out_chan.channel_data.drain(idx..));
+
+            for out_data in out_chan.channel_data[0..idx].iter_mut() {
+                out_data.t = Some(ev_ts);
+                out_data.x -= ev_ts;
+            }
         }
         remaining
     }
@@ -596,10 +601,8 @@ impl<'ctx> ACSysSubscriptions {
 				outgoing.data[rdg.ref_id as usize]
 				    .channel_data
 				    .push(types::PlotDataPoint {
-					t: event_time,
-					x: event_time
-					    .map(|v| ts - v)
-					    .unwrap_or(ts),
+					t: None,
+					x: ts,
 					y: y.scalar_value,
 				    })
 			    }
@@ -623,9 +626,7 @@ impl<'ctx> ACSysSubscriptions {
 			    // all the data with a timestamp less that this
 			    // clock's.
 
-			    if event_time.is_none() {
-				Self::flush(&mut outgoing, ts)
-			    } else {
+			    if let Some(ev_ts) = event_time {
 				// Process the outgoing reply. Any data
 				// with a timestamp later than `ts` is
 				// saved in `remaining`.
@@ -633,6 +634,7 @@ impl<'ctx> ACSysSubscriptions {
 				let remaining = Self::prep_outgoing(
 				    template.clone(),
 				    &mut outgoing,
+				    ev_ts,
 				    ts
 				);
 
@@ -644,6 +646,8 @@ impl<'ctx> ACSysSubscriptions {
 				// outgoing reply.
 
 				outgoing = remaining;
+			    } else {
+				Self::flush(&mut outgoing, ts)
 			    }
 
 			    // If it's our trigger event, update the time.
@@ -934,7 +938,7 @@ mod test {
 
     #[test]
     fn test_flush() {
-	const POINT_DATA: &[types::PlotDataPoint] = &[
+        const POINT_DATA: &[types::PlotDataPoint] = &[
             types::PlotDataPoint {
                 t: None,
                 x: 1.0,
@@ -960,7 +964,7 @@ mod test {
                 x: 5.0,
                 y: 14.0,
             },
-	];
+        ];
 
         let mut buf = types::PlotReplyData {
             plot_id: "test".to_owned(),
@@ -968,9 +972,9 @@ mod test {
             data: vec![types::PlotChannelData {
                 channel_units: "V".to_owned(),
                 channel_status: 0,
-                channel_data: POINT_DATA.to_owned()
-	    }]
-	};
+                channel_data: POINT_DATA.to_owned(),
+            }],
+        };
 
         ACSysSubscriptions::flush(&mut buf, 0.0);
 
@@ -987,7 +991,7 @@ mod test {
 
     #[test]
     fn test_partitioning() {
-	const POINT_DATA: &[types::PlotDataPoint] = &[
+        const POINT_DATA: &[types::PlotDataPoint] = &[
             types::PlotDataPoint {
                 t: None,
                 x: 1.0,
@@ -1013,7 +1017,7 @@ mod test {
                 x: 5.0,
                 y: 14.0,
             },
-	];
+        ];
 
         let mut buf = types::PlotReplyData {
             plot_id: "test".to_owned(),
@@ -1025,23 +1029,57 @@ mod test {
             }],
         };
 
-        let rem = ACSysSubscriptions::prep_outgoing(buf.clone(), &mut buf, 0.0);
+        let rem =
+            ACSysSubscriptions::prep_outgoing(buf.clone(), &mut buf, 0.5, 0.0);
 
         assert!(buf.data[0].channel_data.is_empty());
         assert_eq!(rem.data[0].channel_data, POINT_DATA);
 
         buf = rem.clone();
 
-        let rem = ACSysSubscriptions::prep_outgoing(rem, &mut buf, 3.5);
+        let rem = ACSysSubscriptions::prep_outgoing(rem, &mut buf, 0.5, 3.5);
 
+        assert_eq!(
+            buf.data[0].channel_data,
+            &[
+                types::PlotDataPoint {
+                    t: Some(0.5),
+                    x: 0.5,
+                    y: 10.0,
+                },
+                types::PlotDataPoint {
+                    t: Some(0.5),
+                    x: 1.5,
+                    y: 11.0,
+                },
+                types::PlotDataPoint {
+                    t: Some(0.5),
+                    x: 2.5,
+                    y: 12.0,
+                }
+            ],
+        );
         assert_eq!(rem.data[0].channel_data, &POINT_DATA[3..]);
-        assert_eq!(buf.data[0].channel_data, &POINT_DATA[0..3]);
 
         buf = rem.clone();
 
-        let rem = ACSysSubscriptions::prep_outgoing(rem, &mut buf, 10.0);
+        let rem = ACSysSubscriptions::prep_outgoing(rem, &mut buf, 0.5, 10.0);
 
+        assert_eq!(
+            buf.data[0].channel_data,
+            &[
+                types::PlotDataPoint {
+                    t: Some(0.5),
+                    x: 3.5,
+                    y: 13.0,
+                },
+                types::PlotDataPoint {
+                    t: Some(0.5),
+                    x: 4.5,
+                    y: 14.0,
+                },
+            ]
+        );
         assert!(rem.data[0].channel_data.is_empty());
-        assert_eq!(buf.data[0].channel_data, &POINT_DATA[3..]);
     }
 }
