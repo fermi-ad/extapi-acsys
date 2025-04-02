@@ -63,11 +63,17 @@ pub async fn set_device(
     // request only has a 1-element array containing the setting.
 
     let mut req = SettingList {
-        session_id: "*** DO NOT USE ***".to_string(),
-        setting: vec![Setting {
-            name: device,
-            data: Some(value),
-        }],
+        session_id: "DEADBEEF".into(),
+        setting: vec![
+            Setting {
+                name: "#ROLE:testing".into(),
+                data: None,
+            },
+            Setting {
+                name: device,
+                data: Some(value),
+            },
+        ],
         event: "".to_owned(),
     }
     .into_request();
