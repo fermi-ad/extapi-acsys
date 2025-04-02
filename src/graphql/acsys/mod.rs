@@ -510,9 +510,13 @@ impl<'ctx> ACSysSubscriptions {
     }
 
     fn prep_outgoing(
-        mut remaining: types::PlotReplyData, out: &mut types::PlotReplyData,
+        remaining: &mut types::PlotReplyData, out: &mut types::PlotReplyData,
         ev_ts: f64, ts: f64,
-    ) -> types::PlotReplyData {
+    ) {
+        // "zip" together the vectors containing the devices' data. We want
+        // to handle the two buffers together and this guarantees we're
+        // handling the proper pairs.
+
         for (out_chan, rem_chan) in
             out.data.iter_mut().zip(remaining.data.iter_mut())
         {
@@ -523,12 +527,11 @@ impl<'ctx> ACSysSubscriptions {
                 .channel_data
                 .extend(out_chan.channel_data.drain(idx..));
 
-            for out_data in out_chan.channel_data[0..idx].iter_mut() {
+            for out_data in out_chan.channel_data.iter_mut() {
                 out_data.t = Some(ev_ts);
                 out_data.x -= ev_ts;
             }
         }
-        remaining
     }
 
     async fn handle_triggered(
@@ -629,14 +632,14 @@ impl<'ctx> ACSysSubscriptions {
 
 			    if let Some(ev_ts) = event_time {
 				if triggered || divisor == 0 {
-				    info!("processing plot data (ev = {}, ts = {})", ei.event, ts);
-
 				    // Process the outgoing reply. Any data
 				    // with a timestamp later than `ts` is
 				    // saved in `remaining`.
 
-				    let remaining = Self::prep_outgoing(
-					template.clone(),
+				    let mut remaining = template.clone();
+
+				    Self::prep_outgoing(
+					&mut remaining,
 					&mut outgoing,
 					ev_ts,
 					ts
@@ -1046,15 +1049,16 @@ mod test {
             }],
         };
 
-        let rem =
-            ACSysSubscriptions::prep_outgoing(buf.clone(), &mut buf, 0.5, 0.0);
+        let mut rem = buf.clone();
+
+        ACSysSubscriptions::prep_outgoing(&mut rem, &mut buf, 0.5, 0.0);
 
         assert!(buf.data[0].channel_data.is_empty());
         assert_eq!(rem.data[0].channel_data, POINT_DATA);
 
         buf = rem.clone();
 
-        let rem = ACSysSubscriptions::prep_outgoing(rem, &mut buf, 0.5, 3.5);
+        ACSysSubscriptions::prep_outgoing(&mut rem, &mut buf, 0.5, 3.5);
 
         assert_eq!(
             buf.data[0].channel_data,
@@ -1080,7 +1084,7 @@ mod test {
 
         buf = rem.clone();
 
-        let rem = ACSysSubscriptions::prep_outgoing(rem, &mut buf, 0.5, 10.0);
+        ACSysSubscriptions::prep_outgoing(&mut rem, &mut buf, 0.5, 10.0);
 
         assert_eq!(
             buf.data[0].channel_data,
