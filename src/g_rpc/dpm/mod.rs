@@ -18,9 +18,9 @@ type TonicQueryResult<T> = Result<T, tonic::Status>;
 // same connection.
 
 pub async fn build_connection() -> Result<Connection, Error> {
-    Ok(Connection(
-        DpmClient::connect("http://dce46.fnal.gov:50051/").await?,
-    ))
+    const DPM: &'static str = "http://dce09.fnal.gov:50051/";
+
+    Ok(Connection(DpmClient::connect(DPM).await?))
 }
 
 pub async fn acquire_devices(
