@@ -368,8 +368,7 @@ fn stuff_fake_data(
 }
 
 fn to_plot_data(
-    len: usize, window_size: &Option<usize>, ts_base: Option<f64>,
-    data: &global::DataInfo,
+    len: usize, window_size: &Option<usize>, data: &global::DataInfo,
 ) -> (i16, Vec<types::PlotDataPoint>) {
     let ts = data.timestamp.timestamp_micros() as f64 / 1_000_000.0;
 
@@ -377,8 +376,8 @@ fn to_plot_data(
         global::DataType::Scalar(y) => (
             0,
             vec![types::PlotDataPoint {
-                t: ts_base,
-                x: ts_base.map(|v| ts - v).unwrap_or(ts),
+                t: None,
+                x: ts,
                 y: y.scalar_value,
             }],
         ),
@@ -447,7 +446,7 @@ impl<'ctx> ACSysSubscriptions {
             Ok(strm) => {
                 let s = strm.filter_map(move |e: global::DataReply| {
                     reply.data[e.ref_id as usize].channel_data =
-                        to_plot_data(r.len(), &window_size, None, &e.data).1;
+                        to_plot_data(r.len(), &window_size, &e.data).1;
                     reply.data[e.ref_id as usize].channel_status = 0;
 
                     if reply.data.iter().all(|e| {
