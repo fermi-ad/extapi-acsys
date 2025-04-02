@@ -57,7 +57,7 @@ pub async fn set_device(
 ) -> TonicQueryResult<i32> {
     use tonic::{metadata::MetadataValue, IntoRequest};
 
-    info!("setting device {} to {:?}", &device, &value);
+    info!("setting to {:?}", &value);
 
     // Build the setting request. This function only sets one device, so the
     // request only has a 1-element array containing the setting.
