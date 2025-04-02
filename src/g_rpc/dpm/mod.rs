@@ -84,14 +84,16 @@ pub async fn set_device(
         if let Ok(val) = MetadataValue::try_from(format!("Bearer {token}")) {
             req.metadata_mut().insert("authorization", val);
         }
-    }
 
-    let StatusList { status } =
-        conn.0.clone().apply_settings(req).await?.into_inner();
+        let StatusList { status } =
+            conn.0.clone().apply_settings(req).await?.into_inner();
 
-    if status.len() == 1 {
-        Ok(status[0])
+        if status.len() == 1 {
+            Ok(status[0])
+        } else {
+            Err(tonic::Status::internal("received more than one status"))
+        }
     } else {
-        Err(tonic::Status::internal("received more than one status"))
+        Err(tonic::Status::internal("not authorized"))
     }
 }
