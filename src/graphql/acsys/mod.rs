@@ -578,8 +578,9 @@ impl<'ctx> ACSysSubscriptions {
 
         #[rustfmt::skip]
         let strm = stream! {
-	    let mut event_time = None;
+	    let mut event_time: Option<f64> = None;
 	    let mut outgoing = template.clone();
+	    let mut divisor = 0;
 
 	    // Infinitely loop until one of the streams has an error or
 	    // the client cancels the subscription.
@@ -616,49 +617,60 @@ impl<'ctx> ACSysSubscriptions {
 
 		    opt_ev = tclk.next() => {
 			if let Some(Ok(ei)) = opt_ev {
+			    let triggered = ei.event == (trigger_event as i32);
 			    let ts = ei.stamp.unwrap();
 			    let ts = ts.seconds as f64 + ts.nanos as f64
 				/ 1_000_000_000.0;
 
 			    // If the event time is `None`, we haven't seen
 			    // a trigger yet. In this case, we throw away
-			    // all the data with a timestamp less that this
+			    // all the data with a timestamp less than this
 			    // clock's.
 
 			    if let Some(ev_ts) = event_time {
-				// Process the outgoing reply. Any data
-				// with a timestamp later than `ts` is
-				// saved in `remaining`.
+				if triggered || divisor == 0 {
+				    info!("processing plot data (ev = {}, ts = {})", ei.event, ts);
 
-				let remaining = Self::prep_outgoing(
-				    template.clone(),
-				    &mut outgoing,
-				    ev_ts,
-				    ts
-				);
+				    // Process the outgoing reply. Any data
+				    // with a timestamp later than `ts` is
+				    // saved in `remaining`.
 
-				// If there's any data ready to go out,
-				// send it.
+				    let remaining = Self::prep_outgoing(
+					template.clone(),
+					&mut outgoing,
+					ev_ts,
+					ts
+				    );
 
-				if !outgoing
-				    .data
-				    .iter()
-				    .all(|v| v.channel_data.is_empty()) {
-				    yield outgoing;
+				    // If there's any data ready to go out,
+				    // send it.
+
+				    if outgoing
+					.data
+					.iter()
+					.any(|v| !v.channel_data.is_empty()) {
+					yield outgoing;
+				    }
+
+				    // The remaining data becomes the new,
+				    // outgoing reply.
+
+				    outgoing = remaining;
 				}
-
-				// The remaining data becomes the new,
-				// outgoing reply.
-
-				outgoing = remaining;
 			    } else {
 				Self::flush(&mut outgoing, ts)
 			    }
 
 			    // If it's our trigger event, update the time.
 
-			    if ei.event == (trigger_event as i32) {
+			    if triggered {
 				event_time = Some(ts);
+			    }
+
+			    // If it's the 15 Hz event, update the divisor.
+
+			    if ei.event == 0x0f {
+				divisor = (divisor + 1) % 5;
 			    }
 			} else {
 			    error!("clock stream failed : {:?}", opt_ev);
