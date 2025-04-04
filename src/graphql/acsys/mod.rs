@@ -94,8 +94,8 @@ pub struct ACSysQueries;
 impl ACSysQueries {
     #[doc = "Retrieve the next data point for the specified devices.
 
-      Depending upon the event in the DRF string, the data may come back \
-      immediately or after a delay."]
+Depending upon the event in the DRF string, the data may come back \
+immediately or after a delay."]
     #[instrument(skip(self, ctxt))]
     async fn accelerator_data(
         &self, ctxt: &Context<'_>,
@@ -173,10 +173,10 @@ impl ACSysQueries {
 
     #[doc = "Retrieve plot configuration(s).
 
-      Returns a plot configuration associated with the specified ID. If the \
-      ID is `null`, all configurations are returned. Both style of requests \
-      return an array result -- it's just that specifying an ID will return \
-      an array with 0 or 1 element."]
+Returns a plot configuration associated with the specified ID. If the \
+ID is `null`, all configurations are returned. Both style of requests \
+return an array result -- it's just that specifying an ID will return \
+an array with 0 or 1 element."]
     #[instrument(skip(self, ctxt))]
     async fn plot_configuration(
         &self, ctxt: &Context<'_>, configuration_id: Option<usize>,
@@ -190,10 +190,10 @@ impl ACSysQueries {
 
     #[doc = "Obtain the user's last configuration.
 
-      If the application saved the user's last plot configuration, this query \
-      will return it. If there is no configuration for the user, `null` is \
-      returned. The user's account is retrieved from the authentication token \
-      that is included in the request."]
+If the application saved the user's last plot configuration, this query \
+will return it. If there is no configuration for the user, `null` is \
+returned. The user's account is retrieved from the authentication token \
+that is included in the request."]
     #[instrument(skip(self, ctxt))]
     async fn users_last_configuration(
         &self, ctxt: &Context<'_>,
@@ -219,9 +219,9 @@ pub struct ACSysMutations;
 impl ACSysMutations {
     #[doc = "Sends a setting to a device.
 
-      Not all devices can be set -- most are read-only. To be able to set a \
-      device, your SSO account must be associated with every device you may \
-      want to set."]
+Not all devices can be set -- most are read-only. To be able to set a \
+device, your SSO account must be associated with every device you may \
+want to set."]
     #[instrument(skip(self, ctxt, value))]
     async fn set_device(
         &self, ctxt: &Context<'_>,
@@ -281,10 +281,10 @@ impl ACSysMutations {
 
     #[doc = "Sets the user's default configuration.
 
-      The content of the configuration are used to set the default \
-      configuration for the user. All fields, except the ID and name \
-      fields, are used. The user's account name is obtained from the \
-      authentication token that accompanies the request."]
+The content of the configuration are used to set the default \
+configuration for the user. All fields, except the ID and name \
+fields, are used. The user's account name is obtained from the \
+authentication token that accompanies the request."]
     #[instrument(skip(self, ctxt))]
     async fn users_configuration(
         &self, ctxt: &Context<'_>, config: types::PlotConfigurationSnapshot,
@@ -682,9 +682,8 @@ impl<'ctx> ACSysSubscriptions {
 impl<'ctx> ACSysSubscriptions {
     #[doc = "Retrieve data from accelerator devices.
 
-      Accepts a list of DRF strings and streams the resulting data as it gets \
-      generated."]
-
+Accepts a list of DRF strings and streams the resulting data as it gets \
+generated."]
     async fn accelerator_data(
         &self, ctxt: &Context<'ctx>,
         #[graphql(
@@ -738,10 +737,10 @@ impl<'ctx> ACSysSubscriptions {
 
     #[doc = "Retrieve correlated plot data.
 
-      This query sets up a request which returns a stream of data, presumably \
-      used for plotting. Unlike the `acceleratorData` query, this stream \
-      returns data for all the devices in one reply. Since the data is \
-      correlated, all the devices are collected on the same event."]
+This query sets up a request which returns a stream of data, presumably \
+used for plotting. Unlike the `acceleratorData` query, this stream \
+returns data for all the devices in one reply. Since the data is \
+correlated, all the devices are collected on the same event."]
     async fn start_plot(
         &self, ctxt: &Context<'ctx>,
         #[graphql(
