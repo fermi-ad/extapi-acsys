@@ -3,7 +3,7 @@ use crate::g_rpc::dpm;
 use async_graphql::*;
 use chrono::{DateTime, Utc};
 use futures::future;
-use futures_util::{stream, Stream, StreamExt};
+use futures_util::{Stream, StreamExt};
 use std::{collections::HashSet, pin::Pin};
 use tokio::time::Instant;
 use tonic::Status;
@@ -119,7 +119,7 @@ immediately or after a delay."]
 		    NOT BEEN ADDED YET."
         )]
         _when: Option<DateTime<Utc>>,
-    ) -> Vec<global::DataReply> {
+    ) -> Result<Vec<global::DataReply>> {
         // Strip any event designation and append the once-immediate.
 
         let drfs: Vec<_> = device_list
@@ -167,16 +167,16 @@ immediately or after a delay."]
 
                     remaining.remove(&index);
                     if remaining.is_empty() {
-                        return results.drain(..).map(|v| v.unwrap()).collect();
+                        return Ok(results
+                            .drain(..)
+                            .map(|v| v.unwrap())
+                            .collect());
                     }
                 }
-                Err(e) => {
-                    warn!("one-shot failed : {}", e);
-                    break;
-                }
+                Err(e) => return Err(Error::new(format!("{}", e).as_str())),
             }
         }
-        vec![]
+        Err(Error::new("DPM didn't return all data"))
     }
 
     #[doc = "Retrieve plot configuration(s).
@@ -241,7 +241,7 @@ want to set."]
         )]
         device: String,
         #[graphql(desc = "The value of the setting.")] value: global::DevValue,
-    ) -> global::StatusReply {
+    ) -> Result<global::StatusReply> {
         let now = Instant::now();
         let result = dpm::set_device(
             ctxt.data::<Connection>().unwrap(),
@@ -253,16 +253,11 @@ want to set."]
 
         info!("done in {} μs", now.elapsed().as_micros());
 
-        global::StatusReply {
-            status: match result {
-                Ok(status) => status as i16,
-
-                Err(e) => {
-                    error!("{}", &e);
-
-                    -1
-                }
-            },
+        match result {
+            Ok(status) => Ok(global::StatusReply {
+                status: status as i16,
+            }),
+            Err(e) => Err(Error::new(format!("{}", e).as_str())),
         }
     }
 
@@ -296,7 +291,7 @@ authentication token that accompanies the request."]
     #[instrument(skip(self, ctxt))]
     async fn users_configuration(
         &self, ctxt: &Context<'_>, config: types::PlotConfigurationSnapshot,
-    ) -> global::StatusReply {
+    ) -> Result<global::StatusReply> {
         if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
             if let Some(account) = auth.unsafe_account() {
                 info!("account: {:?}", &account);
@@ -304,14 +299,13 @@ authentication token that accompanies the request."]
                 ctxt.data_unchecked::<plotconfigdb::T>()
                     .update_user(&account, config)
                     .await;
-                return global::StatusReply { status: 0 };
+                Ok(global::StatusReply { status: 0 })
             } else {
-                warn!("AuthInfo doesn't have account information");
+                Err(Error::new("unable to verify user credentials"))
             }
         } else {
-            error!("no AuthInfo state found");
+            Err(Error::new("no user credentials provided"))
         }
-        global::StatusReply { status: -1 }
     }
 }
 
@@ -713,7 +707,7 @@ generated."]
 		    it. NOTE: THIS FEATURE HAS NOT BEEN ADDED YET."
         )]
         _end_time: Option<DateTime<Utc>>,
-    ) -> DataStream {
+    ) -> Result<DataStream> {
         let now = Instant::now();
 
         info!("monitoring {:?}", &drfs);
@@ -730,12 +724,9 @@ generated."]
         {
             Ok(s) => {
                 debug!("rpc: {} μs", now.elapsed().as_micros());
-                Box::pin(s.into_inner().map(mk_xlater(drfs))) as DataStream
+                Ok(Box::pin(s.into_inner().map(mk_xlater(drfs))) as DataStream)
             }
-            Err(e) => {
-                error!("{}", &e);
-                Box::pin(stream::empty()) as DataStream
-            }
+            Err(e) => Err(Error::new(format!("{}", e).as_str())),
         }
     }
 
