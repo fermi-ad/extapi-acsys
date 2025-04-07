@@ -143,10 +143,11 @@ pub enum DataType {
 #[doc = "This structure holds information associated with a device's reading, \
 	 A \"reading\" is the latest value of any of a device's properties."]
 #[derive(SimpleObject, Clone)]
+#[graphql(complex)]
 pub struct DataInfo {
     #[doc = "Timestamp representing when the data was sampled. This value is \
 	     provided as milliseconds since 1970, UTC."]
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: f64,
 
     #[doc = "The value of the device when sampled."]
     pub result: DataType,
@@ -156,6 +157,14 @@ pub struct DataInfo {
 
     #[doc = "The name of the device."]
     pub name: String,
+}
+
+#[ComplexObject]
+impl DataInfo {
+    pub async fn iso_timestamp(&self) -> DateTime<Utc> {
+        DateTime::<Utc>::UNIX_EPOCH
+            + Duration::microseconds((self.timestamp * 1_000_000.0) as i64)
+    }
 }
 
 #[doc = "This structure wraps a device reading with some routing information: \

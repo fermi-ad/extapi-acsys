@@ -26,6 +26,14 @@ pub fn new_context() -> plotconfigdb::T {
 
 use crate::g_rpc::dpm::Connection;
 
+fn now() -> f64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_micros() as f64
+        / 1_000_000.0
+}
+
 // Converts a gRPC proto::Reading structure into a GraphQL
 // global::DataReply object.
 
@@ -37,7 +45,7 @@ fn reading_to_reply(
             ref_id: rdg.index as i32,
             cycle: 1,
             data: global::DataInfo {
-                timestamp: std::time::SystemTime::now().into(),
+                timestamp: now(),
                 result: data.into(),
                 di: 0,
                 name: names[rdg.index as usize].clone(),
@@ -69,7 +77,7 @@ fn mk_xlater(
                 ref_id: 0,
                 cycle: 1,
                 data: global::DataInfo {
-                    timestamp: std::time::SystemTime::now().into(),
+                    timestamp: now(),
                     result: global::DataType::StatusReply(
                         global::StatusReply { status: -1 },
                     ),
@@ -370,7 +378,7 @@ fn stuff_fake_data(
 fn to_plot_data(
     len: usize, window_size: &Option<usize>, data: &global::DataInfo,
 ) -> (i16, Vec<types::PlotDataPoint>) {
-    let ts = data.timestamp.timestamp_micros() as f64 / 1_000_000.0;
+    let ts = data.timestamp;
 
     match &data.result {
         global::DataType::Scalar(y) => (
@@ -429,7 +437,7 @@ impl<'ctx> ACSysSubscriptions {
             / 1_000_000.0;
         let mut reply = types::PlotReplyData {
             plot_id: "demo".into(),
-            tstamp: now,
+            timestamp: now,
             data: drfs
                 .iter()
                 .map(|_| types::PlotChannelData {
@@ -457,11 +465,10 @@ impl<'ctx> ACSysSubscriptions {
                     // XXX: All timestamps should be doubles instead of
                     // converting to and from ASCII ISO values.
 
-                    let ts = e.data.timestamp.timestamp_micros() as f64
-                        / 1_000_000.0;
+                    let ts = e.data.timestamp;
                     let mut temp = types::PlotReplyData {
                         plot_id: "demo".into(),
-                        tstamp: now,
+                        timestamp: now,
                         data: reply
                             .data
                             .iter()
@@ -536,7 +543,7 @@ impl<'ctx> ACSysSubscriptions {
 
         let template = types::PlotReplyData {
             plot_id: "demo".into(),
-            tstamp: std::time::SystemTime::now()
+            timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_micros() as f64
@@ -588,14 +595,11 @@ impl<'ctx> ACSysSubscriptions {
 			    // plots.
 
 			    if let global::DataType::Scalar(y) = d.result {
-				let ts = d.timestamp.timestamp_micros() as f64
-				    / 1_000_000.0;
-
 				outgoing.data[rdg.ref_id as usize]
 				    .channel_data
 				    .push(types::PlotDataPoint {
 					t: None,
-					x: ts,
+					x: d.timestamp,
 					y: y.scalar_value,
 				    })
 			    }
@@ -977,7 +981,7 @@ mod test {
 
         let mut buf = types::PlotReplyData {
             plot_id: "test".to_owned(),
-            tstamp: 0.0,
+            timestamp: 0.0,
             data: vec![types::PlotChannelData {
                 channel_units: "V".to_owned(),
                 channel_status: 0,
@@ -1030,7 +1034,7 @@ mod test {
 
         let mut buf = types::PlotReplyData {
             plot_id: "test".to_owned(),
-            tstamp: 0.0,
+            timestamp: 0.0,
             data: vec![types::PlotChannelData {
                 channel_units: "V".to_owned(),
                 channel_status: 0,
