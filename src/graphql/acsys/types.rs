@@ -1,13 +1,14 @@
 use async_graphql::*;
+use chrono::{DateTime, Duration, Utc};
 
-#[derive(SimpleObject)]
+#[derive(SimpleObject, Clone, Debug, PartialEq)]
 pub struct PlotDataPoint {
     pub t: Option<f64>,
     pub x: f64,
     pub y: f64,
 }
 
-#[derive(SimpleObject)]
+#[derive(SimpleObject, Clone)]
 pub struct PlotChannelData {
     pub channel_units: String,
 
@@ -17,14 +18,23 @@ pub struct PlotChannelData {
 }
 
 #[doc = "Contains plot data for a given plot request."]
-#[derive(SimpleObject)]
+#[derive(SimpleObject, Clone)]
+#[graphql(complex)]
 pub struct PlotReplyData {
     #[doc = "A unique identifier for the plot request. This identifier will \
 	     be cached for a limited time. Other clients can specify it to \
 	     re-use the configuration."]
     pub plot_id: String,
-
+    pub timestamp: f64,
     pub data: Vec<PlotChannelData>,
+}
+
+#[ComplexObject]
+impl PlotReplyData {
+    pub async fn iso_timestamp(&self) -> DateTime<Utc> {
+        DateTime::<Utc>::UNIX_EPOCH
+            + Duration::microseconds((self.timestamp * 1_000_000.0) as i64)
+    }
 }
 
 #[doc = "Holds the configuration for a plot channel."]

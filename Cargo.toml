@@ -4,9 +4,10 @@ version = "0.2.1"
 edition = "2021"
 
 [build-dependencies]
-tonic-build = "0.12"
+tonic-build = "0.13"
 
 [dependencies]
+async-stream = "0.3"
 futures = "0.3.27"
 futures-util = { version = "0.3", features = ["tokio-io"] }
 tokio = { version = "1", features = [
@@ -36,7 +37,7 @@ chrono = "0.4"
 serde = { version = "1", features = ["derive"] }
 jsonwebtoken = { version = "9.3", default-features = false }
 
-tonic = "0.12"
+tonic = "0.13"
 prost = "0.13"
 prost-types = "0.13"
 
