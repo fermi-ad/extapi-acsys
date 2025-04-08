@@ -146,13 +146,16 @@ pub enum DataType {
 #[graphql(complex)]
 pub struct DataInfo {
     #[doc = "Timestamp representing when the data was sampled. This value is \
-	     provided as milliseconds since 1970, UTC."]
+	     provided as seconds since 1970, UTC. The fractional portion of \
+	     the value can represent nanoseconds, but we have few -- if any -- \
+	     systems that provide that resolution."]
     pub timestamp: f64,
 
     #[doc = "The value of the device when sampled."]
     pub result: DataType,
 
-    #[doc = "The device's index (in the device database.)"]
+    #[doc = "The device's index (in the device database.) This field may get \
+	     removed; its purpose is questionable in this API."]
     pub di: i32,
 
     #[doc = "The name of the device."]
@@ -161,6 +164,10 @@ pub struct DataInfo {
 
 #[ComplexObject]
 impl DataInfo {
+    #[doc = "The timestamp as an ISO formatted string. This value is fairly \
+	     expensive to generate, so the `timestamp` field should be \
+	     preferred to this one. This field is mainly used for debugging \
+	     or when using a tool that returns human-readable results."]
     pub async fn iso_timestamp(&self) -> DateTime<Utc> {
         DateTime::<Utc>::UNIX_EPOCH
             + Duration::microseconds((self.timestamp * 1_000_000.0) as i64)
