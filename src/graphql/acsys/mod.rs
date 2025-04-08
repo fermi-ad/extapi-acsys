@@ -520,7 +520,7 @@ impl<'ctx> ACSysSubscriptions {
                 .extend(out_chan.channel_data.drain(idx..));
 
             for out_data in out_chan.channel_data.iter_mut() {
-                out_data.t = Some(ev_ts);
+                out_data.t = Some(out_data.x);
                 out_data.x -= ev_ts;
             }
         }
@@ -1048,17 +1048,17 @@ mod test {
             buf.data[0].channel_data,
             &[
                 types::PlotDataPoint {
-                    t: Some(0.5),
+                    t: Some(1.0),
                     x: 0.5,
                     y: 10.0,
                 },
                 types::PlotDataPoint {
-                    t: Some(0.5),
+                    t: Some(2.0),
                     x: 1.5,
                     y: 11.0,
                 },
                 types::PlotDataPoint {
-                    t: Some(0.5),
+                    t: Some(3.0),
                     x: 2.5,
                     y: 12.0,
                 }
@@ -1074,12 +1074,12 @@ mod test {
             buf.data[0].channel_data,
             &[
                 types::PlotDataPoint {
-                    t: Some(0.5),
+                    t: Some(4.0),
                     x: 3.5,
                     y: 13.0,
                 },
                 types::PlotDataPoint {
-                    t: Some(0.5),
+                    t: Some(5.0),
                     x: 4.5,
                     y: 14.0,
                 },
