@@ -12,10 +12,18 @@ pub struct FaasQueries;
 	 services."]
 #[Object]
 impl FaasQueries {
+    #[doc = "Converts \"clinks\" to a Unix timestamp (seconds since Jan 1, \
+	    1970 UTC.)"]
+    #[graphql(deprecation = "This is a test API and will be removed.")]
     async fn clinks_to_unix(&self, clinks: u64) -> u64 {
         clinks + CLINK_OFFSET
     }
 
+    #[doc = "Converts a Unix timestamp (seconds since Jan 1, 1970 UTC) into \
+	     \"clinks\". Since there is a range of Unix time that can't be \
+	     represented in \"clinks\", `null` will be returned when the \
+	     conversion fails."]
+    #[graphql(deprecation = "This is a test API and will be removed.")]
     async fn unix_to_clinks(&self, time: u64) -> Option<u64> {
         Some(time)
             .filter(|v| *v >= CLINK_OFFSET)
