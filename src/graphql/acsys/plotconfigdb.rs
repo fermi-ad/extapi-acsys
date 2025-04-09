@@ -4,8 +4,8 @@ use tokio::sync::Mutex;
 
 use super::types;
 
-type GenMap = HashMap<usize, types::PlotConfigurationSnapshot>;
-type UserMap = HashMap<String, types::PlotConfigurationSnapshot>;
+type GenMap = HashMap<usize, Arc<types::PlotConfigurationSnapshot>>;
+type UserMap = HashMap<String, Arc<types::PlotConfigurationSnapshot>>;
 
 struct Inner(GenMap, UserMap);
 
@@ -23,7 +23,7 @@ impl Inner {
 
     pub fn find(
         &self, id: Option<usize>,
-    ) -> Vec<types::PlotConfigurationSnapshot> {
+    ) -> Vec<Arc<types::PlotConfigurationSnapshot>> {
         // If there's an ID specified, we're searching for one record.
 
         if let Some(id) = id {
@@ -38,7 +38,7 @@ impl Inner {
 
     pub fn find_user(
         &self, user: &str,
-    ) -> Option<types::PlotConfigurationSnapshot> {
+    ) -> Option<Arc<types::PlotConfigurationSnapshot>> {
         self.1.get(user).cloned()
     }
 
@@ -66,7 +66,7 @@ impl Inner {
             // the DB.
 
             let result = cfg.configuration_id;
-            let _ = self.0.insert(id, cfg);
+            let _ = self.0.insert(id, cfg.into());
 
             result
         } else {
@@ -86,7 +86,7 @@ impl Inner {
 
             cfg.configuration_id = Some(id);
 
-            let _ = self.0.insert(id, cfg);
+            let _ = self.0.insert(id, cfg.into());
 
             Some(id)
         }
@@ -100,7 +100,7 @@ impl Inner {
         cfg.configuration_id = None;
         cfg.configuration_name = "".into();
 
-        self.1.insert(key, cfg);
+        self.1.insert(key, cfg.into());
     }
 }
 
@@ -117,13 +117,13 @@ impl T {
 
     pub async fn find(
         &self, id: Option<usize>,
-    ) -> Vec<types::PlotConfigurationSnapshot> {
+    ) -> Vec<Arc<types::PlotConfigurationSnapshot>> {
         self.0.lock().await.find(id)
     }
 
     pub async fn find_user(
         &self, user: &str,
-    ) -> Option<types::PlotConfigurationSnapshot> {
+    ) -> Option<Arc<types::PlotConfigurationSnapshot>> {
         self.0.lock().await.find_user(user)
     }
 
