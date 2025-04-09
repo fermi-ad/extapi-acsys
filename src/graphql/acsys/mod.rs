@@ -4,7 +4,7 @@ use async_graphql::*;
 use chrono::{DateTime, Utc};
 use futures::future;
 use futures_util::{Stream, StreamExt};
-use std::{collections::HashSet, pin::Pin};
+use std::{collections::HashSet, pin::Pin, sync::Arc};
 use tokio::time::Instant;
 use tonic::Status;
 use tracing::{debug, error, info, instrument, warn};
@@ -188,7 +188,7 @@ an array with 0 or 1 element."]
     #[instrument(skip(self, ctxt))]
     async fn plot_configuration(
         &self, ctxt: &Context<'_>, configuration_id: Option<usize>,
-    ) -> Vec<types::PlotConfigurationSnapshot> {
+    ) -> Vec<Arc<types::PlotConfigurationSnapshot>> {
         info!("returning plot configuration(s)");
 
         ctxt.data_unchecked::<plotconfigdb::T>()
@@ -205,7 +205,7 @@ that is included in the request."]
     #[instrument(skip(self, ctxt))]
     async fn users_last_configuration(
         &self, ctxt: &Context<'_>,
-    ) -> Option<types::PlotConfigurationSnapshot> {
+    ) -> Option<Arc<types::PlotConfigurationSnapshot>> {
         if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
             if let Some(account) = auth.unsafe_account() {
                 info!("account: {:?}", &account);
