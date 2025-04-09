@@ -22,7 +22,7 @@ async fn get_client() -> Result<ScannerClient<transport::Channel>, Status> {
         .map_err(|_| Status::unavailable("wire-scanner service unavailable"))
 }
 
-pub async fn retrieve_scans() -> Result<HashMap<String, String>, Status> {
+pub async fn _retrieve_scans() -> Result<HashMap<String, String>, Status> {
     let map = HashMap::from([
         (
             "scl-ws-station1".into(),
