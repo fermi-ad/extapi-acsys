@@ -3,7 +3,7 @@ use chrono::{DateTime, Duration, Utc};
 
 #[derive(SimpleObject, Clone, Debug, PartialEq)]
 pub struct PlotDataPoint {
-    pub t: Option<f64>,
+    pub t: f64,
     pub x: f64,
     pub y: f64,
 }

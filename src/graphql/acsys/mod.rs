@@ -378,7 +378,7 @@ fn to_plot_data(
         global::DataType::Scalar(y) => (
             0,
             vec![types::PlotDataPoint {
-                t: None,
+                t: ts,
                 x: ts,
                 y: y.scalar_value,
             }],
@@ -396,7 +396,7 @@ fn to_plot_data(
                     .enumerate()
                     .step_by(step)
                     .map(|(idx, y)| types::PlotDataPoint {
-                        t: Some(ts),
+                        t: ts,
                         x: idx as f64,
                         y: *y,
                     })
@@ -520,7 +520,7 @@ impl<'ctx> ACSysSubscriptions {
                 .extend(out_chan.channel_data.drain(idx..));
 
             for out_data in out_chan.channel_data.iter_mut() {
-                out_data.t = Some(out_data.x);
+                out_data.t = out_data.x;
                 out_data.x -= ev_ts;
             }
         }
@@ -592,7 +592,7 @@ impl<'ctx> ACSysSubscriptions {
 				outgoing.data[rdg.ref_id as usize]
 				    .channel_data
 				    .push(types::PlotDataPoint {
-					t: None,
+					t: d.timestamp,
 					x: d.timestamp,
 					y: y.scalar_value,
 				    })
@@ -815,7 +815,7 @@ fn const_data(
     r: &mut dyn Iterator<Item = usize>, ts: f64, y: f64,
 ) -> Vec<types::PlotDataPoint> {
     r.map(|idx| types::PlotDataPoint {
-        t: Some(ts),
+        t: ts,
         x: idx as f64,
         y,
     })
@@ -826,7 +826,7 @@ fn ramp_data(
     r: &mut dyn Iterator<Item = usize>, ts: f64,
 ) -> Vec<types::PlotDataPoint> {
     r.map(|idx| types::PlotDataPoint {
-        t: Some(ts),
+        t: ts,
         x: idx as f64,
         y: idx as f64,
     })
@@ -840,7 +840,7 @@ fn parabola_data(
         let x = idx as f64;
 
         types::PlotDataPoint {
-            t: Some(ts),
+            t: ts,
             x,
             y: (x * x) / 125.0 - 4.0 * x + 500.0,
         }
@@ -854,7 +854,7 @@ fn sine_data(
     let k = (std::f64::consts::PI * 2.0) / (N as f64);
 
     r.map(|idx| types::PlotDataPoint {
-        t: Some(ts),
+        t: ts,
         x: idx as f64,
         y: f64::sin(k * (idx as f64)),
     })
@@ -944,27 +944,27 @@ mod test {
     fn test_flush() {
         const POINT_DATA: &[types::PlotDataPoint] = &[
             types::PlotDataPoint {
-                t: None,
+                t: 1.0,
                 x: 1.0,
                 y: 10.0,
             },
             types::PlotDataPoint {
-                t: None,
+                t: 2.0,
                 x: 2.0,
                 y: 11.0,
             },
             types::PlotDataPoint {
-                t: None,
+                t: 3.0,
                 x: 3.0,
                 y: 12.0,
             },
             types::PlotDataPoint {
-                t: None,
+                t: 4.0,
                 x: 4.0,
                 y: 13.0,
             },
             types::PlotDataPoint {
-                t: None,
+                t: 5.0,
                 x: 5.0,
                 y: 14.0,
             },
@@ -997,27 +997,27 @@ mod test {
     fn test_partitioning() {
         const POINT_DATA: &[types::PlotDataPoint] = &[
             types::PlotDataPoint {
-                t: None,
+                t: 1.0,
                 x: 1.0,
                 y: 10.0,
             },
             types::PlotDataPoint {
-                t: None,
+                t: 2.0,
                 x: 2.0,
                 y: 11.0,
             },
             types::PlotDataPoint {
-                t: None,
+                t: 3.0,
                 x: 3.0,
                 y: 12.0,
             },
             types::PlotDataPoint {
-                t: None,
+                t: 4.0,
                 x: 4.0,
                 y: 13.0,
             },
             types::PlotDataPoint {
-                t: None,
+                t: 5.0,
                 x: 5.0,
                 y: 14.0,
             },
@@ -1048,17 +1048,17 @@ mod test {
             buf.data[0].channel_data,
             &[
                 types::PlotDataPoint {
-                    t: Some(1.0),
+                    t: 1.0,
                     x: 0.5,
                     y: 10.0,
                 },
                 types::PlotDataPoint {
-                    t: Some(2.0),
+                    t: 2.0,
                     x: 1.5,
                     y: 11.0,
                 },
                 types::PlotDataPoint {
-                    t: Some(3.0),
+                    t: 3.0,
                     x: 2.5,
                     y: 12.0,
                 }
@@ -1074,12 +1074,12 @@ mod test {
             buf.data[0].channel_data,
             &[
                 types::PlotDataPoint {
-                    t: Some(4.0),
+                    t: 4.0,
                     x: 3.5,
                     y: 13.0,
                 },
                 types::PlotDataPoint {
-                    t: Some(5.0),
+                    t: 5.0,
                     x: 4.5,
                     y: 14.0,
                 },
