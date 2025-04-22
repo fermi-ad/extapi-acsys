@@ -10,10 +10,19 @@ pub struct PlotDataPoint {
 
 #[derive(SimpleObject, Clone)]
 pub struct PlotChannelData {
+    #[doc = "The engineering units of the device."]
     pub channel_units: String,
-
+    #[doc = "The negotiated return rate for the data. If a device's readings \
+	     are requested at a higher rate than the device can support, the \
+	     front-end will negotiate down to an acheivable rate. This field \
+	     represents the actual sample rate of the data."]
+    pub channel_rate: String,
+    #[doc = "The global status of the reading. This field will either be `0` \
+	     (successful reads) or a negative status, indicating a fatal error \
+	     occurred trying to get the device's data."]
     pub channel_status: i16,
-
+    #[doc = "A set of data points. If the return rate is slow (<= 1Hz), this \
+	     list will only have one element."]
     pub channel_data: Vec<PlotDataPoint>,
 }
 

@@ -435,6 +435,7 @@ impl<'ctx> ACSysSubscriptions {
             data: drfs
                 .iter()
                 .map(|_| types::PlotChannelData {
+                    channel_rate: "Unknown".into(),
                     channel_units: "V".into(),
                     channel_status: 0,
                     channel_data: vec![],
@@ -467,6 +468,7 @@ impl<'ctx> ACSysSubscriptions {
                             .data
                             .iter()
                             .map(|e| types::PlotChannelData {
+                                channel_rate: "Unknown".into(),
                                 channel_units: e.channel_units.clone(),
                                 channel_status: e.channel_status,
                                 channel_data: vec![],
@@ -545,6 +547,7 @@ impl<'ctx> ACSysSubscriptions {
             data: drfs
                 .iter()
                 .map(|_| types::PlotChannelData {
+                    channel_rate: "Unknown".into(),
                     channel_units: "V".into(),
                     channel_status: 0,
                     channel_data: vec![],
@@ -974,6 +977,7 @@ mod test {
             plot_id: "test".to_owned(),
             timestamp: 0.0,
             data: vec![types::PlotChannelData {
+                channel_rate: "Unknown".into(),
                 channel_units: "V".to_owned(),
                 channel_status: 0,
                 channel_data: POINT_DATA.to_owned(),
@@ -1027,6 +1031,7 @@ mod test {
             plot_id: "test".to_owned(),
             timestamp: 0.0,
             data: vec![types::PlotChannelData {
+                channel_rate: "Unknown".into(),
                 channel_units: "V".to_owned(),
                 channel_status: 0,
                 channel_data: POINT_DATA.to_owned(),
