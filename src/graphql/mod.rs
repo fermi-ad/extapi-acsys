@@ -9,6 +9,7 @@ use axum::{
     routing::get,
     Router,
 };
+use tracing::info;
 
 use crate::g_rpc::dpm::build_connection;
 
@@ -273,9 +274,13 @@ pub async fn start_service() {
     .await
     .expect("couldn't load certificate info from PEM file(s)");
 
+    info!("site certificate successfully read");
+
     // Build up the routes for the site.
 
     let app = create_site().await;
+
+    info!("web site handlers built successfully");
 
     // Start the server.
 
