@@ -212,17 +212,16 @@ the username and this parameter will be removed."]
         &self, ctxt: &Context<'_>, user: Option<String>,
     ) -> Option<Arc<types::PlotConfigurationSnapshot>> {
         if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
+            // TEMPORARY: If a user account is specified, use it.
 
-	    // TEMPORARY: If a user account is specified, use it.
-
-	    if let Some(account) = user {
+            if let Some(account) = user {
                 info!("unverified account: {:?}", &account);
 
                 return ctxt
                     .data_unchecked::<plotconfigdb::T>()
                     .find_user(&account)
                     .await;
-	    }
+            }
 
             if let Some(account) = auth.unsafe_account() {
                 info!("account: {:?}", &account);
