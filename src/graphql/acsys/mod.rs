@@ -295,13 +295,15 @@ The content of the configuration are used to set the default \
 configuration for the user. All fields, except the ID and name \
 fields, are used. The user's account name is obtained from the \
 authentication token that accompanies the request."]
-    #[instrument(skip(self, ctxt))]
+    #[instrument(skip(self, ctxt, config))]
     async fn users_configuration(
-        &self, ctxt: &Context<'_>, config: types::PlotConfigurationSnapshot,
+        &self, ctxt: &Context<'_>, user: Option<String>, config: types::PlotConfigurationSnapshot,
     ) -> Result<global::StatusReply> {
         if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
-            if let Some(account) = auth.unsafe_account() {
-                info!("account: {:?}", &account);
+            // TEMPORARY: If a user account is specified, use it.
+
+            if let Some(account) = user.or_else(|| auth.unsafe_account()) {
+                info!("using account: {:?}", &account);
 
                 ctxt.data_unchecked::<plotconfigdb::T>()
                     .update_user(&account, config)
