@@ -201,12 +201,28 @@ an array with 0 or 1 element."]
 If the application saved the user's last plot configuration, this query \
 will return it. If there is no configuration for the user, `null` is \
 returned. The user's account is retrieved from the authentication token \
-that is included in the request."]
+that is included in the request.
+
+TEMPORARY: The `user` parameter can be used to retrieve a user's last \
+configuration. The convention is to prepend an underscore to the account \
+name. Once we use the new authentication method, we'll be able to look-up \
+the username and this parameter will be removed."]
     #[instrument(skip(self, ctxt))]
     async fn users_last_configuration(
-        &self, ctxt: &Context<'_>,
+        &self, ctxt: &Context<'_>, user: Option<String>,
     ) -> Option<Arc<types::PlotConfigurationSnapshot>> {
         if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
+            // TEMPORARY: If a user account is specified, use it.
+
+            if let Some(account) = user {
+                info!("unverified account: {:?}", &account);
+
+                return ctxt
+                    .data_unchecked::<plotconfigdb::T>()
+                    .find_user(&account)
+                    .await;
+            }
+
             if let Some(account) = auth.unsafe_account() {
                 info!("account: {:?}", &account);
 

@@ -1,4 +1,4 @@
-use tracing::Level;
+use tracing::{info, Level};
 
 mod g_rpc;
 mod graphql;
@@ -14,6 +14,8 @@ async fn main() {
 
     tracing::subscriber::set_global_default(subscriber)
         .expect("Unable to set global default subscriber");
+
+    info!("starting");
 
     // Start the web server.
 
