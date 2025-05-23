@@ -294,10 +294,17 @@ want to set."]
 The content of the configuration are used to set the default \
 configuration for the user. All fields, except the ID and name \
 fields, are used. The user's account name is obtained from the \
-authentication token that accompanies the request."]
+authentication token that accompanies the request.
+
+TEMPORARY: The `user` parameter can be used to specify the user \
+account with which to associate the configuration. The convention \
+is to prepend an underscore to the account name. Once we use the \
+new authentication method, we'll be able to look-up the username \
+and this parameter will be removed."]
     #[instrument(skip(self, ctxt, config))]
     async fn users_configuration(
-        &self, ctxt: &Context<'_>, user: Option<String>, config: types::PlotConfigurationSnapshot,
+        &self, ctxt: &Context<'_>, user: Option<String>,
+        config: types::PlotConfigurationSnapshot,
     ) -> Result<global::StatusReply> {
         if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
             // TEMPORARY: If a user account is specified, use it.
