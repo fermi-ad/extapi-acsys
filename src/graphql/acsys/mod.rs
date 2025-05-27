@@ -214,17 +214,8 @@ the username and this parameter will be removed."]
         if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
             // TEMPORARY: If a user account is specified, use it.
 
-            if let Some(account) = user {
-                info!("unverified account: {:?}", &account);
-
-                return ctxt
-                    .data_unchecked::<plotconfigdb::T>()
-                    .find_user(&account)
-                    .await;
-            }
-
-            if let Some(account) = auth.unsafe_account() {
-                info!("account: {:?}", &account);
+            if let Some(account) = user.or_else(|| auth.unsafe_account()) {
+                info!("using account: {:?}", &account);
 
                 return ctxt
                     .data_unchecked::<plotconfigdb::T>()
@@ -303,14 +294,23 @@ want to set."]
 The content of the configuration are used to set the default \
 configuration for the user. All fields, except the ID and name \
 fields, are used. The user's account name is obtained from the \
-authentication token that accompanies the request."]
-    #[instrument(skip(self, ctxt))]
+authentication token that accompanies the request.
+
+TEMPORARY: The `user` parameter can be used to specify the user \
+account with which to associate the configuration. The convention \
+is to prepend an underscore to the account name. Once we use the \
+new authentication method, we'll be able to look-up the username \
+and this parameter will be removed."]
+    #[instrument(skip(self, ctxt, config))]
     async fn users_configuration(
-        &self, ctxt: &Context<'_>, config: types::PlotConfigurationSnapshot,
+        &self, ctxt: &Context<'_>, user: Option<String>,
+        config: types::PlotConfigurationSnapshot,
     ) -> Result<global::StatusReply> {
         if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
-            if let Some(account) = auth.unsafe_account() {
-                info!("account: {:?}", &account);
+            // TEMPORARY: If a user account is specified, use it.
+
+            if let Some(account) = user.or_else(|| auth.unsafe_account()) {
+                info!("using account: {:?}", &account);
 
                 ctxt.data_unchecked::<plotconfigdb::T>()
                     .update_user(&account, config)
