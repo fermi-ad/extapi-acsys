@@ -1,4 +1,7 @@
-use crate::g_rpc::dpm;
+use crate::g_rpc::dpm::{
+    self,
+    proto::services::daq::{self, reading_reply},
+};
 
 use async_graphql::*;
 use chrono::{DateTime, Utc};
@@ -34,59 +37,57 @@ fn now() -> f64 {
         / 1_000_000.0
 }
 
-// Converts a gRPC proto::Reading structure into a GraphQL
+// Converts a gRPC proto::ReadingReply structure into a GraphQL
 // global::DataReply object.
 
-fn reading_to_reply(
-    names: &[String], rdg: &dpm::proto::Reading,
-) -> global::DataReply {
-    if let Some(ref data) = rdg.data {
-        global::DataReply {
+fn reading_to_reply(rdg: &daq::ReadingReply) -> global::DataReply {
+    match &rdg.value {
+        Some(reading_reply::Value::Readings(rdgs)) => global::DataReply {
             ref_id: rdg.index as i32,
-            cycle: 1,
-            data: global::DataInfo {
+            data: rdgs
+                .reading
+                .iter()
+                .map(|v| global::DataInfo {
+                    timestamp: v
+                        .timestamp
+                        .map(|v| {
+                            v.seconds as f64 + v.nanos as f64 / 1_000_000_000.0
+                        })
+                        .unwrap(),
+                    result: v.data.as_ref().map(|v| v.into()).unwrap(),
+                })
+                .collect(),
+        },
+        Some(reading_reply::Value::Status(status)) => global::DataReply {
+            ref_id: rdg.index as i32,
+            data: vec![global::DataInfo {
                 timestamp: now(),
-                result: data.into(),
-                di: 0,
-                name: names[rdg.index as usize].clone(),
-            },
-        }
-    } else {
-        warn!("returned data: {:?}", &rdg.data);
-        unreachable!()
+                result: global::DataType::StatusReply(global::StatusReply {
+                    status: (status.facility_code + status.status_code * 256)
+                        as i16,
+                }),
+            }],
+        },
+        None => unreachable!(),
     }
 }
 
-// Returns a function that translates a gRPC proto::Reading structures
-// into a GraphQL DataReply object. This is used with the
-// Stream::map() method to translate a stream of gRPC types to GraphQL
-// types.
-
-fn mk_xlater(
-    names: Vec<String>,
-) -> Box<
-    dyn (FnMut(Result<dpm::proto::Reading, Status>) -> global::DataReply)
-        + Send
-        + Sync,
-> {
-    Box::new(move |e: Result<dpm::proto::Reading, Status>| match e {
-        Ok(e) => reading_to_reply(&names, &e),
+fn xlat_reply(e: Result<daq::ReadingReply, Status>) -> global::DataReply {
+    match e {
+        Ok(e) => reading_to_reply(&e),
         Err(e) => {
             warn!("channel error: {}", &e);
             global::DataReply {
-                ref_id: 0,
-                cycle: 1,
-                data: global::DataInfo {
+                ref_id: -1,
+                data: vec![global::DataInfo {
                     timestamp: now(),
                     result: global::DataType::StatusReply(
                         global::StatusReply { status: -1 },
                     ),
-                    di: 0,
-                    name: "".into(),
-                },
+                }],
             }
         }
-    })
+    }
 }
 
 // Create a zero-sized struct to attach the GraphQL handlers.
@@ -163,7 +164,7 @@ immediately or after a delay."]
                 Ok(reply) => {
                     let index = reply.index as usize;
 
-                    results[index] = Some(reading_to_reply(&drfs, &reply));
+                    results[index] = Some(reading_to_reply(&reply));
 
                     remaining.remove(&index);
                     if remaining.is_empty() {
@@ -262,7 +263,7 @@ want to set."]
 
         match result {
             Ok(status) => Ok(global::StatusReply {
-                status: status as i16,
+                status: status[0] as i16,
             }),
             Err(e) => Err(Error::new(format!("{}", e).as_str())),
         }
@@ -386,42 +387,40 @@ fn stuff_fake_data(
 }
 
 fn to_plot_data(
-    len: usize, window_size: &Option<usize>, data: &global::DataInfo,
+    len: usize, window_size: &Option<usize>, data: &[global::DataInfo],
 ) -> (i16, Vec<types::PlotDataPoint>) {
-    let ts = data.timestamp;
+    let mut result = vec![];
 
-    match &data.result {
-        global::DataType::Scalar(y) => (
-            0,
-            vec![types::PlotDataPoint {
+    for entry in data {
+        let ts = entry.timestamp;
+
+        match &entry.result {
+            global::DataType::Scalar(y) => result.push(types::PlotDataPoint {
                 t: ts,
                 x: ts,
                 y: y.scalar_value,
-            }],
-        ),
-        global::DataType::ScalarArray(a) => {
-            let step = window_size
-                .filter(|v| *v > 0 && *v <= len)
-                .map(|v| len.div_ceil(v))
-                .unwrap_or(1);
+            }),
+            global::DataType::ScalarArray(a) => {
+                let step = window_size
+                    .filter(|v| *v > 0 && *v <= len)
+                    .map(|v| len.div_ceil(v))
+                    .unwrap_or(1);
 
-            (
-                0,
-                a.scalar_array_value
-                    .iter()
-                    .enumerate()
-                    .step_by(step)
-                    .map(|(idx, y)| types::PlotDataPoint {
-                        t: ts,
-                        x: idx as f64,
-                        y: *y,
-                    })
-                    .collect(),
-            )
+                result.extend(
+                    a.scalar_array_value.iter().enumerate().step_by(step).map(
+                        |(idx, y)| types::PlotDataPoint {
+                            t: ts,
+                            x: idx as f64,
+                            y: *y,
+                        },
+                    ),
+                )
+            }
+            global::DataType::StatusReply(v) => return (v.status, vec![]),
+            _ => return (-1, vec![]),
         }
-        global::DataType::StatusReply(v) => (v.status, vec![]),
-        _ => (-1, vec![]),
     }
+    (0, result)
 }
 
 type DataStream = Pin<Box<dyn Stream<Item = global::DataReply> + Send>>;
@@ -464,41 +463,57 @@ impl<'ctx> ACSysSubscriptions {
         let strm = self
             .accelerator_data(ctxt, drfs.clone(), None, None)
             .await?;
-        let s =
-            strm.filter_map(move |e: global::DataReply| {
-                reply.data[e.ref_id as usize].channel_data =
-                    to_plot_data(r.len(), &window_size, &e.data).1;
-                reply.data[e.ref_id as usize].channel_status = 0;
+        let s = strm.filter_map(move |e: global::DataReply| {
+            let (sts, mut data) = to_plot_data(r.len(), &window_size, &e.data);
 
-                if reply.data.iter().all(|e| {
-                    e.channel_status != 0 || !e.channel_data.is_empty()
-                }) {
-                    // XXX: All timestamps should be doubles instead of
-                    // converting to and from ASCII ISO values.
+            // Take all the points from the current reply and extend
+            // the outgoing data.
 
-                    let ts = e.data.timestamp;
-                    let mut temp = types::PlotReplyData {
-                        plot_id: "demo".into(),
-                        timestamp: now,
-                        data: reply
-                            .data
-                            .iter()
-                            .map(|e| types::PlotChannelData {
-                                channel_rate: "Unknown".into(),
-                                channel_units: e.channel_units.clone(),
-                                channel_status: e.channel_status,
-                                channel_data: vec![],
-                            })
-                            .collect(),
-                    };
+            reply.data[e.ref_id as usize]
+                .channel_data
+                .extend(data.drain(..));
 
-                    std::mem::swap(&mut temp, &mut reply);
-                    stuff_fake_data(&mut r.clone(), &drfs, ts, &mut reply.data);
-                    future::ready(Some(temp))
-                } else {
-                    future::ready(None)
-                }
-            });
+            // Set-up a nested scope range so we can modify the currently
+            // tracked status.
+
+            {
+                let curr: &mut i16 =
+                    &mut reply.data[e.ref_id as usize].channel_status;
+
+                *curr = std::cmp::min(*curr, sts);
+            }
+
+            // If we have data (or status) for every channel, we can
+            // determine what needs to be sent to the client.
+
+            if reply
+                .data
+                .iter()
+                .all(|e| e.channel_status != 0 || !e.channel_data.is_empty())
+            {
+                let ts = e.data[0].timestamp;
+                let mut temp = types::PlotReplyData {
+                    plot_id: "demo".into(),
+                    timestamp: now,
+                    data: reply
+                        .data
+                        .iter()
+                        .map(|e| types::PlotChannelData {
+                            channel_rate: "Unknown".into(),
+                            channel_units: e.channel_units.clone(),
+                            channel_status: e.channel_status,
+                            channel_data: vec![],
+                        })
+                        .collect(),
+                };
+
+                std::mem::swap(&mut temp, &mut reply);
+                stuff_fake_data(&mut r.clone(), &drfs, ts, &mut reply.data);
+                future::ready(Some(temp))
+            } else {
+                future::ready(None)
+            }
+        });
 
         if let Some(n) = n_acquisitions.map(|v| v.max(1)) {
             Ok(Box::pin(s.take(n)) as PlotStream)
@@ -602,19 +617,25 @@ impl<'ctx> ACSysSubscriptions {
 		tokio::select! {
 		    opt_rdg = dev_data.next() => {
 			if let Some(rdg) = opt_rdg {
-			    let d = rdg.data;
+			    for d in rdg.data.iter() {
+				// We only handle scalar data for triggered
+				// plots.
 
-			    // We only handle scalar data for triggered
-			    // plots.
-
-			    if let global::DataType::Scalar(y) = d.result {
-				outgoing.data[rdg.ref_id as usize]
-				    .channel_data
-				    .push(types::PlotDataPoint {
-					t: d.timestamp,
-					x: d.timestamp,
-					y: y.scalar_value,
-				    })
+				if let global::DataType::Scalar(y) = &d.result {
+				    outgoing.data[rdg.ref_id as usize]
+					.channel_data
+					.push(types::PlotDataPoint {
+					    t: d.timestamp,
+					    x: d.timestamp,
+					    y: y.scalar_value,
+					})
+				} else {
+				    error!(
+					"nonscalar data in triggered plot for device {}",
+					&drfs[rdg.ref_id as usize]
+				    );
+				    break
+				}
 			    }
 			} else {
 			    error!("data stream closed");
@@ -743,7 +764,7 @@ generated."]
         {
             Ok(s) => {
                 debug!("rpc: {} μs", now.elapsed().as_micros());
-                Ok(Box::pin(s.into_inner().map(mk_xlater(drfs))) as DataStream)
+                Ok(Box::pin(s.into_inner().map(xlat_reply)) as DataStream)
             }
             Err(e) => Err(Error::new(format!("{}", e).as_str())),
         }

@@ -1,14 +1,46 @@
 use proto::{
-    dpm_client::DpmClient, AcquisitionList, Setting, SettingList, StatusList,
+    common::device,
+    services::daq::{
+        daq_client::DaqClient, ReadingList, ReadingReply, Setting, SettingList,
+        SettingReply,
+    },
 };
 use tonic::transport::{Channel, Error};
 use tracing::{info, warn};
 
 pub mod proto {
-    tonic::include_proto!("dpm");
+    pub mod google {
+        pub mod r#type {
+            include!("../generated/google.r#type.rs");
+        }
+    }
+
+    pub mod common {
+        pub mod status {
+            include!("../generated/common.status.rs");
+        }
+        pub mod event {
+            include!("../generated/common.event.rs");
+        }
+        pub mod device {
+            include!("../generated/common.device.rs");
+        }
+        pub mod sources {
+            include!("../generated/common.sources.rs");
+        }
+        pub mod drf {
+            include!("../generated/common.drf.rs");
+        }
+    }
+
+    pub mod services {
+        pub mod daq {
+            include!("../generated/services.daq.rs");
+        }
+    }
 }
 
-pub struct Connection(DpmClient<Channel>);
+pub struct Connection(DaqClient<Channel>);
 
 type TonicStreamResult<T> =
     Result<tonic::Response<tonic::Streaming<T>>, tonic::Status>;
@@ -20,16 +52,13 @@ type TonicQueryResult<T> = Result<T, tonic::Status>;
 pub async fn build_connection() -> Result<Connection, Error> {
     const DPM: &'static str = "http://dce09.fnal.gov:50051/";
 
-    Ok(Connection(DpmClient::connect(DPM).await?))
+    Ok(Connection(DaqClient::connect(DPM).await?))
 }
 
 pub async fn acquire_devices(
     conn: &Connection, jwt: Option<&String>, devices: Vec<String>,
-) -> TonicStreamResult<proto::Reading> {
-    let mut req = tonic::Request::new(AcquisitionList {
-        session_id: "".to_owned(),
-        req: devices,
-    });
+) -> TonicStreamResult<ReadingReply> {
+    let mut req = tonic::Request::new(ReadingList { drf: devices });
 
     if let Some(jwt) = jwt {
         use std::str::FromStr;
@@ -45,7 +74,7 @@ pub async fn acquire_devices(
         warn!("no JWT for this request");
     }
 
-    conn.0.clone().start_acquisition(req).await
+    conn.0.clone().read(req).await
 }
 
 // This function wraps the logic needed to make the `ApplySettings()`
@@ -53,8 +82,8 @@ pub async fn acquire_devices(
 
 pub async fn set_device(
     conn: &Connection, session_id: Option<String>, device: String,
-    value: proto::Data,
-) -> TonicQueryResult<i32> {
+    value: device::Value,
+) -> TonicQueryResult<Vec<i32>> {
     use tonic::{metadata::MetadataValue, IntoRequest};
 
     info!("setting to {:?}", &value);
@@ -63,18 +92,10 @@ pub async fn set_device(
     // request only has a 1-element array containing the setting.
 
     let mut req = SettingList {
-        session_id: "DEADBEEF".into(),
-        setting: vec![
-            Setting {
-                name: "#ROLE:testing".into(),
-                data: None,
-            },
-            Setting {
-                name: device,
-                data: Some(value),
-            },
-        ],
-        event: "".to_owned(),
+        setting: vec![Setting {
+            device,
+            value: Some(value),
+        }],
     }
     .into_request();
 
@@ -85,14 +106,13 @@ pub async fn set_device(
             req.metadata_mut().insert("authorization", val);
         }
 
-        let StatusList { status } =
-            conn.0.clone().apply_settings(req).await?.into_inner();
+        let SettingReply { status } =
+            conn.0.clone().set(req).await?.into_inner();
 
-        if status.len() == 1 {
-            Ok(status[0])
-        } else {
-            Err(tonic::Status::internal("received more than one status"))
-        }
+        Ok(status
+            .iter()
+            .map(|v| v.facility_code + v.status_code * 256)
+            .collect())
     } else {
         Err(tonic::Status::internal("not authorized"))
     }

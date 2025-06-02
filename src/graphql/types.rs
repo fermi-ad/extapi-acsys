@@ -153,13 +153,6 @@ pub struct DataInfo {
 
     #[doc = "The value of the device when sampled."]
     pub result: DataType,
-
-    #[doc = "The device's index (in the device database.) This field may get \
-	     removed; its purpose is questionable in this API."]
-    pub di: i32,
-
-    #[doc = "The name of the device."]
-    pub name: String,
 }
 
 #[ComplexObject]
@@ -174,22 +167,19 @@ impl DataInfo {
     }
 }
 
-#[doc = "This structure wraps a device reading with some routing information: \
-	 a `refId` to correlate which device, in the array of devices passed, \
-	 this reply is for. It also has a `cycle` field so that reading from \
-	 different devices can correlate which cycle they correspond."]
+#[doc = "This structure wraps a device's reading(s) with some routing \
+	 information: a `refId` to correlate which device, in the array \
+	 of devices passed, this reply is for. It also has a `cycle` \
+	 field so that reading from different devices can correlate which \
+	 cycle they correspond."]
 #[derive(SimpleObject, Clone)]
 pub struct DataReply {
     #[doc = "This is an index to indicate which entry, in the passed array of \
 	     DRF strings, this reply corresponds."]
     pub ref_id: i32,
 
-    #[doc = "The cycle number in which the device was sampled. This can be \
-	     used to correlate readings from several devices."]
-    pub cycle: u64,
-
     #[doc = "The returned data."]
-    pub data: DataInfo,
+    pub data: Vec<DataInfo>,
 }
 
 #[derive(InputObject)]
@@ -205,15 +195,16 @@ pub struct DevValue {
 // --------------------------------------------------------------------------
 // This section defines some useful traits for types in this module.
 
-use crate::g_rpc::dpm::proto;
+use crate::g_rpc::dpm::proto::common::device;
 use tracing::warn;
 
 // Defining this trait allows us to convert a `DevValue` into a
 // `proto::Data` type.
 
-impl From<DevValue> for proto::Data {
+impl From<DevValue> for device::Value {
     fn from(val: DevValue) -> Self {
         match val {
+            // TODO: Need to make an integer a valid device type.
             DevValue {
                 int_val: Some(v),
                 scalar_val: _,
@@ -221,8 +212,8 @@ impl From<DevValue> for proto::Data {
                 raw_val: _,
                 text_val: _,
                 text_array_val: _,
-            } => proto::Data {
-                value: Some(proto::data::Value::Status(v)),
+            } => device::Value {
+                value: Some(device::value::Value::Scalar(v as f64)),
             },
             DevValue {
                 int_val: None,
@@ -231,8 +222,8 @@ impl From<DevValue> for proto::Data {
                 raw_val: _,
                 text_val: _,
                 text_array_val: _,
-            } => proto::Data {
-                value: Some(proto::data::Value::Scalar(v)),
+            } => device::Value {
+                value: Some(device::value::Value::Scalar(v)),
             },
             DevValue {
                 int_val: None,
@@ -241,9 +232,9 @@ impl From<DevValue> for proto::Data {
                 raw_val: _,
                 text_val: _,
                 text_array_val: _,
-            } => proto::Data {
-                value: Some(proto::data::Value::ScalarArr(
-                    proto::data::ScalarArray { value: v },
+            } => device::Value {
+                value: Some(device::value::Value::ScalarArr(
+                    device::value::ScalarArray { value: v },
                 )),
             },
             DevValue {
@@ -253,8 +244,8 @@ impl From<DevValue> for proto::Data {
                 raw_val: Some(v),
                 text_val: _,
                 text_array_val: _,
-            } => proto::Data {
-                value: Some(proto::data::Value::Raw(v)),
+            } => device::Value {
+                value: Some(device::value::Value::Raw(v)),
             },
             DevValue {
                 int_val: None,
@@ -263,8 +254,8 @@ impl From<DevValue> for proto::Data {
                 raw_val: None,
                 text_val: Some(v),
                 text_array_val: _,
-            } => proto::Data {
-                value: Some(proto::data::Value::Text(v)),
+            } => device::Value {
+                value: Some(device::value::Value::Text(v)),
             },
             DevValue {
                 int_val: None,
@@ -273,9 +264,9 @@ impl From<DevValue> for proto::Data {
                 raw_val: None,
                 text_val: None,
                 text_array_val: Some(v),
-            } => proto::Data {
-                value: Some(proto::data::Value::TextArr(
-                    proto::data::TextArray { value: v },
+            } => device::Value {
+                value: Some(device::value::Value::TextArr(
+                    device::value::TextArray { value: v },
                 )),
             },
             DevValue {
@@ -285,38 +276,35 @@ impl From<DevValue> for proto::Data {
                 raw_val: None,
                 text_val: None,
                 text_array_val: None,
-            } => proto::Data {
-                value: Some(proto::data::Value::Raw(vec![])),
+            } => device::Value {
+                value: Some(device::value::Value::Raw(vec![])),
             },
         }
     }
 }
 
-// Defining this trait allows us to convert a `proto::Data` type into a
+// Defining this trait allows us to convert a `device::Value` type into a
 // `DataType`.
 
-impl From<proto::Data> for DataType {
-    fn from(val: proto::Data) -> Self {
+impl From<device::Value> for DataType {
+    fn from(val: device::Value) -> Self {
         match val.value {
-            Some(proto::data::Value::Scalar(v)) => {
+            Some(device::value::Value::Scalar(v)) => {
                 DataType::Scalar(Scalar { scalar_value: v })
             }
-            Some(proto::data::Value::ScalarArr(v)) => {
+            Some(device::value::Value::ScalarArr(v)) => {
                 DataType::ScalarArray(ScalarArray {
                     scalar_array_value: v.value,
                 })
             }
-            Some(proto::data::Value::Status(v)) => {
-                DataType::StatusReply(StatusReply { status: v as i16 })
-            }
-            Some(proto::data::Value::Text(v)) => {
+            Some(device::value::Value::Text(v)) => {
                 DataType::Text(Text { text_value: v })
             }
-            Some(proto::data::Value::TextArr(proto::data::TextArray {
-                value: v,
-            })) => DataType::TextArray(TextArray {
-                text_array_value: v,
-            }),
+            Some(device::value::Value::TextArr(v)) => {
+                DataType::TextArray(TextArray {
+                    text_array_value: v.value.clone(),
+                })
+            }
             Some(v) => {
                 warn!("can't translate {:?}", &v);
                 todo!()
@@ -326,30 +314,27 @@ impl From<proto::Data> for DataType {
     }
 }
 
-impl From<&proto::Data> for DataType {
-    fn from(val: &proto::Data) -> Self {
+impl From<&device::Value> for DataType {
+    fn from(val: &device::Value) -> Self {
         match &val.value {
-            Some(proto::data::Value::Scalar(v)) => {
+            Some(device::value::Value::Scalar(v)) => {
                 DataType::Scalar(Scalar { scalar_value: *v })
             }
-            Some(proto::data::Value::ScalarArr(v)) => {
+            Some(device::value::Value::ScalarArr(v)) => {
                 DataType::ScalarArray(ScalarArray {
                     scalar_array_value: v.value.clone(),
                 })
             }
-            Some(proto::data::Value::Status(v)) => {
-                DataType::StatusReply(StatusReply { status: *v as i16 })
-            }
-            Some(proto::data::Value::Text(v)) => DataType::Text(Text {
+            Some(device::value::Value::Text(v)) => DataType::Text(Text {
                 text_value: v.clone(),
             }),
-            Some(proto::data::Value::TextArr(proto::data::TextArray {
-                value: v,
-            })) => DataType::TextArray(TextArray {
-                text_array_value: v.clone(),
-            }),
+            Some(device::value::Value::TextArr(v)) => {
+                DataType::TextArray(TextArray {
+                    text_array_value: v.value.clone(),
+                })
+            }
             Some(v) => {
-                warn!("can't translate {:?}", &v);
+                warn!("can't translate {:?}", v);
                 todo!()
             }
             _ => todo!(),

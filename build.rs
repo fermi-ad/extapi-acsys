@@ -6,7 +6,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tonic_build::configure()
         .build_client(true)
         .build_server(false)
-        .compile_protos(&["src/g_rpc/protos/deprecated/dpm.proto"], &incl)?;
+        .out_dir("src/g_rpc/generated")
+        .compile_protos(
+            &["src/g_rpc/protos/services/DAQ.proto"],
+            &["src/g_rpc/protos"],
+        )?;
 
     tonic_build::configure()
         .build_client(true)
