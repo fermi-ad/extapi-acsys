@@ -1,4 +1,4 @@
-use proto::{
+use super::proto::{
     common::device,
     services::daq::{
         daq_client::DaqClient, ReadingList, ReadingReply, Setting, SettingList,
@@ -7,38 +7,6 @@ use proto::{
 };
 use tonic::transport::{Channel, Error};
 use tracing::{info, warn};
-
-pub mod proto {
-    pub mod google {
-        pub mod r#type {
-            include!("../generated/google.r#type.rs");
-        }
-    }
-
-    pub mod common {
-        pub mod status {
-            include!("../generated/common.status.rs");
-        }
-        pub mod event {
-            include!("../generated/common.event.rs");
-        }
-        pub mod device {
-            include!("../generated/common.device.rs");
-        }
-        pub mod sources {
-            include!("../generated/common.sources.rs");
-        }
-        pub mod drf {
-            include!("../generated/common.drf.rs");
-        }
-    }
-
-    pub mod services {
-        pub mod daq {
-            include!("../generated/services.daq.rs");
-        }
-    }
-}
 
 pub struct Connection(DaqClient<Channel>);
 

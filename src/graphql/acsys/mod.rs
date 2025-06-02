@@ -1,5 +1,5 @@
-use crate::g_rpc::dpm::{
-    self,
+use crate::g_rpc::{
+    dpm,
     proto::services::daq::{self, reading_reply},
 };
 

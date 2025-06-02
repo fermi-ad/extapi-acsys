@@ -195,7 +195,7 @@ pub struct DevValue {
 // --------------------------------------------------------------------------
 // This section defines some useful traits for types in this module.
 
-use crate::g_rpc::dpm::proto::common::device;
+use crate::g_rpc::proto::common::device;
 use tracing::warn;
 
 // Defining this trait allows us to convert a `DevValue` into a
