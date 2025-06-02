@@ -31,6 +31,9 @@ pub mod proto {
         pub mod daq {
             include!("generated/services.daq.rs");
         }
+        pub mod aclk {
+            include!("generated/services.clock_event.rs");
+        }
     }
 }
 

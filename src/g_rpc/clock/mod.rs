@@ -1,12 +1,10 @@
-use proto::{clock_event_client::ClockEventClient, SubscribeReq};
-
-pub mod proto {
-    tonic::include_proto!("clock_event");
-}
+use crate::g_rpc::proto::services::aclk::{
+    clock_event_client::ClockEventClient, SubscribeReq, EventInfo
+};
 
 pub async fn subscribe(
     events: &[i32],
-) -> Result<tonic::Response<tonic::Streaming<proto::EventInfo>>, tonic::Status>
+) -> Result<tonic::Response<tonic::Streaming<EventInfo>>, tonic::Status>
 {
     match ClockEventClient::connect("http://clx76.fnal.gov:6803/").await {
         Ok(mut client) => {
