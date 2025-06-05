@@ -19,6 +19,7 @@ mod clock;
 mod devdb;
 mod faas;
 mod scanner;
+mod tlg;
 mod types;
 mod xform;
 
@@ -82,6 +83,7 @@ async fn base_page() -> Html<&'static str> {
       <li><a href="/bbm">Beam Budget monitoring</a> (WIP)</li>
       <li><a href="/devdb">Device Database</a></li>
       <li><a href="/faas">Functions as a Service</a></li>
+      <li><a href="/tlg">Timeline Generator placement</a></li>
       <li><a href="/wscan">Wire Scanner</a> (WIP)</li>
     </ul>
   </body>
@@ -194,6 +196,25 @@ fn create_faas_router() -> Router {
     )
 }
 
+fn create_tlg_router() -> Router {
+    const Q_ENDPOINT: &str = "/tlg";
+
+    let schema =
+        Schema::build(tlg::TlgQueries, tlg::TlgMutations, EmptySubscription)
+            .finish();
+
+    let graphiql = axum::response::Html(
+        async_graphql::http::GraphiQLSource::build()
+            .endpoint(Q_ENDPOINT)
+            .finish(),
+    );
+
+    Router::new().route(
+        Q_ENDPOINT,
+        get(graphiql).post(graphql_handler).with_state(schema),
+    )
+}
+
 // Creates the portion of the site map that handles the Wire Scanner GraphQL
 // API.
 
@@ -237,6 +258,7 @@ async fn create_site() -> Router {
         .merge(create_bbm_router())
         .merge(create_devdb_router())
         .merge(create_faas_router())
+        .merge(create_tlg_router())
         .merge(create_wscan_router())
         .layer(
             CorsLayer::new()

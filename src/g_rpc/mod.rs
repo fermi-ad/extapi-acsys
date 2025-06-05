@@ -40,5 +40,6 @@ pub mod proto {
 pub mod clock;
 pub mod devdb;
 pub mod dpm;
+pub mod tlg;
 pub mod wscan;
 pub mod xform;

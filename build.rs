@@ -1,8 +1,6 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let incl: [&str; 0] = [];
 
-    println!("cargo:rerun-if-changed=src/g_rpc/dpm/deviceinfo.proto");
-
     tonic_build::configure()
         .build_client(true)
         .build_server(false)
@@ -35,6 +33,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_server(false)
         .protoc_arg("--experimental_allow_proto3_optional")
         .compile_protos(&["src/g_rpc/devdb/DevDB.proto"], &incl)?;
+
+    tonic_build::configure()
+        .build_client(true)
+        .build_server(false)
+        .compile_protos(
+            &["src/g_rpc/protos/services/TlgPlacement.proto"],
+            &incl,
+        )?;
 
     Ok(())
 }
