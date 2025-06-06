@@ -1,0 +1,43 @@
+name: Rust
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: adregistry.fnal.gov/applications/extapi-acsys
+          tags: |
+            # This is the default tag for the last commit of the default branch
+            type=edge
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ github.run_number }},enable={{is_default_branch}}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to AD Registry, Harbor
+        uses: docker/login-action@v3
+        with:
+          registry: adregistry.fnal.gov
+          username: ${{ secrets.ADREGISTRY_USERNAME }}
+          password: ${{ secrets.ADREGISTRY_SECRET }}
+
+      - name: Building Docker image and pushing to adregistry
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
