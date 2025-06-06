@@ -15,5 +15,5 @@ RUN cargo build --release
 FROM debian:bookworm-slim
 
 COPY --from=builder /app/target/release/extapi-dpm /usr/local/bin/extapi-dpm
-EXPOSE 8080
+EXPOSE 8000
 CMD ["extapi-dpm"]
