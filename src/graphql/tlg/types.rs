@@ -1,4 +1,4 @@
-use crate::g_rpc::tlg::proto as gRPC;
+use crate::g_rpc::tlg::proto::services::tlg_placement as gRPC;
 use async_graphql::*;
 
 #[derive(InputObject)]
@@ -15,7 +15,6 @@ impl Into<gRPC::TlgDevice> for TlgDevice {
             r#type: self.r#type,
             name: self.name,
             device: self.device,
-            length: self.data.len() as i32,
             data: self.data,
         }
     }

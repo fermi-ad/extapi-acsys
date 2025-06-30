@@ -1,12 +1,21 @@
-use proto::{
+use proto::services::tlg_placement::{
     tlg_placement_mutation_service_client::TlgPlacementMutationServiceClient,
-    tlg_placement_service_client::TlgPlacementServiceClient, EmptyRequest,
+    tlg_placement_service_client::TlgPlacementServiceClient,
     TlgDevices, TlgPlacementResponse,
 };
 use tonic::{transport, Status};
 
 pub mod proto {
-    tonic::include_proto!("_");
+    pub mod google {
+	pub mod r#type {
+	    include!("../generated/google.r#type.rs");
+	}
+    }
+    pub mod services {
+	pub mod tlg_placement {
+	    include!("../generated/services.tlg_placement.rs");
+	}
+    }
 }
 
 const URL: &str = "http://unknown.fnal.gov:50051/";
@@ -30,7 +39,7 @@ async fn get_mutation_service_client(
 pub async fn get_version() -> Result<String, Status> {
     get_service_client()
         .await?
-        .get_version(EmptyRequest {})
+        .get_version(())
         .await
         .map(|v| v.into_inner().version)
 }
