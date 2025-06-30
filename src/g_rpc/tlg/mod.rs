@@ -6,11 +6,6 @@ use proto::services::tlg_placement::{
 use tonic::{transport, Status};
 
 pub mod proto {
-    pub mod google {
-        pub mod r#type {
-            include!("../generated/google.r#type.rs");
-        }
-    }
     pub mod services {
         pub mod tlg_placement {
             include!("../generated/services.tlg_placement.rs");
