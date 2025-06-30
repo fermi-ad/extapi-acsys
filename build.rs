@@ -37,7 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tonic_build::configure()
         .build_client(true)
         .build_server(false)
-	.out_dir("src/g_rpc/generated")
+        .out_dir("src/g_rpc/generated")
         .compile_protos(
             &["proto/controls/service/TlgPlacement/v1/TlgPlacement.proto"],
             &["src/g_rpc/protos"],

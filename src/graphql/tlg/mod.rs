@@ -1,6 +1,6 @@
 use crate::g_rpc::tlg;
-use tracing::error;
 use async_graphql::*;
+use tracing::error;
 
 // Pull in our local types.
 
