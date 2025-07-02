@@ -12,7 +12,13 @@ use tokio::time::Instant;
 use tonic::Status;
 use tracing::{debug, error, info, instrument, warn};
 
-const N: usize = 500;
+// When a waveform / array device is read, clients may only want a
+// subset of the data. Plotting apps, for instance, only have so many
+// horizontal pixels. If the client doesn't specify a max number of
+// point to return, then this value is used. The data will be
+// decimated so that, at most, this many points are returned.
+
+const DEF_MAX_WAVEFORM: usize = 500;
 
 // Pull in global types.
 
@@ -438,7 +444,7 @@ impl<'ctx> ACSysSubscriptions {
         x_min: Option<f64>, x_max: Option<f64>,
     ) -> Result<PlotStream> {
         let r = x_min.map(|v| v as usize).unwrap_or(0)
-            ..(x_max.map(|v| (v as usize) + 1).unwrap_or(N));
+            ..(x_max.map(|v| (v as usize) + 1).unwrap_or(DEF_MAX_WAVEFORM));
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -891,7 +897,7 @@ fn parabola_data(
 fn sine_data(
     r: &mut dyn Iterator<Item = usize>, ts: f64,
 ) -> Vec<types::PlotDataPoint> {
-    let k = (std::f64::consts::PI * 2.0) / (N as f64);
+    let k = (std::f64::consts::PI * 2.0) / (DEF_MAX_WAVEFORM as f64);
 
     r.map(|idx| types::PlotDataPoint {
         t: ts,
