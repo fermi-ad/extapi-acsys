@@ -1,4 +1,4 @@
-use crate::g_rpc::clock;
+use crate::g_rpc::{clock, proto::services::aclk};
 
 use async_graphql::*;
 use futures_util::{stream, Stream, StreamExt};
@@ -20,7 +20,7 @@ impl ClockSubscriptions {
         info!("subscribing to clock events: {:?}", &events);
         match clock::subscribe(&events).await {
             Ok(s) => Box::pin(s.into_inner().map(Result::unwrap).map(
-                |clock::proto::EventInfo { stamp, event, .. }| {
+                |aclk::EventInfo { stamp, event, .. }| {
                     let stamp = stamp.unwrap();
 
                     types::EventInfo {

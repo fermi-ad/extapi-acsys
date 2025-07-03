@@ -6,12 +6,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tonic_build::configure()
         .build_client(true)
         .build_server(false)
-        .compile_protos(&["src/g_rpc/protos/deprecated/dpm.proto"], &incl)?;
-
-    tonic_build::configure()
-        .build_client(true)
-        .build_server(false)
-        .compile_protos(&["src/g_rpc/clock/clock_event.proto"], &incl)?;
+        .out_dir("src/g_rpc/generated")
+        .compile_protos(
+            &[
+                "src/g_rpc/protos/proto/controls/service/DAQ/v1/DAQ.proto",
+                "src/g_rpc/protos/proto/controls/service/ACLK/v1/ACLK.proto",
+                "src/g_rpc/protos/proto/controls/common/v1/status.proto",
+                "src/g_rpc/protos/proto/controls/third-party/interval.proto",
+                "src/g_rpc/protos/proto/controls/common/v1/drf.proto",
+                "src/g_rpc/protos/proto/controls/common/v1/event.proto",
+                "src/g_rpc/protos/proto/controls/common/v1/sources.proto",
+            ],
+            &["src/g_rpc/protos"],
+        )?;
 
     tonic_build::configure()
         .build_client(true)

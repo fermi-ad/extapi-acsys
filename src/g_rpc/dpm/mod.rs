@@ -1,14 +1,14 @@
-use proto::{
-    dpm_client::DpmClient, AcquisitionList, Setting, SettingList, StatusList,
+use super::proto::{
+    common::device,
+    services::daq::{
+        daq_client::DaqClient, ReadingList, ReadingReply, Setting, SettingList,
+        SettingReply,
+    },
 };
 use tonic::transport::{Channel, Error};
 use tracing::{info, warn};
 
-pub mod proto {
-    tonic::include_proto!("dpm");
-}
-
-pub struct Connection(DpmClient<Channel>);
+pub struct Connection(DaqClient<Channel>);
 
 type TonicStreamResult<T> =
     Result<tonic::Response<tonic::Streaming<T>>, tonic::Status>;
@@ -18,18 +18,15 @@ type TonicQueryResult<T> = Result<T, tonic::Status>;
 // same connection.
 
 pub async fn build_connection() -> Result<Connection, Error> {
-    Ok(Connection(
-        DpmClient::connect("http://dce46.fnal.gov:50051/").await?,
-    ))
+    const DPM: &'static str = "http://dce09.fnal.gov:50051/";
+
+    Ok(Connection(DaqClient::connect(DPM).await?))
 }
 
 pub async fn acquire_devices(
     conn: &Connection, jwt: Option<&String>, devices: Vec<String>,
-) -> TonicStreamResult<proto::Reading> {
-    let mut req = tonic::Request::new(AcquisitionList {
-        session_id: "".to_owned(),
-        req: devices,
-    });
+) -> TonicStreamResult<ReadingReply> {
+    let mut req = tonic::Request::new(ReadingList { drf: devices });
 
     if let Some(jwt) = jwt {
         use std::str::FromStr;
@@ -45,7 +42,7 @@ pub async fn acquire_devices(
         warn!("no JWT for this request");
     }
 
-    conn.0.clone().start_acquisition(req).await
+    conn.0.clone().read(req).await
 }
 
 // This function wraps the logic needed to make the `ApplySettings()`
@@ -53,22 +50,20 @@ pub async fn acquire_devices(
 
 pub async fn set_device(
     conn: &Connection, session_id: Option<String>, device: String,
-    value: proto::Data,
-) -> TonicQueryResult<i32> {
+    value: device::Value,
+) -> TonicQueryResult<Vec<i32>> {
     use tonic::{metadata::MetadataValue, IntoRequest};
 
-    info!("setting device {} to {:?}", &device, &value);
+    info!("setting to {:?}", &value);
 
     // Build the setting request. This function only sets one device, so the
     // request only has a 1-element array containing the setting.
 
     let mut req = SettingList {
-        session_id: "*** DO NOT USE ***".to_string(),
         setting: vec![Setting {
-            name: device,
-            data: Some(value),
+            device,
+            value: Some(value),
         }],
-        event: "".to_owned(),
     }
     .into_request();
 
@@ -78,14 +73,15 @@ pub async fn set_device(
         if let Ok(val) = MetadataValue::try_from(format!("Bearer {token}")) {
             req.metadata_mut().insert("authorization", val);
         }
-    }
 
-    let StatusList { status } =
-        conn.0.clone().apply_settings(req).await?.into_inner();
+        let SettingReply { status } =
+            conn.0.clone().set(req).await?.into_inner();
 
-    if status.len() == 1 {
-        Ok(status[0])
+        Ok(status
+            .iter()
+            .map(|v| v.facility_code + v.status_code * 256)
+            .collect())
     } else {
-        Err(tonic::Status::internal("received more than one status"))
+        Err(tonic::Status::internal("not authorized"))
     }
 }

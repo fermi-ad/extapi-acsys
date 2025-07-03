@@ -101,7 +101,11 @@ async fn create_acsys_router() -> Router {
         Mutation::default(),
         Subscription::default(),
     )
-    .data(build_connection().await.unwrap())
+    .data(
+        build_connection()
+            .await
+            .expect("couldn't make connection to DPM"),
+    )
     .data(acsys::new_context())
     .finish();
 
