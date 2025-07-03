@@ -9,13 +9,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .out_dir("src/g_rpc/generated")
         .compile_protos(
             &[
-                "src/g_rpc/protos/services/DAQ.proto",
-                "src/g_rpc/protos/services/ACLK.proto",
-                "src/g_rpc/protos/common/status.proto",
-                "src/g_rpc/protos/third-party/interval.proto",
-                "src/g_rpc/protos/common/drf.proto",
-                "src/g_rpc/protos/common/event.proto",
-                "src/g_rpc/protos/common/sources.proto",
+                "src/g_rpc/protos/proto/controls/service/DAQ/v1/DAQ.proto",
+                "src/g_rpc/protos/proto/controls/service/ACLK/v1/ACLK.proto",
+                "src/g_rpc/protos/proto/controls/common/v1/status.proto",
+                "src/g_rpc/protos/proto/controls/third-party/interval.proto",
+                "src/g_rpc/protos/proto/controls/common/v1/drf.proto",
+                "src/g_rpc/protos/proto/controls/common/v1/event.proto",
+                "src/g_rpc/protos/proto/controls/common/v1/sources.proto",
             ],
             &["src/g_rpc/protos"],
         )?;

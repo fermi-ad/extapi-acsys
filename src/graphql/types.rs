@@ -196,7 +196,6 @@ pub struct DevValue {
 // This section defines some useful traits for types in this module.
 
 use crate::g_rpc::proto::common::device;
-use tracing::warn;
 
 // Defining this trait allows us to convert a `DevValue` into a
 // `proto::Data` type.
@@ -286,58 +285,68 @@ impl From<DevValue> for device::Value {
 // Defining this trait allows us to convert a `device::Value` type into a
 // `DataType`.
 
-impl From<device::Value> for DataType {
-    fn from(val: device::Value) -> Self {
+impl TryFrom<device::Value> for DataType {
+    type Error = std::io::Error;
+
+    fn try_from(val: device::Value) -> Result<Self, Self::Error> {
         match val.value {
             Some(device::value::Value::Scalar(v)) => {
-                DataType::Scalar(Scalar { scalar_value: v })
+                Ok(DataType::Scalar(Scalar { scalar_value: v }))
             }
             Some(device::value::Value::ScalarArr(v)) => {
-                DataType::ScalarArray(ScalarArray {
+                Ok(DataType::ScalarArray(ScalarArray {
                     scalar_array_value: v.value,
-                })
+                }))
             }
             Some(device::value::Value::Text(v)) => {
-                DataType::Text(Text { text_value: v })
+                Ok(DataType::Text(Text { text_value: v }))
             }
             Some(device::value::Value::TextArr(v)) => {
-                DataType::TextArray(TextArray {
+                Ok(DataType::TextArray(TextArray {
                     text_array_value: v.value.clone(),
-                })
+                }))
             }
-            Some(v) => {
-                warn!("can't translate {:?}", &v);
-                todo!()
-            }
-            _ => todo!(),
+            Some(_) => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "received a device type we don't yet translate",
+            )),
+            _ => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "received a device type that is not recognized",
+            )),
         }
     }
 }
 
-impl From<&device::Value> for DataType {
-    fn from(val: &device::Value) -> Self {
+impl TryFrom<&device::Value> for DataType {
+    type Error = std::io::Error;
+
+    fn try_from(val: &device::Value) -> Result<Self, Self::Error> {
         match &val.value {
             Some(device::value::Value::Scalar(v)) => {
-                DataType::Scalar(Scalar { scalar_value: *v })
+                Ok(DataType::Scalar(Scalar { scalar_value: *v }))
             }
             Some(device::value::Value::ScalarArr(v)) => {
-                DataType::ScalarArray(ScalarArray {
+                Ok(DataType::ScalarArray(ScalarArray {
                     scalar_array_value: v.value.clone(),
-                })
+                }))
             }
-            Some(device::value::Value::Text(v)) => DataType::Text(Text {
+            Some(device::value::Value::Text(v)) => Ok(DataType::Text(Text {
                 text_value: v.clone(),
-            }),
+            })),
             Some(device::value::Value::TextArr(v)) => {
-                DataType::TextArray(TextArray {
+                Ok(DataType::TextArray(TextArray {
                     text_array_value: v.value.clone(),
-                })
+                }))
             }
-            Some(v) => {
-                warn!("can't translate {:?}", v);
-                todo!()
-            }
-            _ => todo!(),
+            Some(_) => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "received a device type we don't yet translate",
+            )),
+            _ => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "received a device type that is not recognized",
+            )),
         }
     }
 }

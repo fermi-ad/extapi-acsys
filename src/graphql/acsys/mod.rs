@@ -60,7 +60,12 @@ fn reading_to_reply(rdg: &daq::ReadingReply) -> global::DataReply {
                             v.seconds as f64 + v.nanos as f64 / 1_000_000_000.0
                         })
                         .unwrap(),
-                    result: v.data.as_ref().map(|v| v.into()).unwrap(),
+                    result: v
+                        .data
+                        .as_ref()
+                        .map(|v| v.try_into())
+                        .unwrap()
+                        .unwrap(),
                 })
                 .collect(),
         },
