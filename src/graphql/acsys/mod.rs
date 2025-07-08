@@ -784,15 +784,20 @@ generated."]
 
             format!(
                 "<-LOGGER:{}:{}",
-                start_time.map(|v| (v * 1000.0) as u128).unwrap_or(now),
-                end_time.map(|v| (v * 1000.0) as u128).unwrap_or(now)
+                start_time.map(|v| (v * 1_000_000.0) as u128).unwrap_or(now),
+                end_time.map(|v| (v * 1_000_000.0) as u128).unwrap_or(now)
             )
         };
+
+        // Iterate across the DRF strings, ripping out any source designations
+        // and appending our calculated one.
 
         let drfs: Vec<_> = drfs
             .iter()
             .map(|v| format!("{}{}", strip_source(v), &source))
             .collect();
+
+        // Make the gRPC data request to DPM.
 
         match dpm::acquire_devices(
             ctxt.data::<Connection>().unwrap(),
