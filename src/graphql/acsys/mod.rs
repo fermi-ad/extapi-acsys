@@ -10,7 +10,7 @@ use futures_util::{Stream, StreamExt};
 use std::{collections::HashSet, pin::Pin, sync::Arc};
 use tokio::time::Instant;
 use tonic::Status;
-use tracing::{debug, error, info, instrument, warn};
+use tracing::{error, info, instrument, warn};
 
 // When a waveform / array device is read, clients may only want a
 // subset of the data. Plotting apps, for instance, only have so many
@@ -344,6 +344,13 @@ fn strip_event(drf: &str) -> &str {
     &drf[0..drf.find('@').unwrap_or(drf.len())]
 }
 
+// Returns the portion of the DRF string that precedes any source
+// specification.
+
+fn strip_source(drf: &str) -> &str {
+    &drf[0..drf.find('<').unwrap_or(drf.len())]
+}
+
 const NULL_WAVEFORM: &str = "Z:CACHE@N";
 const CONST_WAVEFORM: &str = "API TEST CONST";
 const RAMP_WAVEFORM: &str = "API TEST RAMP";
@@ -446,7 +453,8 @@ impl<'ctx> ACSysSubscriptions {
     async fn handle_continuous(
         &self, ctxt: &Context<'ctx>, drfs: Vec<String>,
         window_size: Option<usize>, n_acquisitions: Option<usize>,
-        x_min: Option<f64>, x_max: Option<f64>,
+        x_min: Option<f64>, x_max: Option<f64>, start_time: Option<f64>,
+        end_time: Option<f64>,
     ) -> Result<PlotStream> {
         let r = x_min.map(|v| v as usize).unwrap_or(0)
             ..(x_max.map(|v| (v as usize) + 1).unwrap_or(DEF_MAX_WAVEFORM));
@@ -472,7 +480,7 @@ impl<'ctx> ACSysSubscriptions {
         stuff_fake_data(&mut r.clone(), &drfs, 0.0, &mut reply.data);
 
         let strm = self
-            .accelerator_data(ctxt, drfs.clone(), None, None)
+            .accelerator_data(ctxt, drfs.clone(), start_time, end_time)
             .await?;
         let s = strm.filter_map(move |e: global::DataReply| {
             let (sts, mut data) = to_plot_data(r.len(), &window_size, &e.data);
@@ -743,25 +751,48 @@ generated."]
         drfs: Vec<String>,
         #[graphql(
             desc = "The stream will return device data starting at this \
-		    timestamp. If the control system cannot find data at \
+		    timestamp -- represented as seconds since Jan 1st, \
+		    1970 UTC. If the control system cannot find data at \
 		    the actual timestamp, it will return the oldest data \
 		    it has that's greater then the timestamp. If this \
-		    parameter is `null`, it will simply return live data. \
-		    NOTE: THIS FEATURE HAS NOT BEEN ADDED YET."
+		    parameter is `null`, it will simply return live data."
         )]
-        _start_time: Option<DateTime<Utc>>,
+        start_time: Option<f64>,
         #[graphql(
             desc = "The stream will close once the device data's timestamp \
-		    reaches this value. This parameter must be greater than \
-		    the `startTime` parameter. If this parameter is `null`, \
-		    the stream will return live data until the client closes \
-		    it. NOTE: THIS FEATURE HAS NOT BEEN ADDED YET."
+		    reaches this value -- represented as seconds since Jan \
+		    1st, 1970 UTC. This parameter must be greater than the \
+		    `startTime` parameter. If this parameter is `null`, the \
+		    stream will return live data until the client closes it."
         )]
-        _end_time: Option<DateTime<Utc>>,
+        end_time: Option<f64>,
     ) -> Result<DataStream> {
-        let now = Instant::now();
+        use std::time::{SystemTime, UNIX_EPOCH};
 
         info!("monitoring {:?}", &drfs);
+
+	// For now, when both data parameters are `None`, we return live
+        // data. If either are `Some()`, we create a `<-LOGGER` source.
+
+        let source = if start_time.is_none() && end_time.is_none() {
+            String::from("")
+        } else {
+            let now = SystemTime::now()
+		.duration_since(UNIX_EPOCH)
+		.unwrap()
+		.as_millis();
+
+            format!(
+                "<-LOGGER:{}:{}",
+                start_time.map(|v| (v * 1000.0) as u128).unwrap_or(now),
+                end_time.map(|v| (v * 1000.0) as u128).unwrap_or(now)
+            )
+        };
+
+        let drfs: Vec<_> = drfs
+            .iter()
+            .map(|v| format!("{}{}", strip_source(v), &source))
+            .collect();
 
         match dpm::acquire_devices(
             ctxt.data::<Connection>().unwrap(),
@@ -769,14 +800,11 @@ generated."]
                 .ok()
                 .and_then(global::AuthInfo::token)
                 .as_ref(),
-            drfs.clone(),
+            drfs,
         )
         .await
         {
-            Ok(s) => {
-                debug!("rpc: {} μs", now.elapsed().as_micros());
-                Ok(Box::pin(s.into_inner().map(xlat_reply)) as DataStream)
-            }
+            Ok(s) => Ok(Box::pin(s.into_inner().map(xlat_reply)) as DataStream),
             Err(e) => Err(Error::new(format!("{}", e).as_str())),
         }
     }
@@ -834,6 +862,7 @@ correlated, all the devices are collected on the same event."]
 		    filtered from the result set."
         )]
         x_max: Option<f64>,
+        start_time: Option<f64>, end_time: Option<f64>,
     ) -> Result<PlotStream> {
         info!("incoming plot with delay {:?}", update_delay);
 
@@ -856,6 +885,8 @@ correlated, all the devices are collected on the same event."]
                 n_acquisitions,
                 x_min,
                 x_max,
+                start_time,
+                end_time,
             )
             .await
         }
