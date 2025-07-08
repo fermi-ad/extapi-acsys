@@ -580,6 +580,7 @@ impl<'ctx> ACSysSubscriptions {
 
     async fn handle_triggered(
         &self, ctxt: &Context<'ctx>, drfs: Vec<String>, trigger_event: u8,
+        start_time: Option<f64>, end_time: Option<f64>,
     ) -> Result<PlotStream> {
         use crate::g_rpc::clock;
         use async_stream::stream;
@@ -620,7 +621,7 @@ impl<'ctx> ACSysSubscriptions {
         };
         let mut tclk = clock::subscribe(clock_list).await?.into_inner();
         let mut dev_data = self
-            .accelerator_data(ctxt, drfs.clone(), None, None)
+            .accelerator_data(ctxt, drfs.clone(), start_time, end_time)
             .await?;
 
         #[rustfmt::skip]
@@ -881,7 +882,8 @@ correlated, all the devices are collected on the same event."]
             .collect();
 
         if let Some(event) = trigger_event {
-            self.handle_triggered(ctxt, drfs, event).await
+            self.handle_triggered(ctxt, drfs, event, start_time, end_time)
+                .await
         } else {
             self.handle_continuous(
                 ctxt,
