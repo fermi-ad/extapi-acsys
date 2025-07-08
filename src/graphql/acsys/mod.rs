@@ -771,16 +771,16 @@ generated."]
 
         info!("monitoring {:?}", &drfs);
 
-	// For now, when both data parameters are `None`, we return live
+        // For now, when both data parameters are `None`, we return live
         // data. If either are `Some()`, we create a `<-LOGGER` source.
 
         let source = if start_time.is_none() && end_time.is_none() {
             String::from("")
         } else {
             let now = SystemTime::now()
-		.duration_since(UNIX_EPOCH)
-		.unwrap()
-		.as_millis();
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis();
 
             format!(
                 "<-LOGGER:{}:{}",
