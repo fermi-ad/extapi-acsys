@@ -959,6 +959,20 @@ mod test {
     }
 
     #[test]
+    fn test_removing_source() {
+        use super::strip_source;
+
+        assert_eq!(strip_source("abc"), "abc");
+        assert_eq!(strip_source("abc@e,23"), "abc@e,23");
+        assert_eq!(strip_source("abc<-JUNK"), "abc");
+        assert_eq!(strip_source("abc@e,23<-JUNK"), "abc@e,23");
+
+        assert_eq!(strip_source(""), "");
+        assert_eq!(strip_source("<"), "");
+        assert_eq!(strip_source("abc@e,23<-JUNK<-MOREJUNK"), "abc@e,23");
+    }
+
+    #[test]
     fn test_add_event_specification() {
         use super::add_event;
         use super::{
