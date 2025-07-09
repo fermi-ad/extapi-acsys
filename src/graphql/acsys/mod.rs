@@ -10,7 +10,7 @@ use futures_util::{Stream, StreamExt};
 use std::{collections::HashSet, pin::Pin, sync::Arc};
 use tokio::time::Instant;
 use tonic::Status;
-use tracing::{error, info, instrument, warn};
+use tracing::{debug, error, info, instrument, warn};
 
 // When a waveform / array device is read, clients may only want a
 // subset of the data. Plotting apps, for instance, only have so many
@@ -770,8 +770,6 @@ generated."]
     ) -> Result<DataStream> {
         use std::time::{SystemTime, UNIX_EPOCH};
 
-        info!("monitoring {:?}", &drfs);
-
         // For now, when both data parameters are `None`, we return live
         // data. If either are `Some()`, we create a `<-LOGGER` source.
 
@@ -796,6 +794,7 @@ generated."]
         let drfs: Vec<_> = drfs
             .iter()
             .map(|v| format!("{}{}", strip_source(v), &source))
+            .inspect(|v| debug!("monitoring {}", v))
             .collect();
 
         // Make the gRPC data request to DPM.
