@@ -779,7 +779,7 @@ generated."]
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
-                .as_millis();
+                .as_micros();
 
             format!(
                 "<-LOGGER:{}:{}",
