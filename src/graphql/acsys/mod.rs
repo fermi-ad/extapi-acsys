@@ -779,12 +779,12 @@ generated."]
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
-                .as_micros();
+                .as_millis();
 
             format!(
                 "<-LOGGER:{}:{}",
-                start_time.map(|v| (v * 1_000_000.0) as u128).unwrap_or(now),
-                end_time.map(|v| (v * 1_000_000.0) as u128).unwrap_or(now)
+                start_time.map(|v| (v * 1_000.0) as u128).unwrap_or(now),
+                end_time.map(|v| (v * 1_000.0) as u128).unwrap_or(now)
             )
         };
 
