@@ -66,6 +66,8 @@ pub struct PlotConfigurationSnapshot {
     pub x_max: Option<f64>,
     pub y_min: Option<f64>,
     pub y_max: Option<f64>,
+    pub start_time: Option<f64>,
+    pub end_time: Option<f64>,
     pub time_delta: Option<f64>,
     pub is_scalar: bool,
     pub is_one_shot: bool,
