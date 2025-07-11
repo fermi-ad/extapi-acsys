@@ -149,8 +149,8 @@ immediately or after a delay."]
 
         // Allocate storage for the reply.
 
-        let mut results: Vec<Option<global::DataReply>> =
-            vec![None; drfs.len()];
+        let mut results: Vec<global::DataReply> =
+            vec![global::DataReply::default(); drfs.len()];
 
         let mut s = dpm::acquire_devices(
             ctxt.data::<Connection>().unwrap(),
@@ -177,14 +177,11 @@ immediately or after a delay."]
                 Ok(reply) => {
                     let index = reply.index as usize;
 
-                    results[index] = Some(reading_to_reply(&reply));
+                    results[index] = reading_to_reply(&reply);
 
                     remaining.remove(&index);
                     if remaining.is_empty() {
-                        return Ok(results
-                            .drain(..)
-                            .map(|v| v.unwrap())
-                            .collect());
+                        return Ok(results);
                     }
                 }
                 Err(e) => return Err(Error::new(format!("{}", e).as_str())),

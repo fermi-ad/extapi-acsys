@@ -172,7 +172,7 @@ impl DataInfo {
 	 of devices passed, this reply is for. It also has a `cycle` \
 	 field so that reading from different devices can correlate which \
 	 cycle they correspond."]
-#[derive(SimpleObject, Clone)]
+#[derive(SimpleObject, Clone, Default)]
 pub struct DataReply {
     #[doc = "This is an index to indicate which entry, in the passed array of \
 	     DRF strings, this reply corresponds."]
