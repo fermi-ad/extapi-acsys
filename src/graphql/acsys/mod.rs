@@ -128,10 +128,9 @@ immediately or after a delay."]
         )]
         device_list: Vec<String>,
         #[graphql(
-            desc = "Returns device values that are equal to or greater than \
-		    this timestamp. If this parameter is `null`, then the \
-		    current, live value is returned. NOTE: THIS FEATURE HAS \
-		    NOT BEEN ADDED YET."
+            desc = "Returns device values at or before this timestamp. If \
+		    this parameter is `null`, then the current, live value \
+		    is returned. NOTE: THIS FEATURE HAS NOT BEEN ADDED YET."
         )]
         _when: Option<DateTime<Utc>>,
     ) -> Result<Vec<global::DataReply>> {
