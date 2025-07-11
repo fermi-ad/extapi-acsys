@@ -737,6 +737,7 @@ impl<'ctx> ACSysSubscriptions {
 
 Accepts a list of DRF strings and streams the resulting data as it gets \
 generated."]
+    #[instrument(skip(self, ctxt))]
     async fn accelerator_data(
         &self, ctxt: &Context<'ctx>,
         #[graphql(
@@ -763,6 +764,8 @@ generated."]
         )]
         end_time: Option<f64>,
     ) -> Result<DataStream> {
+        info!("new request");
+
         // For now, when both data parameters are `None`, we return live
         // data. If either are `Some()`, we create a `<-LOGGER` source.
 
@@ -810,6 +813,7 @@ This query sets up a request which returns a stream of data, presumably \
 used for plotting. Unlike the `acceleratorData` query, this stream \
 returns data for all the devices in one reply. Since the data is \
 correlated, all the devices are collected on the same event."]
+    #[instrument(skip(self, ctxt))]
     async fn start_plot(
         &self, ctxt: &Context<'ctx>,
         #[graphql(
@@ -859,7 +863,7 @@ correlated, all the devices are collected on the same event."]
         x_max: Option<f64>,
         start_time: Option<f64>, end_time: Option<f64>,
     ) -> Result<PlotStream> {
-        info!("incoming plot with delay {:?}", update_delay);
+        info!("new request");
 
         // Add the periodic rate to each of the device names after stripping
         // any event specifier.
