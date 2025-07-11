@@ -226,6 +226,7 @@ the username and this parameter will be removed."]
     async fn users_last_configuration(
         &self, ctxt: &Context<'_>, user: Option<String>,
     ) -> Option<Arc<types::PlotConfigurationSnapshot>> {
+        info!("new request");
         if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
             // TEMPORARY: If a user account is specified, use it.
 
@@ -321,6 +322,7 @@ and this parameter will be removed."]
         &self, ctxt: &Context<'_>, user: Option<String>,
         config: types::PlotConfigurationSnapshot,
     ) -> Result<global::StatusReply> {
+        info!("new request");
         if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
             // TEMPORARY: If a user account is specified, use it.
 
