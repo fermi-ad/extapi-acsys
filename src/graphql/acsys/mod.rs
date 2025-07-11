@@ -35,6 +35,9 @@ pub fn new_context() -> plotconfigdb::T {
 
 use crate::g_rpc::dpm::Connection;
 
+// Useful function to return the current time as a floating point
+// number.
+
 fn now() -> f64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -458,11 +461,7 @@ impl<'ctx> ACSysSubscriptions {
     ) -> Result<PlotStream> {
         let r = x_min.map(|v| v as usize).unwrap_or(0)
             ..(x_max.map(|v| (v as usize) + 1).unwrap_or(DEF_MAX_WAVEFORM));
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_micros() as f64
-            / 1_000_000.0;
+        let now = now();
         let mut reply = types::PlotReplyData {
             plot_id: "demo".into(),
             timestamp: now,
@@ -590,11 +589,7 @@ impl<'ctx> ACSysSubscriptions {
 
         let template = types::PlotReplyData {
             plot_id: "demo".into(),
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_micros() as f64
-                / 1_000_000.0,
+            timestamp: now(),
             data: drfs
                 .iter()
                 .map(|_| types::PlotChannelData {
@@ -768,18 +763,13 @@ generated."]
         )]
         end_time: Option<f64>,
     ) -> Result<DataStream> {
-        use std::time::{SystemTime, UNIX_EPOCH};
-
         // For now, when both data parameters are `None`, we return live
         // data. If either are `Some()`, we create a `<-LOGGER` source.
 
         let source = if start_time.is_none() && end_time.is_none() {
             String::from("")
         } else {
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_millis();
+            let now = (now() * 1_000.0) as u128;
 
             format!(
                 "<-LOGGER:{}:{}",
