@@ -489,9 +489,7 @@ impl<'ctx> ACSysSubscriptions {
             // Take all the points from the current reply and extend
             // the outgoing data.
 
-            reply.data[e.ref_id as usize]
-                .channel_data
-                .extend(data.drain(..));
+            reply.data[e.ref_id as usize].channel_data.append(&mut data);
 
             // Set-up a nested scope range so we can modify the currently
             // tracked status.
