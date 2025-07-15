@@ -451,6 +451,162 @@ pub struct ACSysSubscriptions;
 // Private methods used by subscriptions.
 
 impl<'ctx> ACSysSubscriptions {
+    // Returns a stream of live data for a list of devices. If an end-time
+    // is specified, the stream will end once it is reached.
+
+    async fn live_data(
+        ctxt: &Context<'ctx>, drfs: Vec<String>, end_time: Option<f64>,
+    ) -> Result<DataStream> {
+        // Strip any source designation and append the once-immediate.
+
+        let processed_drfs: Vec<_> =
+            drfs.iter().map(|v| strip_source(v).into()).collect();
+
+        // Make the gRPC data request to DPM.
+
+        match dpm::acquire_devices(
+            ctxt.data::<Connection>().unwrap(),
+            ctxt.data::<global::AuthInfo>()
+                .ok()
+                .and_then(global::AuthInfo::token)
+                .as_ref(),
+            processed_drfs,
+        )
+        .await
+        {
+            Ok(s) => {
+                use tokio_stream::StreamExt;
+
+                Ok(
+                    // If there's an end time, we need to limit the stream.
+                    if let Some(end_time) = end_time {
+                        // Build a set of integers representing the indices
+                        // of the request. As replies arrive, the corresponding
+                        // index will be removed from the set when the timestamp
+                        // exceeds the end time. When the set is empty, the
+                        // stream will close.
+
+                        let mut remaining: HashSet<usize> =
+                            (0..drfs.len()).collect();
+
+                        // Return the stream of results. The stream from DPM
+                        // is first wrapped with a TakeWhile stream which will
+                        // return elements until the array of data is empty.
+                        // That stream is wrapped with a Map stream which
+                        // converts each element to a `global::DataReply` type.
+
+                        Box::pin(StreamExt::map_while(
+                            s.into_inner(),
+                            move |v| {
+                                // Use pattern matching to dig deep into the
+                                // returned reply. Only an empty array will
+                                // end the stream.
+
+                                if let Ok(daq::ReadingReply {
+                                    index: idx,
+                                    value:
+                                        Some(reading_reply::Value::Readings(
+                                            daq::Readings {
+                                                reading: ref rdg,
+                                                ..
+                                            },
+                                        )),
+                                    ..
+                                }) = v
+                                {
+                                    if let Some(ts) = rdg[0].timestamp {
+                                        let ts = (ts.seconds as f64)
+                                            + (ts.nanos as f64
+                                                / 1_000_000_000.0);
+
+                                        if ts <= end_time {
+                                            remaining.remove(&(idx as usize));
+                                        }
+                                    }
+                                }
+
+                                if remaining.is_empty() {
+                                    None
+                                } else {
+                                    Some(xlat_reply(v))
+                                }
+                            },
+                        )) as DataStream
+                    } else {
+                        Box::pin(StreamExt::map(s.into_inner(), xlat_reply))
+                            as DataStream
+                    },
+                )
+            }
+            Err(e) => Err(Error::new(format!("{}", e).as_str())),
+        }
+    }
+
+    // Returns a stream containing archived data for a device.
+
+    async fn archived_data(
+        ctxt: &Context<'ctx>, device: String, start_time: f64, end_time: f64,
+    ) -> Result<DataStream> {
+        let drf = format!(
+            "{}<-LOGGER:{}:{}",
+            strip_source(&device),
+            (start_time * 1_000.0) as u128,
+            (end_time * 1_000.0) as u128
+        );
+
+        // Make the gRPC data request to DPM.
+
+        match dpm::acquire_devices(
+            ctxt.data::<Connection>().unwrap(),
+            ctxt.data::<global::AuthInfo>()
+                .ok()
+                .and_then(global::AuthInfo::token)
+                .as_ref(),
+            vec![drf],
+        )
+        .await
+        {
+            Ok(s) => {
+                use tokio_stream::StreamExt;
+
+                // Return the stream of results. The stream from DPM is
+                // first wrapped with a TakeWhile stream which will return
+                // elements until the array of data is empty. That stream
+                // is wrapped with a Map stream which converts each element
+                // to a `global::DataReply` type.
+
+                Ok(Box::pin(StreamExt::map_while(s.into_inner(), |v| {
+                    // Use pattern matching to dig deep into the
+                    // returned reply. Only an empty array will
+                    // end the stream.
+
+                    let result = if let Ok(daq::ReadingReply {
+                        value:
+                            Some(reading_reply::Value::Readings(daq::Readings {
+                                reading: ref rdg,
+                                ..
+                            })),
+                        ..
+                    }) = v
+                    {
+                        !rdg.is_empty()
+                    } else {
+                        true
+                    };
+
+                    if result {
+                        Some(xlat_reply(v))
+                    } else {
+                        None
+                    }
+                })) as DataStream)
+            }
+            Err(e) => Err(Error::new(format!("{}", e).as_str())),
+        }
+    }
+
+    // A helper method to handle plots that request continuous data.
+
     async fn handle_continuous(
         &self, ctxt: &Context<'ctx>, drfs: Vec<String>,
         window_size: Option<usize>, n_acquisitions: Option<usize>,
