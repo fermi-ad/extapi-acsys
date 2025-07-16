@@ -455,7 +455,7 @@ impl<'ctx> ACSysSubscriptions {
     // is specified, the stream will end once it is reached.
 
     async fn live_data(
-        ctxt: &Context<'ctx>, drfs: Vec<String>, end_time: Option<f64>,
+        ctxt: &Context<'ctx>, drfs: &[String], end_time: Option<f64>,
     ) -> Result<DataStream> {
         // Strip any source designation and append the once-immediate.
 
@@ -545,11 +545,11 @@ impl<'ctx> ACSysSubscriptions {
     // Returns a stream containing archived data for a device.
 
     async fn archived_data(
-        ctxt: &Context<'ctx>, device: String, start_time: f64, end_time: f64,
+        ctxt: &Context<'ctx>, device: &str, start_time: f64, end_time: f64,
     ) -> Result<DataStream> {
         let drf = format!(
             "{}<-LOGGER:{}:{}",
-            strip_source(&device),
+            strip_source(device),
             (start_time * 1_000.0) as u128,
             (end_time * 1_000.0) as u128
         );
@@ -916,47 +916,45 @@ generated."]
         )]
         end_time: Option<f64>,
     ) -> Result<DataStream> {
+        let now = now();
+        let need_live = end_time.map(|v| v >= now).unwrap_or(true);
+        let need_archived = start_time.map(|v| v <= now).unwrap_or(false);
+
         info!("new request");
 
-        // For now, when both data parameters are `None`, we return live
-        // data. If either are `Some()`, we create a `<-LOGGER` source.
+        // If we need live data, start the collection now. This gives some
+        // time for the data to also be saved in a data logger.
 
-        let source = if start_time.is_none() && end_time.is_none() {
-            String::from("")
+        let s_live = if need_live {
+            ACSysSubscriptions::live_data(ctxt, &drfs, end_time).await?
         } else {
-            let now = (now() * 1_000.0) as u128;
-
-            format!(
-                "<-LOGGER:{}:{}",
-                start_time.map(|v| (v * 1_000.0) as u128).unwrap_or(now),
-                end_time.map(|v| (v * 1_000.0) as u128).unwrap_or(now)
-            )
+            Box::pin(tokio_stream::empty()) as DataStream
         };
 
-        // Iterate across the DRF strings, ripping out any source designations
-        // and appending our calculated one.
+        // Build up the set of streams that will return archived data.
 
-        let drfs: Vec<_> = drfs
-            .iter()
-            .map(|v| format!("{}{}", strip_source(v), &source))
-            .inspect(|v| debug!("monitoring {}", v))
-            .collect();
+        let s_archived = if need_archived {
+            let mut streams = tokio_stream::StreamMap::new();
 
-        // Make the gRPC data request to DPM.
+            for drf in drfs {
+                let stream = ACSysSubscriptions::archived_data(
+                    ctxt,
+                    &drf,
+                    start_time.unwrap(),
+                    end_time.unwrap_or(now),
+                )
+                .await?;
 
-        match dpm::acquire_devices(
-            ctxt.data::<Connection>().unwrap(),
-            ctxt.data::<global::AuthInfo>()
-                .ok()
-                .and_then(global::AuthInfo::token)
-                .as_ref(),
-            drfs,
-        )
-        .await
-        {
-            Ok(s) => Ok(Box::pin(s.into_inner().map(xlat_reply)) as DataStream),
-            Err(e) => Err(Error::new(format!("{}", e).as_str())),
-        }
+                streams.insert(drf, Box::pin(stream) as DataStream);
+            }
+            Box::pin(tokio_stream::StreamExt::map(streams, |v| v.1))
+                as DataStream
+        } else {
+            Box::pin(tokio_stream::empty()) as DataStream
+        };
+
+        Ok(Box::pin(tokio_stream::StreamExt::chain(s_archived, s_live))
+            as DataStream)
     }
 
     #[doc = "Retrieve correlated plot data.
