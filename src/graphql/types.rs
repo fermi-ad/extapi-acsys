@@ -53,7 +53,7 @@ impl AuthInfo {
 
 #[doc = "Contains an informative message describing why a request resulted \
 	 in an error."]
-#[derive(SimpleObject)]
+#[derive(SimpleObject, Debug, PartialEq)]
 pub struct ErrorReply {
     pub message: String,
 }
@@ -61,37 +61,37 @@ pub struct ErrorReply {
 #[doc = "Contains an ACNET status code. The Data Pool Manager currently \
 	 returns these status codes, but they may go away in the future \
 	 since EPICS has its own set of error codes."]
-#[derive(SimpleObject, Clone)]
+#[derive(SimpleObject, Clone, Debug, PartialEq)]
 pub struct StatusReply {
     pub status: i16,
 }
 
 #[doc = "Represents a simple, floating point value."]
-#[derive(SimpleObject, Clone)]
+#[derive(SimpleObject, Clone, Debug, PartialEq)]
 pub struct Scalar {
     pub scalar_value: f64,
 }
 
 #[doc = "Represents an array of floating point values."]
-#[derive(SimpleObject, Clone)]
+#[derive(SimpleObject, Clone, Debug, PartialEq)]
 pub struct ScalarArray {
     pub scalar_array_value: Vec<f64>,
 }
 
 #[doc = "Contains the raw, unscaled data returned by a device."]
-#[derive(SimpleObject, Clone)]
+#[derive(SimpleObject, Clone, Debug, PartialEq)]
 pub struct Raw {
     pub raw_value: Vec<u8>,
 }
 
 #[doc = "Contains a textual value returned by a device."]
-#[derive(SimpleObject, Clone)]
+#[derive(SimpleObject, Clone, Debug, PartialEq)]
 pub struct Text {
     pub text_value: String,
 }
 
 #[doc = "Represents an array of textual values."]
-#[derive(SimpleObject, Clone)]
+#[derive(SimpleObject, Clone, Debug, PartialEq)]
 pub struct TextArray {
     pub text_array_value: Vec<String>,
 }
@@ -100,7 +100,7 @@ pub struct TextArray {
 	 and this return type can model those values. Note that the value \
 	 associated with the key can be another `StructData`, so arbitrarily \
 	 deep trees can be created."]
-#[derive(SimpleObject, Clone)]
+#[derive(SimpleObject, Clone, Debug, PartialEq)]
 pub struct StructData {
     pub key: String,
     pub struct_value: Box<DataType>,
@@ -108,7 +108,7 @@ pub struct StructData {
 
 #[doc = "The control system supports several types and this entity can \
 	 repesent any of them."]
-#[derive(Union, Clone)]
+#[derive(Union, Clone, Debug, PartialEq)]
 pub enum DataType {
     #[doc = "This represents an ACNET status reply. If a device request \
 	     results in an error from the front-end, the data pool mananger \
@@ -142,7 +142,7 @@ pub enum DataType {
 
 #[doc = "This structure holds information associated with a device's reading, \
 	 A \"reading\" is the latest value of any of a device's properties."]
-#[derive(SimpleObject, Clone)]
+#[derive(SimpleObject, Clone, Debug, PartialEq)]
 #[graphql(complex)]
 pub struct DataInfo {
     #[doc = "Timestamp representing when the data was sampled. This value is \

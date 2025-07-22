@@ -10,7 +10,7 @@ use futures_util::{Stream, StreamExt};
 use std::{collections::HashSet, pin::Pin, sync::Arc};
 use tokio::time::Instant;
 use tonic::Status;
-use tracing::{debug, error, info, instrument, warn};
+use tracing::{error, info, instrument, warn};
 
 // When a waveform / array device is read, clients may only want a
 // subset of the data. Plotting apps, for instance, only have so many
@@ -26,6 +26,7 @@ use super::types as global;
 
 // Pull in our local types.
 
+mod datastream;
 mod plotconfigdb;
 pub mod types;
 
@@ -542,6 +543,22 @@ impl<'ctx> ACSysSubscriptions {
         }
     }
 
+    // When we get archived data from DPM, we get a stream of
+    // `ReadingReply`s. When all the data is sent, we get an empty
+    // array. This function maps each element from a `ReplyReply`
+    // into a `global::DataReply`. Also, when an empty array is
+    // found, the stream is closed.
+
+    fn process_archive_stream(
+        s: impl Stream<Item = Result<daq::ReadingReply, tonic::Status>>
+            + Send
+            + 'static,
+    ) -> DataStream {
+        use tokio_stream::StreamExt;
+
+        Box::pin(StreamExt::map(s, xlat_reply)) as DataStream
+    }
+
     // Returns a stream containing archived data for a device.
 
     async fn archived_data(
@@ -566,41 +583,7 @@ impl<'ctx> ACSysSubscriptions {
         )
         .await
         {
-            Ok(s) => {
-                use tokio_stream::StreamExt;
-
-                // Return the stream of results. The stream from DPM is
-                // first wrapped with a TakeWhile stream which will return
-                // elements until the array of data is empty. That stream
-                // is wrapped with a Map stream which converts each element
-                // to a `global::DataReply` type.
-
-                Ok(Box::pin(StreamExt::map_while(s.into_inner(), |v| {
-                    // Use pattern matching to dig deep into the
-                    // returned reply. Only an empty array will
-                    // end the stream.
-
-                    let result = if let Ok(daq::ReadingReply {
-                        value:
-                            Some(reading_reply::Value::Readings(daq::Readings {
-                                reading: ref rdg,
-                                ..
-                            })),
-                        ..
-                    }) = v
-                    {
-                        !rdg.is_empty()
-                    } else {
-                        true
-                    };
-
-                    if result {
-                        Some(xlat_reply(v))
-                    } else {
-                        None
-                    }
-                })) as DataStream)
-            }
+            Ok(s) => Ok(Self::process_archive_stream(s.into_inner())),
             Err(e) => Err(Error::new(format!("{}", e).as_str())),
         }
     }
@@ -953,8 +936,7 @@ generated."]
             Box::pin(tokio_stream::empty()) as DataStream
         };
 
-        Ok(Box::pin(tokio_stream::StreamExt::chain(s_archived, s_live))
-            as DataStream)
+        Ok(datastream::merge(s_archived, s_live))
     }
 
     #[doc = "Retrieve correlated plot data.
