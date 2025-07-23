@@ -712,6 +712,9 @@ impl<'ctx> ACSysSubscriptions {
         }
     }
 
+    // A helper method to handle plots that want to sync their data to
+    // a clock event.
+
     async fn handle_triggered(
         &self, ctxt: &Context<'ctx>, drfs: Vec<String>, trigger_event: u8,
         start_time: Option<f64>, end_time: Option<f64>,
@@ -870,8 +873,11 @@ impl<'ctx> ACSysSubscriptions {
 impl<'ctx> ACSysSubscriptions {
     #[doc = "Retrieve data from accelerator devices.
 
-Accepts a list of DRF strings and streams the resulting data as it gets \
-generated."]
+Accepts a list of DRF strings and streams the resulting data. The \
+`start_time` and `end_time` parameters determine the range in which \
+data should be returned for the device(s). Dates in the past will \
+retrieve data from archivers and dates in the future will return \
+live data."]
     #[instrument(skip(self, ctxt))]
     async fn accelerator_data(
         &self, ctxt: &Context<'ctx>,
