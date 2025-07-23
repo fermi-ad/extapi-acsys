@@ -500,8 +500,7 @@ impl<'ctx> ACSysSubscriptions {
                             s.into_inner(),
                             move |v| {
                                 // Use pattern matching to dig deep into the
-                                // returned reply. Only an empty array will
-                                // end the stream.
+                                // returned reply.
 
                                 if let Ok(daq::ReadingReply {
                                     index: idx,
@@ -942,7 +941,9 @@ live data."]
             Box::pin(tokio_stream::empty()) as DataStream
         };
 
-        Ok(datastream::merge(s_archived, s_live))
+        Ok(datastream::filter_dupes(datastream::merge(
+            s_archived, s_live,
+        )))
     }
 
     #[doc = "Retrieve correlated plot data.

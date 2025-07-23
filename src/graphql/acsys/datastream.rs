@@ -197,6 +197,70 @@ impl Stream for DataMerge {
     }
 }
 
+struct FilterDupes {
+    s: DataStream,
+    latest: HashMap<i32, f64>,
+}
+
+pub fn filter_dupes(s: DataStream) -> DataStream {
+    Box::pin(FilterDupes::new(s))
+}
+
+impl FilterDupes {
+    pub fn new(s: DataStream) -> Self {
+        FilterDupes {
+            s,
+            latest: HashMap::new(),
+        }
+    }
+}
+
+impl Stream for FilterDupes {
+    type Item = global::DataReply;
+
+    fn poll_next(
+        mut self: Pin<&mut Self>, ctxt: &mut std::task::Context<'_>,
+    ) -> Poll<std::option::Option<Self::Item>> {
+        loop {
+            match self.s.poll_next_unpin(ctxt) {
+                Poll::Ready(Some(mut v)) => {
+                    // If we get an data packet, drop it.
+
+                    if v.data.is_empty() {
+                        continue;
+                    }
+
+                    let entry = self.latest.entry(v.ref_id).or_insert(0.0);
+
+                    // Find the starting point in the data in which the
+                    // timestamp is greater than the last one seen.
+
+                    let start_index = v.data[..]
+                        .partition_point(|info| info.timestamp <= *entry);
+
+                    // Update the last seen timestamp. WE NEED TO DO THIS
+                    // BEFORE DRAINING ANY DUPLICATES. You might think we
+                    // can always use `v.data.last()`, but it could be the
+                    // case that, after draining, there's no elements in the
+                    // vector so we do this while we know it's still safe.
+
+                    *entry = entry.max(v.data.last().unwrap().timestamp);
+
+                    // Remove any readings that have already been sent.
+
+                    v.data.drain(..start_index);
+                    if v.data.is_empty() {
+                        continue;
+                    }
+                    break Poll::Ready(Some(v));
+                }
+                v @ Poll::Ready(None) => break v,
+                v @ Poll::Pending => break v,
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::{global, DataChannel};
