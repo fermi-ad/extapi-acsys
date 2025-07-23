@@ -197,10 +197,16 @@ impl Stream for DataMerge {
     }
 }
 
+// Forwards a stream of DataReply types, removing entries that have a
+// decreasing timestamp (i.e. data duplicated in archive and live data
+// streams.
+
 struct FilterDupes {
     s: DataStream,
     latest: HashMap<i32, f64>,
 }
+
+// Friendy function to wrap a stream with the FilterDupes stream.
 
 pub fn filter_dupes(s: DataStream) -> DataStream {
     Box::pin(FilterDupes::new(s))
@@ -224,7 +230,7 @@ impl Stream for FilterDupes {
         loop {
             match self.s.poll_next_unpin(ctxt) {
                 Poll::Ready(Some(mut v)) => {
-                    // If we get a data packet, drop it.
+                    // If we get an empty data packet, drop it.
 
                     if v.data.is_empty() {
                         continue;
@@ -252,6 +258,7 @@ impl Stream for FilterDupes {
                     if v.data.is_empty() {
                         continue;
                     }
+
                     break Poll::Ready(Some(v));
                 }
                 v @ Poll::Ready(None) => break v,
@@ -426,6 +433,153 @@ mod test {
                     })
                 }
             ]
+        );
+
+        // Now add live data. It should get passed through.
+
+        assert_eq!(
+            chan.process_live_data(vec![
+                global::DataInfo {
+                    timestamp: 220.0,
+                    result: global::DataType::Scalar(global::Scalar {
+                        scalar_value: 22.0
+                    })
+                },
+                global::DataInfo {
+                    timestamp: 230.0,
+                    result: global::DataType::Scalar(global::Scalar {
+                        scalar_value: 23.0
+                    })
+                }
+            ]),
+            Some(vec![
+                global::DataInfo {
+                    timestamp: 220.0,
+                    result: global::DataType::Scalar(global::Scalar {
+                        scalar_value: 22.0
+                    })
+                },
+                global::DataInfo {
+                    timestamp: 230.0,
+                    result: global::DataType::Scalar(global::Scalar {
+                        scalar_value: 23.0
+                    })
+                }
+            ])
+        );
+    }
+
+    #[tokio::test]
+    async fn test_dedupe() {
+        use futures::stream::{self, StreamExt};
+
+        let input = &[
+            // device channel 0 receives two data points. These should
+            // go through.
+            global::DataReply {
+                ref_id: 0,
+                data: vec![
+                    global::DataInfo {
+                        timestamp: 100.0,
+                        result: global::DataType::Scalar(global::Scalar {
+                            scalar_value: 10.0,
+                        }),
+                    },
+                    global::DataInfo {
+                        timestamp: 110.0,
+                        result: global::DataType::Scalar(global::Scalar {
+                            scalar_value: 11.0,
+                        }),
+                    },
+                ],
+            },
+            // Another data point for device 0. This has the same timestamp
+            // as the previous so it shouldn't appear in the output.
+            global::DataReply {
+                ref_id: 0,
+                data: vec![global::DataInfo {
+                    timestamp: 110.0,
+                    result: global::DataType::Scalar(global::Scalar {
+                        scalar_value: 0.0,
+                    }),
+                }],
+            },
+            // A different device has a data point. It should go through.
+            global::DataReply {
+                ref_id: 1,
+                data: vec![global::DataInfo {
+                    timestamp: 100.0,
+                    result: global::DataType::Scalar(global::Scalar {
+                        scalar_value: 20.0,
+                    }),
+                }],
+            },
+            // Shouldn't return the first element.
+            global::DataReply {
+                ref_id: 0,
+                data: vec![
+                    global::DataInfo {
+                        timestamp: 105.0,
+                        result: global::DataType::Scalar(global::Scalar {
+                            scalar_value: 10.0,
+                        }),
+                    },
+                    global::DataInfo {
+                        timestamp: 115.0,
+                        result: global::DataType::Scalar(global::Scalar {
+                            scalar_value: 12.0,
+                        }),
+                    },
+                ],
+            },
+        ];
+        let mut s = super::filter_dupes(
+            Box::pin(stream::iter(input.clone())) as super::DataStream
+        );
+
+        assert_eq!(
+            s.next().await.unwrap(),
+            global::DataReply {
+                ref_id: 0,
+                data: vec![
+                    global::DataInfo {
+                        timestamp: 100.0,
+                        result: global::DataType::Scalar(global::Scalar {
+                            scalar_value: 10.0
+                        })
+                    },
+                    global::DataInfo {
+                        timestamp: 110.0,
+                        result: global::DataType::Scalar(global::Scalar {
+                            scalar_value: 11.0
+                        })
+                    }
+                ]
+            },
+        );
+        assert_eq!(
+            s.next().await.unwrap(),
+            global::DataReply {
+                ref_id: 1,
+                data: vec![global::DataInfo {
+                    timestamp: 100.0,
+                    result: global::DataType::Scalar(global::Scalar {
+                        scalar_value: 20.0
+                    })
+                }]
+            },
+        );
+        assert_eq!(
+            s.next().await.unwrap(),
+            global::DataReply {
+                ref_id: 0,
+                data: vec![global::DataInfo {
+                    timestamp: 115.0,
+                    result: global::DataType::Scalar(global::Scalar {
+                        scalar_value: 12.0
+                    })
+                }]
+            },
         );
     }
 }
