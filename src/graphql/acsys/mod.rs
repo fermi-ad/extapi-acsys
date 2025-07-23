@@ -904,6 +904,7 @@ live data."]
         )]
         end_time: Option<f64>,
     ) -> Result<DataStream> {
+        let total = drfs.len() as i32;
         let now = now();
         let need_live = end_time.map(|v| v >= now).unwrap_or(true);
         let need_archived = start_time.map(|v| v <= now).unwrap_or(false);
@@ -941,9 +942,11 @@ live data."]
             Box::pin(tokio_stream::empty()) as DataStream
         };
 
-        Ok(datastream::filter_dupes(datastream::merge(
-            s_archived, s_live,
-        )))
+        Ok(datastream::end_stream_at(
+            datastream::filter_dupes(datastream::merge(s_archived, s_live)),
+            total,
+            end_time,
+        ))
     }
 
     #[doc = "Retrieve correlated plot data.

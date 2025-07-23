@@ -2,7 +2,7 @@ use super::{global, DataStream};
 use futures::Stream;
 use futures_util::StreamExt;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     pin::Pin,
     task::{Context, Poll},
 };
@@ -224,7 +224,7 @@ impl Stream for FilterDupes {
         loop {
             match self.s.poll_next_unpin(ctxt) {
                 Poll::Ready(Some(mut v)) => {
-                    // If we get an data packet, drop it.
+                    // If we get a data packet, drop it.
 
                     if v.data.is_empty() {
                         continue;
@@ -253,6 +253,81 @@ impl Stream for FilterDupes {
                         continue;
                     }
                     break Poll::Ready(Some(v));
+                }
+                v @ Poll::Ready(None) => break v,
+                v @ Poll::Pending => break v,
+            }
+        }
+    }
+}
+
+struct EndOnDate {
+    s: DataStream,
+    end_date: f64,
+    remaining: HashSet<i32>,
+}
+
+impl EndOnDate {
+    pub fn new(s: DataStream, end_date: f64, total: i32) -> Self {
+        EndOnDate {
+            s,
+            end_date,
+            remaining: (0..total).collect(),
+        }
+    }
+}
+
+pub fn end_stream_at(
+    s: DataStream, total: i32, end_date: Option<f64>,
+) -> DataStream {
+    if let Some(ts) = end_date {
+        Box::pin(EndOnDate::new(s, ts, total)) as DataStream
+    } else {
+        s
+    }
+}
+
+impl Stream for EndOnDate {
+    type Item = global::DataReply;
+
+    fn poll_next(
+        mut self: Pin<&mut Self>, ctxt: &mut std::task::Context<'_>,
+    ) -> Poll<std::option::Option<<Self as Stream>::Item>> {
+        loop {
+            match self.s.poll_next_unpin(ctxt) {
+                Poll::Ready(Some(mut v)) => {
+                    // Find the starting point in the data in which the
+                    // timestamp is less than or equal to the last one seen.
+
+                    let start_index = v.data[..]
+                        .partition_point(|info| info.timestamp > self.end_date);
+
+                    // Remove any readings that have already been sent.
+
+                    v.data.drain(start_index..);
+
+                    // If the data is empty, then we need to remove the
+                    // ref ID from our set to mark that device as complete.
+
+                    if v.data.is_empty() {
+                        self.remaining.remove(&v.ref_id);
+
+                        // If all the devices have exceeded the end time,
+                        // close the stream.
+
+                        if self.remaining.is_empty() {
+                            break Poll::Ready(None);
+                        }
+
+                        // We pulled data from the stream but aren't
+                        // forwarding it on. We have to loop again to
+                        // poll the stream because there is currently
+                        // no waker registered with it.
+
+                        continue;
+                    } else {
+                        break Poll::Ready(Some(v));
+                    }
                 }
                 v @ Poll::Ready(None) => break v,
                 v @ Poll::Pending => break v,
