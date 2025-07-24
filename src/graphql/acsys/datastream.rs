@@ -597,4 +597,127 @@ mod test {
             },
         );
     }
+
+    #[tokio::test]
+    async fn test_end_time() {
+        use futures::stream::{self, StreamExt};
+
+        let input = &[
+            // device channel 0 receives two data points. These should
+            // go through.
+            global::DataReply {
+                ref_id: 0,
+                data: vec![
+                    global::DataInfo {
+                        timestamp: 100.0,
+                        result: global::DataType::Scalar(global::Scalar {
+                            scalar_value: 10.0,
+                        }),
+                    },
+                    global::DataInfo {
+                        timestamp: 110.0,
+                        result: global::DataType::Scalar(global::Scalar {
+                            scalar_value: 11.0,
+                        }),
+                    },
+                ],
+            },
+            // Another data point for device 0. This timestamp exceeds the
+	    // end time so it shouldn't get sent.
+            global::DataReply {
+                ref_id: 0,
+                data: vec![global::DataInfo {
+                    timestamp: 120.0,
+                    result: global::DataType::Scalar(global::Scalar {
+                        scalar_value: 120.0,
+                    }),
+                }],
+            },
+            // A different device has a data point. It should go through.
+            global::DataReply {
+                ref_id: 1,
+                data: vec![global::DataInfo {
+                    timestamp: 100.0,
+                    result: global::DataType::Scalar(global::Scalar {
+                        scalar_value: 20.0,
+                    }),
+                }],
+            },
+            // Shouldn't return the second element. And the stream should
+	    // close after sending this data.
+            global::DataReply {
+                ref_id: 1,
+                data: vec![
+                    global::DataInfo {
+                        timestamp: 110.0,
+                        result: global::DataType::Scalar(global::Scalar {
+                            scalar_value: 10.0,
+                        }),
+                    },
+                    global::DataInfo {
+                        timestamp: 120.0,
+                        result: global::DataType::Scalar(global::Scalar {
+                            scalar_value: 12.0,
+                        }),
+                    },
+                ],
+            },
+        ];
+        let mut s = super::end_stream_at(
+            Box::pin(stream::iter(input.clone())) as super::DataStream,
+            2,
+            Some(115.0),
+        );
+
+        assert_eq!(
+            s.next().await.unwrap(),
+            global::DataReply {
+                ref_id: 0,
+                data: vec![
+                    global::DataInfo {
+                        timestamp: 100.0,
+                        result: global::DataType::Scalar(global::Scalar {
+                            scalar_value: 10.0,
+                        }),
+                    },
+                    global::DataInfo {
+                        timestamp: 110.0,
+                        result: global::DataType::Scalar(global::Scalar {
+                            scalar_value: 11.0,
+                        }),
+                    },
+                ],
+            }
+        );
+
+        assert_eq!(
+            s.next().await.unwrap(),
+            global::DataReply {
+                ref_id: 1,
+                data: vec![global::DataInfo {
+                    timestamp: 100.0,
+                    result: global::DataType::Scalar(global::Scalar {
+                        scalar_value: 20.0,
+                    }),
+                }],
+            },
+	);
+
+        assert_eq!(
+            s.next().await.unwrap(),
+            global::DataReply {
+                ref_id: 1,
+                data: vec![
+                    global::DataInfo {
+                        timestamp: 110.0,
+                        result: global::DataType::Scalar(global::Scalar {
+                            scalar_value: 10.0,
+                        }),
+                    },
+                ],
+            },
+	);
+
+	assert!(s.next().await.is_none());
+    }
 }
