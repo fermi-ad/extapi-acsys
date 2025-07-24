@@ -347,6 +347,15 @@ impl Stream for EndOnDate {
 mod test {
     use super::{global, DataChannel};
 
+    fn data_info(ts: f64) -> global::DataInfo {
+        global::DataInfo {
+            timestamp: ts,
+            result: global::DataType::Scalar(global::Scalar {
+                scalar_value: ts / 2.0,
+            }),
+        }
+    }
+
     #[test]
     fn test_data_channel() {
         let mut chan = DataChannel::new();
@@ -359,38 +368,15 @@ mod test {
         // it, as is.
 
         assert_eq!(
-            chan.process_archive_data(vec![global::DataInfo {
-                timestamp: 100.0,
-                result: global::DataType::Scalar(global::Scalar {
-                    scalar_value: 10.0
-                })
-            }]),
-            vec![global::DataInfo {
-                timestamp: 100.0,
-                result: global::DataType::Scalar(global::Scalar {
-                    scalar_value: 10.0
-                })
-            }]
+            chan.process_archive_data(vec![data_info(100.0)]),
+            vec![data_info(100.0)]
         );
 
         // Add some live data to the channel. Since we're in buffer
         // mode, live data is saved and `None` should be returned.
 
         assert_eq!(
-            chan.process_live_data(vec![
-                global::DataInfo {
-                    timestamp: 200.0,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 20.0
-                    })
-                },
-                global::DataInfo {
-                    timestamp: 210.0,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 21.0
-                    })
-                }
-            ]),
+            chan.process_live_data(vec![data_info(200.0), data_info(210.0),]),
             None
         );
 
@@ -398,34 +384,10 @@ mod test {
         // returned.
 
         assert_eq!(
-            chan.process_archive_data(vec![
-                global::DataInfo {
-                    timestamp: 110.0,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 11.0
-                    })
-                },
-                global::DataInfo {
-                    timestamp: 120.0,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 12.0
-                    })
-                }
-            ]),
-            vec![
-                global::DataInfo {
-                    timestamp: 110.0,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 11.0
-                    })
-                },
-                global::DataInfo {
-                    timestamp: 120.0,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 12.0
-                    })
-                }
-            ]
+            chan.process_archive_data(
+                vec![data_info(110.0), data_info(120.0),]
+            ),
+            vec![data_info(110.0), data_info(120.0),]
         );
 
         // Send an empty archive packet. This signifies no more archive
@@ -434,53 +396,14 @@ mod test {
 
         assert_eq!(
             chan.process_archive_data(vec![]),
-            vec![
-                global::DataInfo {
-                    timestamp: 200.0,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 20.0
-                    })
-                },
-                global::DataInfo {
-                    timestamp: 210.0,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 21.0
-                    })
-                }
-            ]
+            vec![data_info(200.0), data_info(210.0)]
         );
 
         // Now add live data. It should get passed through.
 
         assert_eq!(
-            chan.process_live_data(vec![
-                global::DataInfo {
-                    timestamp: 220.0,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 22.0
-                    })
-                },
-                global::DataInfo {
-                    timestamp: 230.0,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 23.0
-                    })
-                }
-            ]),
-            Some(vec![
-                global::DataInfo {
-                    timestamp: 220.0,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 22.0
-                    })
-                },
-                global::DataInfo {
-                    timestamp: 230.0,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 23.0
-                    })
-                }
-            ])
+            chan.process_live_data(vec![data_info(220.0), data_info(230.0)]),
+            Some(vec![data_info(220.0), data_info(230.0)])
         );
     }
 
@@ -493,59 +416,23 @@ mod test {
             // go through.
             global::DataReply {
                 ref_id: 0,
-                data: vec![
-                    global::DataInfo {
-                        timestamp: 100.0,
-                        result: global::DataType::Scalar(global::Scalar {
-                            scalar_value: 10.0,
-                        }),
-                    },
-                    global::DataInfo {
-                        timestamp: 110.0,
-                        result: global::DataType::Scalar(global::Scalar {
-                            scalar_value: 11.0,
-                        }),
-                    },
-                ],
+                data: vec![data_info(100.0), data_info(110.0)],
             },
             // Another data point for device 0. This has the same timestamp
             // as the previous so it shouldn't appear in the output.
             global::DataReply {
                 ref_id: 0,
-                data: vec![global::DataInfo {
-                    timestamp: 110.0,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 0.0,
-                    }),
-                }],
+                data: vec![data_info(110.0)],
             },
             // A different device has a data point. It should go through.
             global::DataReply {
                 ref_id: 1,
-                data: vec![global::DataInfo {
-                    timestamp: 100.0,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 20.0,
-                    }),
-                }],
+                data: vec![data_info(100.0)],
             },
             // Shouldn't return the first element.
             global::DataReply {
                 ref_id: 0,
-                data: vec![
-                    global::DataInfo {
-                        timestamp: 105.0,
-                        result: global::DataType::Scalar(global::Scalar {
-                            scalar_value: 10.0,
-                        }),
-                    },
-                    global::DataInfo {
-                        timestamp: 115.0,
-                        result: global::DataType::Scalar(global::Scalar {
-                            scalar_value: 12.0,
-                        }),
-                    },
-                ],
+                data: vec![data_info(105.0), data_info(115.0)],
             },
         ];
         let mut s = super::filter_dupes(
@@ -556,44 +443,21 @@ mod test {
             s.next().await.unwrap(),
             global::DataReply {
                 ref_id: 0,
-                data: vec![
-                    global::DataInfo {
-                        timestamp: 100.0,
-                        result: global::DataType::Scalar(global::Scalar {
-                            scalar_value: 10.0
-                        })
-                    },
-                    global::DataInfo {
-                        timestamp: 110.0,
-                        result: global::DataType::Scalar(global::Scalar {
-                            scalar_value: 11.0
-                        })
-                    }
-                ]
+                data: vec![data_info(100.0), data_info(110.0),]
             },
         );
         assert_eq!(
             s.next().await.unwrap(),
             global::DataReply {
                 ref_id: 1,
-                data: vec![global::DataInfo {
-                    timestamp: 100.0,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 20.0
-                    })
-                }]
+                data: vec![data_info(100.0),]
             },
         );
         assert_eq!(
             s.next().await.unwrap(),
             global::DataReply {
                 ref_id: 0,
-                data: vec![global::DataInfo {
-                    timestamp: 115.0,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 12.0
-                    })
-                }]
+                data: vec![data_info(115.0),]
             },
         );
     }
@@ -607,60 +471,24 @@ mod test {
             // go through.
             global::DataReply {
                 ref_id: 0,
-                data: vec![
-                    global::DataInfo {
-                        timestamp: 100.0,
-                        result: global::DataType::Scalar(global::Scalar {
-                            scalar_value: 10.0,
-                        }),
-                    },
-                    global::DataInfo {
-                        timestamp: 110.0,
-                        result: global::DataType::Scalar(global::Scalar {
-                            scalar_value: 11.0,
-                        }),
-                    },
-                ],
+                data: vec![data_info(100.0), data_info(110.0)],
             },
             // Another data point for device 0. This timestamp exceeds the
-	    // end time so it shouldn't get sent.
+            // end time so it shouldn't get sent.
             global::DataReply {
                 ref_id: 0,
-                data: vec![global::DataInfo {
-                    timestamp: 120.0,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 120.0,
-                    }),
-                }],
+                data: vec![data_info(120.0)],
             },
             // A different device has a data point. It should go through.
             global::DataReply {
                 ref_id: 1,
-                data: vec![global::DataInfo {
-                    timestamp: 100.0,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 20.0,
-                    }),
-                }],
+                data: vec![data_info(100.0)],
             },
             // Shouldn't return the second element. And the stream should
-	    // close after sending this data.
+            // close after sending this data.
             global::DataReply {
                 ref_id: 1,
-                data: vec![
-                    global::DataInfo {
-                        timestamp: 110.0,
-                        result: global::DataType::Scalar(global::Scalar {
-                            scalar_value: 10.0,
-                        }),
-                    },
-                    global::DataInfo {
-                        timestamp: 120.0,
-                        result: global::DataType::Scalar(global::Scalar {
-                            scalar_value: 12.0,
-                        }),
-                    },
-                ],
+                data: vec![data_info(110.0), data_info(120.0)],
             },
         ];
         let mut s = super::end_stream_at(
@@ -673,20 +501,7 @@ mod test {
             s.next().await.unwrap(),
             global::DataReply {
                 ref_id: 0,
-                data: vec![
-                    global::DataInfo {
-                        timestamp: 100.0,
-                        result: global::DataType::Scalar(global::Scalar {
-                            scalar_value: 10.0,
-                        }),
-                    },
-                    global::DataInfo {
-                        timestamp: 110.0,
-                        result: global::DataType::Scalar(global::Scalar {
-                            scalar_value: 11.0,
-                        }),
-                    },
-                ],
+                data: vec![data_info(100.0), data_info(110.0)]
             }
         );
 
@@ -694,30 +509,18 @@ mod test {
             s.next().await.unwrap(),
             global::DataReply {
                 ref_id: 1,
-                data: vec![global::DataInfo {
-                    timestamp: 100.0,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 20.0,
-                    }),
-                }],
+                data: vec![data_info(100.0)]
             },
-	);
+        );
 
         assert_eq!(
             s.next().await.unwrap(),
             global::DataReply {
                 ref_id: 1,
-                data: vec![
-                    global::DataInfo {
-                        timestamp: 110.0,
-                        result: global::DataType::Scalar(global::Scalar {
-                            scalar_value: 10.0,
-                        }),
-                    },
-                ],
+                data: vec![data_info(110.0)]
             },
-	);
+        );
 
-	assert!(s.next().await.is_none());
+        assert!(s.next().await.is_none());
     }
 }
