@@ -304,8 +304,9 @@ impl Stream for EndOnDate {
                     // Find the starting point in the data in which the
                     // timestamp is less than or equal to the last one seen.
 
-                    let start_index = v.data[..]
-                        .partition_point(|info| info.timestamp <= self.end_date);
+                    let start_index = v.data[..].partition_point(|info| {
+                        info.timestamp <= self.end_date
+                    });
 
                     // Remove any readings that have already been sent.
 
