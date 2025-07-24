@@ -411,6 +411,52 @@ mod test {
     }
 
     #[tokio::test]
+    async fn test_merge() {
+        use futures::stream::{self, StreamExt};
+
+        let archive_input = &[
+            global::DataReply {
+                ref_id: 0,
+                data: vec![data_info(100.0), data_info(110.0)],
+            },
+            global::DataReply {
+                ref_id: 0,
+                data: vec![],
+            },
+        ];
+	let live_input = &[
+            global::DataReply {
+                ref_id: 0,
+                data: vec![data_info(120.0)],
+            },
+            global::DataReply {
+                ref_id: 0,
+                data: vec![data_info(130.0)],
+            },
+	];
+        let mut s = super::merge(
+            Box::pin(stream::iter(archive_input.clone())) as super::DataStream,
+            Box::pin(stream::iter(live_input.clone())) as super::DataStream
+        );
+
+        assert_eq!(
+            s.next().await.unwrap(),
+            global::DataReply {
+                ref_id: 0,
+                data: vec![data_info(100.0), data_info(110.0)],
+            },
+        );
+        assert_eq!(
+            s.next().await.unwrap(),
+            global::DataReply {
+                ref_id: 0,
+                data: vec![data_info(120.0), data_info(130.0)],
+            },
+	);
+	assert!(s.next().await.is_none());
+    }
+
+    #[tokio::test]
     async fn test_dedupe() {
         use futures::stream::{self, StreamExt};
 
