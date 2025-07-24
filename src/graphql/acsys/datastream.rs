@@ -124,7 +124,6 @@ impl Stream for DataMerge {
         mut self: Pin<&mut Self>, ctxt: &mut Context<'_>,
     ) -> Poll<Option<Self::Item>> {
         loop {
-
             // If we receive live data, we need to buffer it. We could
             // let the gRPC socket do the buffering. But a large archiver
             // request could take a while to send over and we don't want
@@ -424,7 +423,7 @@ mod test {
                 data: vec![],
             },
         ];
-	let live_input = &[
+        let live_input = &[
             global::DataReply {
                 ref_id: 0,
                 data: vec![data_info(120.0)],
@@ -433,10 +432,10 @@ mod test {
                 ref_id: 0,
                 data: vec![data_info(130.0)],
             },
-	];
+        ];
         let mut s = super::merge(
             Box::pin(stream::iter(archive_input.clone())) as super::DataStream,
-            Box::pin(stream::iter(live_input.clone())) as super::DataStream
+            Box::pin(stream::iter(live_input.clone())) as super::DataStream,
         );
 
         assert_eq!(
@@ -452,8 +451,8 @@ mod test {
                 ref_id: 0,
                 data: vec![data_info(120.0), data_info(130.0)],
             },
-	);
-	assert!(s.next().await.is_none());
+        );
+        assert!(s.next().await.is_none());
     }
 
     #[tokio::test]
