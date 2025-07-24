@@ -172,16 +172,14 @@ impl Stream for DataMerge {
                         if let Some(data) = buf.process_live_data(data) {
                             if data.is_empty() {
                                 warn!("received empty data packet");
-                                continue;
                             } else {
                                 return Poll::Ready(Some(global::DataReply {
                                     ref_id,
                                     data,
                                 }));
                             }
-                        } else {
-                            continue;
                         }
+                        continue;
                     }
                     Poll::Ready(None) => self.live_done = true,
                     Poll::Pending => {}
