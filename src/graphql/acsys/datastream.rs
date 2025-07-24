@@ -351,7 +351,12 @@ mod test {
     fn test_data_channel() {
         let mut chan = DataChannel::new();
 
+        // Assert a new channel is in buffer mode.
+
         assert!(matches!(chan, DataChannel::Buffering(_)));
+
+        // Run an archive packet through. The channel should return
+        // it, as is.
 
         assert_eq!(
             chan.process_archive_data(vec![global::DataInfo {
@@ -367,6 +372,9 @@ mod test {
                 })
             }]
         );
+
+        // Add some live data to the channel. Since we're in buffer
+        // mode, live data is saved and `None` should be returned.
 
         assert_eq!(
             chan.process_live_data(vec![
@@ -385,6 +393,9 @@ mod test {
             ]),
             None
         );
+
+        // Add some more archived data. The array should still be
+        // returned.
 
         assert_eq!(
             chan.process_archive_data(vec![
@@ -416,6 +427,10 @@ mod test {
                 }
             ]
         );
+
+        // Send an empty archive packet. This signifies no more archive
+        // data will be received. The channel should return the buffered
+        // data and switch to feed-through mode.
 
         assert_eq!(
             chan.process_archive_data(vec![]),
