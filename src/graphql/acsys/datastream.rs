@@ -124,37 +124,6 @@ impl Stream for DataMerge {
         mut self: Pin<&mut Self>, ctxt: &mut Context<'_>,
     ) -> Poll<Option<Self::Item>> {
         loop {
-            // See if there's any archive data to process. If so, pass it
-            // through the associated data channel.
-
-            if !self.archived_done {
-                match self.archived.poll_next_unpin(ctxt) {
-                    Poll::Ready(Some(global::DataReply { ref_id, data })) => {
-                        let buf = self
-                            .pending
-                            .entry(ref_id)
-                            .or_insert_with(DataChannel::new);
-                        let data = buf.process_archive_data(data);
-
-                        // If there's no data in this packet, we've already
-                        // updated the state of the data channel. But we need
-                        // to do another `poll_next()` on the stream becaue
-                        // it doesn't have a `Waker` associated with it (because
-                        // it returned data) and we're not going to return an
-                        // empty array.
-
-                        if data.is_empty() {
-                            continue;
-                        }
-                        return Poll::Ready(Some(global::DataReply {
-                            ref_id,
-                            data,
-                        }));
-                    }
-                    Poll::Ready(None) => self.archived_done = true,
-                    Poll::Pending => (),
-                }
-            }
 
             // If we receive live data, we need to buffer it. We could
             // let the gRPC socket do the buffering. But a large archiver
@@ -183,6 +152,41 @@ impl Stream for DataMerge {
                     }
                     Poll::Ready(None) => self.live_done = true,
                     Poll::Pending => {}
+                }
+            }
+
+            // See if there's any archive data to process. If so, pass it
+            // through the associated data channel.
+
+            if !self.archived_done {
+                match self.archived.poll_next_unpin(ctxt) {
+                    Poll::Ready(Some(global::DataReply { ref_id, data })) => {
+                        let buf = self
+                            .pending
+                            .entry(ref_id)
+                            .or_insert_with(DataChannel::new);
+                        let data = buf.process_archive_data(data);
+
+                        // If there's no data in this packet, then this
+                        // channel's archive data is done. We don't foreward
+                        // empty data packets, so we need to loop and let
+                        // the archive stream have a chance to return more
+                        // data or register a Waker.
+
+                        if data.is_empty() {
+                            continue;
+                        }
+
+                        // Return the data (either archve data or buffered
+                        // live data).
+
+                        return Poll::Ready(Some(global::DataReply {
+                            ref_id,
+                            data,
+                        }));
+                    }
+                    Poll::Ready(None) => self.archived_done = true,
+                    Poll::Pending => (),
                 }
             }
 
