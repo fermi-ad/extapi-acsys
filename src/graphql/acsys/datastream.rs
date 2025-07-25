@@ -323,7 +323,7 @@ impl Stream for FilterDupes {
 
     fn poll_next(
         mut self: Pin<&mut Self>, ctxt: &mut std::task::Context<'_>,
-    ) -> Poll<std::option::Option<Self::Item>> {
+    ) -> Poll<Option<Self::Item>> {
         loop {
             match self.s.poll_next_unpin(ctxt) {
                 Poll::Ready(Some(mut v)) => {
@@ -396,7 +396,7 @@ impl Stream for EndOnDate {
 
     fn poll_next(
         mut self: Pin<&mut Self>, ctxt: &mut std::task::Context<'_>,
-    ) -> Poll<std::option::Option<<Self as Stream>::Item>> {
+    ) -> Poll<Option<<Self as Stream>::Item>> {
         loop {
             match self.s.poll_next_unpin(ctxt) {
                 Poll::Ready(Some(mut v)) => {
