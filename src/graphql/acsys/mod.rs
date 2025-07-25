@@ -855,7 +855,11 @@ live data."]
         let s_archived = if let Some(st) = archived_start {
             let mut streams = tokio_stream::StreamMap::new();
 
-            for drf in drfs {
+            // Since each device is its own stream, all the ref_ids will
+            // be zero. The `.enumerate()` method is used to associate the
+            // correct ref ID with the stream.
+
+            for (ref_id, drf) in drfs.into_iter().enumerate() {
                 let stream = ACSysSubscriptions::archived_data(
                     ctxt,
                     &drf,
@@ -864,10 +868,15 @@ live data."]
                 )
                 .await?;
 
-                streams.insert(drf, Box::pin(stream) as DataStream);
+                streams.insert(ref_id as i32, Box::pin(stream) as DataStream);
             }
-            Box::pin(tokio_stream::StreamExt::map(streams, |v| v.1))
-                as DataStream
+
+            // Modify incoming DataReplies by updating their ref IDs.
+
+            Box::pin(tokio_stream::StreamExt::map(streams, |mut v| {
+                v.1.ref_id = v.0;
+                v.1
+            })) as DataStream
         } else {
             Box::pin(tokio_stream::empty()) as DataStream
         };
