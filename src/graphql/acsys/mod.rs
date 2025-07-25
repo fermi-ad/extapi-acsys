@@ -509,8 +509,10 @@ impl<'ctx> ACSysSubscriptions {
         )
         .await
         {
-            Ok(s) => Ok(Box::pin(StreamExt::map(s.into_inner(), xlat_reply))
-                as DataStream),
+            Ok(s) => Ok(datastream::as_archive_stream(
+                Box::pin(StreamExt::map(s.into_inner(), xlat_reply))
+                    as DataStream,
+            )),
             Err(e) => Err(Error::new(format!("{}", e).as_str())),
         }
     }
