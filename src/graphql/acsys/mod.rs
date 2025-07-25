@@ -835,7 +835,7 @@ live data."]
         let total = drfs.len() as i32;
         let now = now();
         let need_live = end_time.map(|v| v >= now).unwrap_or(true);
-        let need_archived = start_time.map(|v| v <= now).unwrap_or(false);
+        let archived_start = start_time.filter(|v| *v <= now);
 
         info!("new request");
 
@@ -850,14 +850,14 @@ live data."]
 
         // Build up the set of streams that will return archived data.
 
-        let s_archived = if need_archived {
+        let s_archived = if let Some(st) = archived_start {
             let mut streams = tokio_stream::StreamMap::new();
 
             for drf in drfs {
                 let stream = ACSysSubscriptions::archived_data(
                     ctxt,
                     &drf,
-                    start_time.unwrap(),
+                    st,
                     end_time.unwrap_or(now),
                 )
                 .await?;
