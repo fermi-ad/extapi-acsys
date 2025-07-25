@@ -25,10 +25,28 @@ impl DataChannel {
         DataChannel::Buffering(vec![])
     }
 
+    // Returns the buffered data, if any.
+
+    pub fn get_buffer(&mut self) -> Option<Vec<global::DataInfo>> {
+        match self {
+            Self::FeedThrough => None,
+            Self::Buffering(ref mut data) => {
+                if data.is_empty() {
+                    None
+                } else {
+                    let mut tmp = vec![];
+
+                    std::mem::swap(data, &mut tmp);
+                    Some(tmp)
+                }
+            }
+        }
+    }
+
     // Processes a chunk of live data.
 
     pub fn process_live_data(
-        &mut self, mut live_data: Vec<global::DataInfo>,
+        &mut self, mut live_data: Vec<global::DataInfo>, archive_done: bool,
     ) -> Option<Vec<global::DataInfo>> {
         match self {
             // In feedthrough mode, we simply pass on the live data.
@@ -38,7 +56,15 @@ impl DataChannel {
             // `None` so the caller knows there's nothing to do.
             Self::Buffering(ref mut data) => {
                 data.append(&mut live_data);
-                None
+                if archive_done {
+                    let mut tmp = vec![];
+
+                    std::mem::swap(data, &mut tmp);
+                    *self = Self::FeedThrough;
+                    Some(tmp)
+                } else {
+                    None
+                }
             }
         }
     }
@@ -124,36 +150,6 @@ impl Stream for DataMerge {
         mut self: Pin<&mut Self>, ctxt: &mut Context<'_>,
     ) -> Poll<Option<Self::Item>> {
         loop {
-            // If we receive live data, we need to buffer it. We could
-            // let the gRPC socket do the buffering. But a large archiver
-            // request could take a while to send over and we don't want
-            // DPM to get tired of us not acknowledging live data.
-
-            if !self.live_done {
-                match self.live.poll_next_unpin(ctxt) {
-                    Poll::Ready(Some(global::DataReply { ref_id, data })) => {
-                        let buf = self
-                            .pending
-                            .entry(ref_id)
-                            .or_insert_with(DataChannel::new);
-
-                        if let Some(data) = buf.process_live_data(data) {
-                            if data.is_empty() {
-                                warn!("received empty data packet");
-                            } else {
-                                return Poll::Ready(Some(global::DataReply {
-                                    ref_id,
-                                    data,
-                                }));
-                            }
-                        }
-                        continue;
-                    }
-                    Poll::Ready(None) => self.live_done = true,
-                    Poll::Pending => {}
-                }
-            }
-
             // See if there's any archive data to process. If so, pass it
             // through the associated data channel.
 
@@ -189,7 +185,60 @@ impl Stream for DataMerge {
                 }
             }
 
+            // If we receive live data, we need to buffer it. We could
+            // let the gRPC socket do the buffering. But a large archiver
+            // request could take a while to send over and we don't want
+            // DPM to get tired of us not acknowledging live data.
+
+            if !self.live_done {
+                match self.live.poll_next_unpin(ctxt) {
+                    Poll::Ready(Some(global::DataReply { ref_id, data })) => {
+                        // Grab multiple references inside `Self`.
+
+                        let DataMerge {
+                            ref mut pending,
+                            ref archived_done,
+                            ..
+                        } = *self;
+
+                        // Look-up the data channel associated with the
+                        // `ref_id`. If it doesn't exist, insert a new one.
+
+                        let buf = pending
+                            .entry(ref_id)
+                            .or_insert_with(DataChannel::new);
+
+                        if let Some(data) =
+                            buf.process_live_data(data, *archived_done)
+                        {
+                            if data.is_empty() {
+                                warn!("received empty data packet");
+                            } else {
+                                return Poll::Ready(Some(global::DataReply {
+                                    ref_id,
+                                    data,
+                                }));
+                            }
+                        }
+                        continue;
+                    }
+                    Poll::Ready(None) => self.live_done = true,
+                    Poll::Pending => {}
+                }
+            }
+
             return if self.archived_done && self.live_done {
+                // If both streams are exhausted, check to see if there's
+                // any pending data to be sent.
+
+                for (ref_id, buf) in self.pending.iter_mut() {
+                    if let Some(data) = buf.get_buffer() {
+                        return Poll::Ready(Some(global::DataReply {
+                            ref_id: *ref_id,
+                            data,
+                        }));
+                    }
+                }
                 Poll::Ready(None)
             } else {
                 Poll::Pending
@@ -378,7 +427,10 @@ mod test {
         // mode, live data is saved and `None` should be returned.
 
         assert_eq!(
-            chan.process_live_data(vec![data_info(200.0), data_info(210.0),]),
+            chan.process_live_data(
+                vec![data_info(200.0), data_info(210.0),],
+                false
+            ),
             None
         );
 
@@ -404,13 +456,52 @@ mod test {
         // Now add live data. It should get passed through.
 
         assert_eq!(
-            chan.process_live_data(vec![data_info(220.0), data_info(230.0)]),
+            chan.process_live_data(
+                vec![data_info(220.0), data_info(230.0)],
+                false
+            ),
             Some(vec![data_info(220.0), data_info(230.0)])
         );
     }
 
     #[tokio::test]
-    async fn test_merge() {
+    async fn test_merge_with_only_live() {
+        use futures::stream::{self, StreamExt};
+
+        let live_input = &[
+            global::DataReply {
+                ref_id: 0,
+                data: vec![data_info(120.0)],
+            },
+            global::DataReply {
+                ref_id: 0,
+                data: vec![data_info(130.0)],
+            },
+        ];
+        let mut s = super::merge(
+            Box::pin(stream::empty()) as super::DataStream,
+            Box::pin(stream::iter(live_input.clone())) as super::DataStream,
+        );
+
+        assert_eq!(
+            s.next().await.unwrap(),
+            global::DataReply {
+                ref_id: 0,
+                data: vec![data_info(120.0)],
+            },
+        );
+        assert_eq!(
+            s.next().await.unwrap(),
+            global::DataReply {
+                ref_id: 0,
+                data: vec![data_info(130.0)],
+            },
+        );
+        assert!(s.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_merge_archive_with_live() {
         use futures::stream::{self, StreamExt};
 
         let archive_input = &[
@@ -449,7 +540,14 @@ mod test {
             s.next().await.unwrap(),
             global::DataReply {
                 ref_id: 0,
-                data: vec![data_info(120.0), data_info(130.0)],
+                data: vec![data_info(120.0)],
+            },
+        );
+        assert_eq!(
+            s.next().await.unwrap(),
+            global::DataReply {
+                ref_id: 0,
+                data: vec![data_info(130.0)],
             },
         );
         assert!(s.next().await.is_none());

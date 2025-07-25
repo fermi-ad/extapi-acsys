@@ -456,8 +456,10 @@ impl<'ctx> ACSysSubscriptions {
     // is specified, the stream will end once it is reached.
 
     async fn live_data(
-        ctxt: &Context<'ctx>, drfs: &[String], end_time: Option<f64>,
+        ctxt: &Context<'ctx>, drfs: &[String],
     ) -> Result<DataStream> {
+        use tokio_stream::StreamExt;
+
         // Strip any source designation and append the once-immediate.
 
         let processed_drfs: Vec<_> =
@@ -475,87 +477,10 @@ impl<'ctx> ACSysSubscriptions {
         )
         .await
         {
-            Ok(s) => {
-                use tokio_stream::StreamExt;
-
-                Ok(
-                    // If there's an end time, we need to limit the stream.
-                    if let Some(end_time) = end_time {
-                        // Build a set of integers representing the indices
-                        // of the request. As replies arrive, the corresponding
-                        // index will be removed from the set when the timestamp
-                        // exceeds the end time. When the set is empty, the
-                        // stream will close.
-
-                        let mut remaining: HashSet<usize> =
-                            (0..drfs.len()).collect();
-
-                        // Return the stream of results. The stream from DPM
-                        // is first wrapped with a TakeWhile stream which will
-                        // return elements until the array of data is empty.
-                        // That stream is wrapped with a Map stream which
-                        // converts each element to a `global::DataReply` type.
-
-                        Box::pin(StreamExt::map_while(
-                            s.into_inner(),
-                            move |v| {
-                                // Use pattern matching to dig deep into the
-                                // returned reply.
-
-                                if let Ok(daq::ReadingReply {
-                                    index: idx,
-                                    value:
-                                        Some(reading_reply::Value::Readings(
-                                            daq::Readings {
-                                                reading: ref rdg,
-                                                ..
-                                            },
-                                        )),
-                                    ..
-                                }) = v
-                                {
-                                    if let Some(ts) = rdg[0].timestamp {
-                                        let ts = (ts.seconds as f64)
-                                            + (ts.nanos as f64
-                                                / 1_000_000_000.0);
-
-                                        if ts <= end_time {
-                                            remaining.remove(&(idx as usize));
-                                        }
-                                    }
-                                }
-
-                                if remaining.is_empty() {
-                                    None
-                                } else {
-                                    Some(xlat_reply(v))
-                                }
-                            },
-                        )) as DataStream
-                    } else {
-                        Box::pin(StreamExt::map(s.into_inner(), xlat_reply))
-                            as DataStream
-                    },
-                )
-            }
+            Ok(s) => Ok(Box::pin(StreamExt::map(s.into_inner(), xlat_reply))
+                as DataStream),
             Err(e) => Err(Error::new(format!("{}", e).as_str())),
         }
-    }
-
-    // When we get archived data from DPM, we get a stream of
-    // `ReadingReply`s. When all the data is sent, we get an empty
-    // array. This function maps each element from a `ReplyReply`
-    // into a `global::DataReply`. Also, when an empty array is
-    // found, the stream is closed.
-
-    fn process_archive_stream(
-        s: impl Stream<Item = Result<daq::ReadingReply, tonic::Status>>
-            + Send
-            + 'static,
-    ) -> DataStream {
-        use tokio_stream::StreamExt;
-
-        Box::pin(StreamExt::map(s, xlat_reply)) as DataStream
     }
 
     // Returns a stream containing archived data for a device.
@@ -563,6 +488,8 @@ impl<'ctx> ACSysSubscriptions {
     async fn archived_data(
         ctxt: &Context<'ctx>, device: &str, start_time: f64, end_time: f64,
     ) -> Result<DataStream> {
+        use tokio_stream::StreamExt;
+
         let drf = format!(
             "{}<-LOGGER:{}:{}",
             strip_source(device),
@@ -582,7 +509,8 @@ impl<'ctx> ACSysSubscriptions {
         )
         .await
         {
-            Ok(s) => Ok(Self::process_archive_stream(s.into_inner())),
+            Ok(s) => Ok(Box::pin(StreamExt::map(s.into_inner(), xlat_reply))
+                as DataStream),
             Err(e) => Err(Error::new(format!("{}", e).as_str())),
         }
     }
@@ -915,7 +843,7 @@ live data."]
         // time for the data to also be saved in a data logger.
 
         let s_live = if need_live {
-            ACSysSubscriptions::live_data(ctxt, &drfs, end_time).await?
+            ACSysSubscriptions::live_data(ctxt, &drfs).await?
         } else {
             Box::pin(tokio_stream::empty()) as DataStream
         };
