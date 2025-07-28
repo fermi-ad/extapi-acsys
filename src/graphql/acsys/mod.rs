@@ -10,7 +10,7 @@ use futures_util::{Stream, StreamExt};
 use std::{collections::HashSet, pin::Pin, sync::Arc};
 use tokio::time::Instant;
 use tonic::Status;
-use tracing::{debug, error, info, instrument, warn};
+use tracing::{error, info, instrument, warn};
 
 // When a waveform / array device is read, clients may only want a
 // subset of the data. Plotting apps, for instance, only have so many
@@ -26,6 +26,7 @@ use super::types as global;
 
 // Pull in our local types.
 
+mod datastream;
 mod plotconfigdb;
 pub mod types;
 
@@ -34,6 +35,9 @@ pub fn new_context() -> plotconfigdb::T {
 }
 
 use crate::g_rpc::dpm::Connection;
+
+// Useful function to return the current time as a floating point
+// number.
 
 fn now() -> f64 {
     std::time::SystemTime::now()
@@ -125,10 +129,9 @@ immediately or after a delay."]
         )]
         device_list: Vec<String>,
         #[graphql(
-            desc = "Returns device values that are equal to or greater than \
-		    this timestamp. If this parameter is `null`, then the \
-		    current, live value is returned. NOTE: THIS FEATURE HAS \
-		    NOT BEEN ADDED YET."
+            desc = "Returns device values at or before this timestamp. If \
+		    this parameter is `null`, then the current, live value \
+		    is returned. NOTE: THIS FEATURE HAS NOT BEEN ADDED YET."
         )]
         _when: Option<DateTime<Utc>>,
     ) -> Result<Vec<global::DataReply>> {
@@ -147,8 +150,8 @@ immediately or after a delay."]
 
         // Allocate storage for the reply.
 
-        let mut results: Vec<Option<global::DataReply>> =
-            vec![None; drfs.len()];
+        let mut results: Vec<global::DataReply> =
+            vec![global::DataReply::default(); drfs.len()];
 
         let mut s = dpm::acquire_devices(
             ctxt.data::<Connection>().unwrap(),
@@ -175,14 +178,11 @@ immediately or after a delay."]
                 Ok(reply) => {
                     let index = reply.index as usize;
 
-                    results[index] = Some(reading_to_reply(&reply));
+                    results[index] = reading_to_reply(&reply);
 
                     remaining.remove(&index);
                     if remaining.is_empty() {
-                        return Ok(results
-                            .drain(..)
-                            .map(|v| v.unwrap())
-                            .collect());
+                        return Ok(results);
                     }
                 }
                 Err(e) => return Err(Error::new(format!("{}", e).as_str())),
@@ -223,6 +223,7 @@ the username and this parameter will be removed."]
     async fn users_last_configuration(
         &self, ctxt: &Context<'_>, user: Option<String>,
     ) -> Option<Arc<types::PlotConfigurationSnapshot>> {
+        info!("new request");
         if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
             // TEMPORARY: If a user account is specified, use it.
 
@@ -318,6 +319,7 @@ and this parameter will be removed."]
         &self, ctxt: &Context<'_>, user: Option<String>,
         config: types::PlotConfigurationSnapshot,
     ) -> Result<global::StatusReply> {
+        info!("new request");
         if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
             // TEMPORARY: If a user account is specified, use it.
 
@@ -450,6 +452,85 @@ pub struct ACSysSubscriptions;
 // Private methods used by subscriptions.
 
 impl<'ctx> ACSysSubscriptions {
+    // Returns a stream of live data for a list of devices. If an end-time
+    // is specified, the stream will end once it is reached.
+
+    async fn live_data(
+        ctxt: &Context<'ctx>, drfs: &[String], start_time: f64,
+    ) -> Result<DataStream> {
+        use tokio_stream::StreamExt;
+
+        // Strip any source designation and append the once-immediate.
+
+        let processed_drfs: Vec<_> =
+            drfs.iter().map(|v| strip_source(v).into()).collect();
+
+        // Make the gRPC data request to DPM.
+
+        match dpm::acquire_devices(
+            ctxt.data::<Connection>().unwrap(),
+            ctxt.data::<global::AuthInfo>()
+                .ok()
+                .and_then(global::AuthInfo::token)
+                .as_ref(),
+            processed_drfs,
+        )
+        .await
+        {
+            Ok(s) => {
+                Ok(Box::pin(StreamExt::filter_map(s.into_inner(), move |v| {
+                    let mut reply = xlat_reply(v);
+                    let idx = reply.data[..]
+                        .partition_point(|info| info.timestamp < start_time);
+
+                    reply.data.drain(..idx);
+                    if reply.data.is_empty() {
+                        None
+                    } else {
+                        Some(reply)
+                    }
+                })) as DataStream)
+            }
+            Err(e) => Err(Error::new(format!("{}", e).as_str())),
+        }
+    }
+
+    // Returns a stream containing archived data for a device.
+
+    async fn archived_data(
+        ctxt: &Context<'ctx>, device: &str, start_time: f64, end_time: f64,
+    ) -> Result<DataStream> {
+        use tokio_stream::StreamExt;
+
+        let drf = format!(
+            "{}<-LOGGER:{}:{}",
+            strip_source(device),
+            (start_time * 1_000.0) as u128,
+            (end_time * 1_000.0) as u128
+        );
+
+        // Make the gRPC data request to DPM.
+
+        match dpm::acquire_devices(
+            ctxt.data::<Connection>().unwrap(),
+            ctxt.data::<global::AuthInfo>()
+                .ok()
+                .and_then(global::AuthInfo::token)
+                .as_ref(),
+            vec![drf],
+        )
+        .await
+        {
+            Ok(s) => Ok(datastream::as_archive_stream(
+                Box::pin(StreamExt::map(s.into_inner(), xlat_reply))
+                    as DataStream,
+            )),
+            Err(e) => Err(Error::new(format!("{}", e).as_str())),
+        }
+    }
+
+    // A helper method to handle plots that request continuous data.
+
     async fn handle_continuous(
         &self, ctxt: &Context<'ctx>, drfs: Vec<String>,
         window_size: Option<usize>, n_acquisitions: Option<usize>,
@@ -458,11 +539,7 @@ impl<'ctx> ACSysSubscriptions {
     ) -> Result<PlotStream> {
         let r = x_min.map(|v| v as usize).unwrap_or(0)
             ..(x_max.map(|v| (v as usize) + 1).unwrap_or(DEF_MAX_WAVEFORM));
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_micros() as f64
-            / 1_000_000.0;
+        let now = now();
         let mut reply = types::PlotReplyData {
             plot_id: "demo".into(),
             timestamp: now,
@@ -488,9 +565,7 @@ impl<'ctx> ACSysSubscriptions {
             // Take all the points from the current reply and extend
             // the outgoing data.
 
-            reply.data[e.ref_id as usize]
-                .channel_data
-                .extend(data.drain(..));
+            reply.data[e.ref_id as usize].channel_data.append(&mut data);
 
             // Set-up a nested scope range so we can modify the currently
             // tracked status.
@@ -578,6 +653,9 @@ impl<'ctx> ACSysSubscriptions {
         }
     }
 
+    // A helper method to handle plots that want to sync their data to
+    // a clock event.
+
     async fn handle_triggered(
         &self, ctxt: &Context<'ctx>, drfs: Vec<String>, trigger_event: u8,
         start_time: Option<f64>, end_time: Option<f64>,
@@ -590,11 +668,7 @@ impl<'ctx> ACSysSubscriptions {
 
         let template = types::PlotReplyData {
             plot_id: "demo".into(),
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_micros() as f64
-                / 1_000_000.0,
+            timestamp: now(),
             data: drfs
                 .iter()
                 .map(|_| types::PlotChannelData {
@@ -740,8 +814,12 @@ impl<'ctx> ACSysSubscriptions {
 impl<'ctx> ACSysSubscriptions {
     #[doc = "Retrieve data from accelerator devices.
 
-Accepts a list of DRF strings and streams the resulting data as it gets \
-generated."]
+Accepts a list of DRF strings and streams the resulting data. The \
+`start_time` and `end_time` parameters determine the range in which \
+data should be returned for the device(s). Dates in the past will \
+retrieve data from archivers and dates in the future will return \
+live data."]
+    #[instrument(skip(self, ctxt))]
     async fn accelerator_data(
         &self, ctxt: &Context<'ctx>,
         #[graphql(
@@ -768,50 +846,60 @@ generated."]
         )]
         end_time: Option<f64>,
     ) -> Result<DataStream> {
-        use std::time::{SystemTime, UNIX_EPOCH};
+        let total = drfs.len() as i32;
+        let now = now();
+        let need_live = end_time.map(|v| v >= now).unwrap_or(true);
+        let start_live = start_time.map(|v| v.max(now)).unwrap_or(now);
+        let archived_start = start_time.filter(|v| *v <= now);
+        let archived_end = end_time.map(|v| v.min(now)).unwrap_or(now);
 
-        // For now, when both data parameters are `None`, we return live
-        // data. If either are `Some()`, we create a `<-LOGGER` source.
+        info!("new request");
 
-        let source = if start_time.is_none() && end_time.is_none() {
-            String::from("")
+        // If we need live data, start the collection now. This gives some
+        // time for the data to also be saved in a data logger.
+
+        let s_live = if need_live {
+            ACSysSubscriptions::live_data(ctxt, &drfs, start_live).await?
         } else {
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_millis();
-
-            format!(
-                "<-LOGGER:{}:{}",
-                start_time.map(|v| (v * 1_000.0) as u128).unwrap_or(now),
-                end_time.map(|v| (v * 1_000.0) as u128).unwrap_or(now)
-            )
+            Box::pin(tokio_stream::empty()) as DataStream
         };
 
-        // Iterate across the DRF strings, ripping out any source designations
-        // and appending our calculated one.
+        // Build up the set of streams that will return archived data.
 
-        let drfs: Vec<_> = drfs
-            .iter()
-            .map(|v| format!("{}{}", strip_source(v), &source))
-            .inspect(|v| debug!("monitoring {}", v))
-            .collect();
+        let s_archived = if let Some(st) = archived_start {
+            let mut streams = tokio_stream::StreamMap::new();
 
-        // Make the gRPC data request to DPM.
+            // Since each device is its own stream, all the ref_ids will
+            // be zero. The `.enumerate()` method is used to associate the
+            // correct ref ID with the stream.
 
-        match dpm::acquire_devices(
-            ctxt.data::<Connection>().unwrap(),
-            ctxt.data::<global::AuthInfo>()
-                .ok()
-                .and_then(global::AuthInfo::token)
-                .as_ref(),
-            drfs,
-        )
-        .await
-        {
-            Ok(s) => Ok(Box::pin(s.into_inner().map(xlat_reply)) as DataStream),
-            Err(e) => Err(Error::new(format!("{}", e).as_str())),
-        }
+            for (ref_id, drf) in drfs.into_iter().enumerate() {
+                let stream = ACSysSubscriptions::archived_data(
+                    ctxt,
+                    &drf,
+                    st,
+                    archived_end,
+                )
+                .await?;
+
+                streams.insert(ref_id as i32, Box::pin(stream) as DataStream);
+            }
+
+            // Modify incoming DataReplies by updating their ref IDs.
+
+            Box::pin(tokio_stream::StreamExt::map(streams, |mut v| {
+                v.1.ref_id = v.0;
+                v.1
+            })) as DataStream
+        } else {
+            Box::pin(tokio_stream::empty()) as DataStream
+        };
+
+        Ok(datastream::end_stream_at(
+            datastream::filter_dupes(datastream::merge(s_archived, s_live)),
+            total,
+            end_time,
+        ))
     }
 
     #[doc = "Retrieve correlated plot data.
@@ -820,6 +908,7 @@ This query sets up a request which returns a stream of data, presumably \
 used for plotting. Unlike the `acceleratorData` query, this stream \
 returns data for all the devices in one reply. Since the data is \
 correlated, all the devices are collected on the same event."]
+    #[instrument(skip(self, ctxt))]
     async fn start_plot(
         &self, ctxt: &Context<'ctx>,
         #[graphql(
@@ -869,7 +958,7 @@ correlated, all the devices are collected on the same event."]
         x_max: Option<f64>,
         start_time: Option<f64>, end_time: Option<f64>,
     ) -> Result<PlotStream> {
-        info!("incoming plot with delay {:?}", update_delay);
+        info!("new request");
 
         // Add the periodic rate to each of the device names after stripping
         // any event specifier.
