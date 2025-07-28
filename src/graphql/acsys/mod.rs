@@ -456,7 +456,7 @@ impl<'ctx> ACSysSubscriptions {
     // is specified, the stream will end once it is reached.
 
     async fn live_data(
-        ctxt: &Context<'ctx>, drfs: &[String],
+        ctxt: &Context<'ctx>, drfs: &[String], start_time: f64,
     ) -> Result<DataStream> {
         use tokio_stream::StreamExt;
 
@@ -477,8 +477,20 @@ impl<'ctx> ACSysSubscriptions {
         )
         .await
         {
-            Ok(s) => Ok(Box::pin(StreamExt::map(s.into_inner(), xlat_reply))
-                as DataStream),
+            Ok(s) => {
+                Ok(Box::pin(StreamExt::filter_map(s.into_inner(), move |v| {
+                    let mut reply = xlat_reply(v);
+                    let idx = reply.data[..]
+                        .partition_point(|info| info.timestamp < start_time);
+
+                    reply.data.drain(..idx);
+                    if reply.data.is_empty() {
+                        None
+                    } else {
+                        Some(reply)
+                    }
+                })) as DataStream)
+            }
             Err(e) => Err(Error::new(format!("{}", e).as_str())),
         }
     }
@@ -837,6 +849,7 @@ live data."]
         let total = drfs.len() as i32;
         let now = now();
         let need_live = end_time.map(|v| v >= now).unwrap_or(true);
+        let start_live = start_time.map(|v| v.max(now)).unwrap_or(now);
         let archived_start = start_time.filter(|v| *v <= now);
         let archived_end = end_time.map(|v| v.min(now)).unwrap_or(now);
 
@@ -846,7 +859,7 @@ live data."]
         // time for the data to also be saved in a data logger.
 
         let s_live = if need_live {
-            ACSysSubscriptions::live_data(ctxt, &drfs).await?
+            ACSysSubscriptions::live_data(ctxt, &drfs, start_live).await?
         } else {
             Box::pin(tokio_stream::empty()) as DataStream
         };
