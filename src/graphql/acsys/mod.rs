@@ -838,6 +838,7 @@ live data."]
         let now = now();
         let need_live = end_time.map(|v| v >= now).unwrap_or(true);
         let archived_start = start_time.filter(|v| *v <= now);
+        let archived_end = end_time.map(|v| v.min(now)).unwrap_or(now);
 
         info!("new request");
 
@@ -864,7 +865,7 @@ live data."]
                     ctxt,
                     &drf,
                     st,
-                    end_time.unwrap_or(now),
+                    archived_end,
                 )
                 .await?;
 
