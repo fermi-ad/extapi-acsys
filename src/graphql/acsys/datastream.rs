@@ -210,7 +210,7 @@ impl Stream for DataMerge {
                         let data = buf.process_archive_data(data);
 
                         // If there's no data in this packet, then this
-                        // channel's archive data is done. We don't foreward
+                        // channel's archive data is done. We don't forward
                         // empty data packets, so we need to loop and let
                         // the archive stream have a chance to return more
                         // data or register a Waker.
@@ -219,7 +219,7 @@ impl Stream for DataMerge {
                             continue;
                         }
 
-                        // Return the data (either archve data or buffered
+                        // Return the data (either archive data or buffered
                         // live data).
 
                         return Poll::Ready(Some(global::DataReply {
@@ -303,7 +303,7 @@ struct FilterDupes {
     latest: HashMap<i32, f64>,
 }
 
-// Friendy function to wrap a stream with the FilterDupes stream.
+// Friendly function to wrap a stream with the FilterDupes stream.
 
 pub fn filter_dupes(s: DataStream) -> DataStream {
     Box::pin(FilterDupes::new(s))
