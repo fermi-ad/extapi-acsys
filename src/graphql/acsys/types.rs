@@ -1,12 +1,6 @@
+use super::global;
 use async_graphql::*;
 use chrono::{DateTime, Duration, Utc};
-
-#[derive(SimpleObject, Clone, Debug, PartialEq)]
-pub struct PlotDataPoint {
-    pub t: f64,
-    pub x: f64,
-    pub y: f64,
-}
 
 #[derive(SimpleObject, Clone)]
 pub struct PlotChannelData {
@@ -23,7 +17,7 @@ pub struct PlotChannelData {
     pub channel_status: i16,
     #[doc = "A set of data points. If the return rate is slow (<= 1Hz), this \
 	     list will only have one element."]
-    pub channel_data: Vec<PlotDataPoint>,
+    pub channel_data: Vec<global::DataInfo>,
 }
 
 #[doc = "Contains plot data for a given plot request."]

@@ -406,43 +406,6 @@ fn stuff_fake_data(
     }
 }
 
-fn to_plot_data(
-    len: usize, window_size: &Option<usize>, data: &[global::DataInfo],
-) -> (i16, Vec<types::PlotDataPoint>) {
-    let mut result = vec![];
-
-    for entry in data {
-        let ts = entry.timestamp;
-
-        match &entry.result {
-            global::DataType::Scalar(y) => result.push(types::PlotDataPoint {
-                t: ts,
-                x: ts,
-                y: y.scalar_value,
-            }),
-            global::DataType::ScalarArray(a) => {
-                let step = window_size
-                    .filter(|v| *v > 0 && *v <= len)
-                    .map(|v| len.div_ceil(v))
-                    .unwrap_or(1);
-
-                result.extend(
-                    a.scalar_array_value.iter().enumerate().step_by(step).map(
-                        |(idx, y)| types::PlotDataPoint {
-                            t: ts,
-                            x: idx as f64,
-                            y: *y,
-                        },
-                    ),
-                )
-            }
-            global::DataType::StatusReply(v) => return (v.status, vec![]),
-            _ => return (-1, vec![]),
-        }
-    }
-    (0, result)
-}
-
 type DataStream = Pin<Box<dyn Stream<Item = global::DataReply> + Send>>;
 type PlotStream = Pin<Box<dyn Stream<Item = types::PlotReplyData> + Send>>;
 
@@ -533,7 +496,7 @@ impl<'ctx> ACSysSubscriptions {
 
     async fn handle_continuous(
         &self, ctxt: &Context<'ctx>, drfs: Vec<String>,
-        window_size: Option<usize>, n_acquisitions: Option<usize>,
+        _window_size: Option<usize>, n_acquisitions: Option<usize>,
         x_min: Option<f64>, x_max: Option<f64>, start_time: Option<f64>,
         end_time: Option<f64>,
     ) -> Result<PlotStream> {
@@ -559,55 +522,55 @@ impl<'ctx> ACSysSubscriptions {
         let strm = self
             .accelerator_data(ctxt, drfs.clone(), start_time, end_time)
             .await?;
-        let s = strm.filter_map(move |e: global::DataReply| {
-            let (sts, mut data) = to_plot_data(r.len(), &window_size, &e.data);
+        let s =
+            strm.filter_map(move |mut e: global::DataReply| {
+                // If the data consists of a single value that's a status,
+                // it gets moved to the packet level status field.
 
-            // Take all the points from the current reply and extend
-            // the outgoing data.
+                if let &mut [global::DataInfo {
+                    result: global::DataType::StatusReply(ref v),
+                    ..
+                }] = &mut e.data[..]
+                {
+                    reply.data[e.ref_id as usize].channel_status = v.status;
+                } else {
+                    // Take all the points from the current reply and
+                    // extend the outgoing data.
 
-            reply.data[e.ref_id as usize].channel_data.append(&mut data);
+                    reply.data[e.ref_id as usize]
+                        .channel_data
+                        .append(&mut e.data);
+                }
 
-            // Set-up a nested scope range so we can modify the currently
-            // tracked status.
+                // If we have data (or status) for every channel, we can
+                // determine what needs to be sent to the client.
 
-            {
-                let curr: &mut i16 =
-                    &mut reply.data[e.ref_id as usize].channel_status;
+                if reply.data.iter().all(|e| {
+                    e.channel_status != 0 || !e.channel_data.is_empty()
+                }) {
+                    let ts = e.data[0].timestamp;
+                    let mut temp = types::PlotReplyData {
+                        plot_id: "demo".into(),
+                        timestamp: now,
+                        data: reply
+                            .data
+                            .iter()
+                            .map(|e| types::PlotChannelData {
+                                channel_rate: "Unknown".into(),
+                                channel_units: e.channel_units.clone(),
+                                channel_status: e.channel_status,
+                                channel_data: vec![],
+                            })
+                            .collect(),
+                    };
 
-                *curr = std::cmp::min(*curr, sts);
-            }
-
-            // If we have data (or status) for every channel, we can
-            // determine what needs to be sent to the client.
-
-            if reply
-                .data
-                .iter()
-                .all(|e| e.channel_status != 0 || !e.channel_data.is_empty())
-            {
-                let ts = e.data[0].timestamp;
-                let mut temp = types::PlotReplyData {
-                    plot_id: "demo".into(),
-                    timestamp: now,
-                    data: reply
-                        .data
-                        .iter()
-                        .map(|e| types::PlotChannelData {
-                            channel_rate: "Unknown".into(),
-                            channel_units: e.channel_units.clone(),
-                            channel_status: e.channel_status,
-                            channel_data: vec![],
-                        })
-                        .collect(),
-                };
-
-                std::mem::swap(&mut temp, &mut reply);
-                stuff_fake_data(&mut r.clone(), &drfs, ts, &mut reply.data);
-                future::ready(Some(temp))
-            } else {
-                future::ready(None)
-            }
-        });
+                    std::mem::swap(&mut temp, &mut reply);
+                    stuff_fake_data(&mut r.clone(), &drfs, ts, &mut reply.data);
+                    future::ready(Some(temp))
+                } else {
+                    future::ready(None)
+                }
+            });
 
         if let Some(n) = n_acquisitions.map(|v| v.max(1)) {
             Ok(Box::pin(s.take(n)) as PlotStream)
@@ -622,7 +585,7 @@ impl<'ctx> ACSysSubscriptions {
 
     fn flush(buf: &mut types::PlotReplyData, ts: f64) {
         for chan in buf.data.iter_mut() {
-            let idx = chan.channel_data.partition_point(|v| v.x < ts);
+            let idx = chan.channel_data.partition_point(|v| v.timestamp < ts);
 
             chan.channel_data.drain(0..idx);
         }
@@ -639,7 +602,8 @@ impl<'ctx> ACSysSubscriptions {
         for (out_chan, rem_chan) in
             out.data.iter_mut().zip(remaining.data.iter_mut())
         {
-            let idx = out_chan.channel_data.partition_point(|v| v.x < ts);
+            let idx =
+                out_chan.channel_data.partition_point(|v| v.timestamp < ts);
 
             rem_chan.channel_data.clear();
             rem_chan
@@ -647,8 +611,7 @@ impl<'ctx> ACSysSubscriptions {
                 .extend(out_chan.channel_data.drain(idx..));
 
             for out_data in out_chan.channel_data.iter_mut() {
-                out_data.t = out_data.x;
-                out_data.x -= ev_ts;
+                out_data.timestamp -= ev_ts;
             }
         }
     }
@@ -710,27 +673,8 @@ impl<'ctx> ACSysSubscriptions {
 	    loop {
 		tokio::select! {
 		    opt_rdg = dev_data.next() => {
-			if let Some(rdg) = opt_rdg {
-			    for d in rdg.data.iter() {
-				// We only handle scalar data for triggered
-				// plots.
-
-				if let global::DataType::Scalar(y) = &d.result {
-				    outgoing.data[rdg.ref_id as usize]
-					.channel_data
-					.push(types::PlotDataPoint {
-					    t: d.timestamp,
-					    x: d.timestamp,
-					    y: y.scalar_value,
-					})
-				} else {
-				    error!(
-					"nonscalar data in triggered plot for device {}",
-					&drfs[rdg.ref_id as usize]
-				    );
-				    break
-				}
-			    }
+			if let Some(mut rdg) = opt_rdg {
+			    outgoing.data[rdg.ref_id as usize].channel_data.append(&mut rdg.data)
 			} else {
 			    error!("data stream closed");
 			    break
@@ -990,52 +934,56 @@ correlated, all the devices are collected on the same event."]
 
 fn const_data(
     r: &mut dyn Iterator<Item = usize>, ts: f64, y: f64,
-) -> Vec<types::PlotDataPoint> {
-    r.map(|idx| types::PlotDataPoint {
-        t: ts,
-        x: idx as f64,
-        y,
-    })
-    .collect()
+) -> Vec<global::DataInfo> {
+    vec![global::DataInfo {
+        timestamp: ts,
+        result: global::DataType::ScalarArray(global::ScalarArray {
+            scalar_array_value: r.map(|_| y).collect(),
+        }),
+    }]
 }
 
 fn ramp_data(
     r: &mut dyn Iterator<Item = usize>, ts: f64,
-) -> Vec<types::PlotDataPoint> {
-    r.map(|idx| types::PlotDataPoint {
-        t: ts,
-        x: idx as f64,
-        y: idx as f64,
-    })
-    .collect()
+) -> Vec<global::DataInfo> {
+    vec![global::DataInfo {
+        timestamp: ts,
+        result: global::DataType::ScalarArray(global::ScalarArray {
+            scalar_array_value: r.map(|idx| idx as f64).collect(),
+        }),
+    }]
 }
 
 fn parabola_data(
     r: &mut dyn Iterator<Item = usize>, ts: f64,
-) -> Vec<types::PlotDataPoint> {
-    r.map(|idx| {
-        let x = idx as f64;
+) -> Vec<global::DataInfo> {
+    vec![global::DataInfo {
+        timestamp: ts,
+        result: global::DataType::ScalarArray(global::ScalarArray {
+            scalar_array_value: r
+                .map(|idx| {
+                    let x = idx as f64;
 
-        types::PlotDataPoint {
-            t: ts,
-            x,
-            y: (x * x) / 125.0 - 4.0 * x + 500.0,
-        }
-    })
-    .collect()
+                    (x * x) / 125.0 - 4.0 * x + 500.0
+                })
+                .collect(),
+        }),
+    }]
 }
 
 fn sine_data(
     r: &mut dyn Iterator<Item = usize>, ts: f64,
-) -> Vec<types::PlotDataPoint> {
+) -> Vec<global::DataInfo> {
     let k = (std::f64::consts::PI * 2.0) / (DEF_MAX_WAVEFORM as f64);
 
-    r.map(|idx| types::PlotDataPoint {
-        t: ts,
-        x: idx as f64,
-        y: f64::sin(k * (idx as f64)),
-    })
-    .collect()
+    vec![global::DataInfo {
+        timestamp: ts,
+        result: global::DataType::ScalarArray(global::ScalarArray {
+            scalar_array_value: r
+                .map(|idx| f64::sin(k * (idx as f64)))
+                .collect(),
+        }),
+    }]
 }
 
 #[cfg(test)]
@@ -1133,31 +1081,36 @@ mod test {
 
     #[test]
     fn test_flush() {
-        const POINT_DATA: &[types::PlotDataPoint] = &[
-            types::PlotDataPoint {
-                t: 1.0,
-                x: 1.0,
-                y: 10.0,
+        const POINT_DATA: &[global::DataInfo] = &[
+            global::DataInfo {
+                timestamp: 1.0,
+                result: global::DataType::Scalar(global::Scalar {
+                    scalar_value: 10.0,
+                }),
             },
-            types::PlotDataPoint {
-                t: 2.0,
-                x: 2.0,
-                y: 11.0,
+            global::DataInfo {
+                timestamp: 2.0,
+                result: global::DataType::Scalar(global::Scalar {
+                    scalar_value: 11.0,
+                }),
             },
-            types::PlotDataPoint {
-                t: 3.0,
-                x: 3.0,
-                y: 12.0,
+            global::DataInfo {
+                timestamp: 3.0,
+                result: global::DataType::Scalar(global::Scalar {
+                    scalar_value: 12.0,
+                }),
             },
-            types::PlotDataPoint {
-                t: 4.0,
-                x: 4.0,
-                y: 13.0,
+            global::DataInfo {
+                timestamp: 4.0,
+                result: global::DataType::Scalar(global::Scalar {
+                    scalar_value: 13.0,
+                }),
             },
-            types::PlotDataPoint {
-                t: 5.0,
-                x: 5.0,
-                y: 14.0,
+            global::DataInfo {
+                timestamp: 5.0,
+                result: global::DataType::Scalar(global::Scalar {
+                    scalar_value: 14.0,
+                }),
             },
         ];
 
@@ -1187,31 +1140,36 @@ mod test {
 
     #[test]
     fn test_partitioning() {
-        const POINT_DATA: &[types::PlotDataPoint] = &[
-            types::PlotDataPoint {
-                t: 1.0,
-                x: 1.0,
-                y: 10.0,
+        const POINT_DATA: &[global::DataInfo] = &[
+            global::DataInfo {
+                timestamp: 1.0,
+                result: global::DataType::Scalar(global::Scalar {
+                    scalar_value: 10.0,
+                }),
             },
-            types::PlotDataPoint {
-                t: 2.0,
-                x: 2.0,
-                y: 11.0,
+            global::DataInfo {
+                timestamp: 2.0,
+                result: global::DataType::Scalar(global::Scalar {
+                    scalar_value: 11.0,
+                }),
             },
-            types::PlotDataPoint {
-                t: 3.0,
-                x: 3.0,
-                y: 12.0,
+            global::DataInfo {
+                timestamp: 3.0,
+                result: global::DataType::Scalar(global::Scalar {
+                    scalar_value: 12.0,
+                }),
             },
-            types::PlotDataPoint {
-                t: 4.0,
-                x: 4.0,
-                y: 13.0,
+            global::DataInfo {
+                timestamp: 4.0,
+                result: global::DataType::Scalar(global::Scalar {
+                    scalar_value: 13.0,
+                }),
             },
-            types::PlotDataPoint {
-                t: 5.0,
-                x: 5.0,
-                y: 14.0,
+            global::DataInfo {
+                timestamp: 5.0,
+                result: global::DataType::Scalar(global::Scalar {
+                    scalar_value: 14.0,
+                }),
             },
         ];
 
@@ -1240,20 +1198,23 @@ mod test {
         assert_eq!(
             buf.data[0].channel_data,
             &[
-                types::PlotDataPoint {
-                    t: 1.0,
-                    x: 0.5,
-                    y: 10.0,
+                global::DataInfo {
+                    timestamp: 0.5,
+                    result: global::DataType::Scalar(global::Scalar {
+                        scalar_value: 10.0,
+                    }),
                 },
-                types::PlotDataPoint {
-                    t: 2.0,
-                    x: 1.5,
-                    y: 11.0,
+                global::DataInfo {
+                    timestamp: 1.5,
+                    result: global::DataType::Scalar(global::Scalar {
+                        scalar_value: 11.0,
+                    }),
                 },
-                types::PlotDataPoint {
-                    t: 3.0,
-                    x: 2.5,
-                    y: 12.0,
+                global::DataInfo {
+                    timestamp: 2.5,
+                    result: global::DataType::Scalar(global::Scalar {
+                        scalar_value: 12.0,
+                    }),
                 }
             ],
         );
@@ -1266,15 +1227,17 @@ mod test {
         assert_eq!(
             buf.data[0].channel_data,
             &[
-                types::PlotDataPoint {
-                    t: 4.0,
-                    x: 3.5,
-                    y: 13.0,
+                global::DataInfo {
+                    timestamp: 3.5,
+                    result: global::DataType::Scalar(global::Scalar {
+                        scalar_value: 13.0,
+                    }),
                 },
-                types::PlotDataPoint {
-                    t: 5.0,
-                    x: 4.5,
-                    y: 14.0,
+                global::DataInfo {
+                    timestamp: 4.5,
+                    result: global::DataType::Scalar(global::Scalar {
+                        scalar_value: 14.0,
+                    }),
                 },
             ]
         );
