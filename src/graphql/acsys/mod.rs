@@ -12,14 +12,6 @@ use tokio::time::Instant;
 use tonic::Status;
 use tracing::{error, info, instrument, warn};
 
-// When a waveform / array device is read, clients may only want a
-// subset of the data. Plotting apps, for instance, only have so many
-// horizontal pixels. If the client doesn't specify a max number of
-// point to return, then this value is used. The data will be
-// decimated so that, at most, this many points are returned.
-
-const DEF_MAX_WAVEFORM: usize = 500;
-
 // Pull in global types.
 
 use super::types as global;
@@ -387,25 +379,6 @@ fn add_event(
     }
 }
 
-// This function is a (long-term) temporary artifact. It generates one of
-// several interesting waveforms that the plot app can use until we get
-// the device API finalized.
-
-fn stuff_fake_data(
-    r: &mut dyn Iterator<Item = usize>, drfs: &[String], ts: f64,
-    chans: &mut [types::PlotChannelData],
-) {
-    for (idx, chan) in chans.iter_mut().enumerate() {
-        match drfs[idx].as_str() {
-            CONST_WAVEFORM => chan.channel_data = const_data(r, ts, 5.0),
-            RAMP_WAVEFORM => chan.channel_data = ramp_data(r, ts),
-            PARABOLA_WAVEFORM => chan.channel_data = parabola_data(r, ts),
-            SINE_WAVEFORM => chan.channel_data = sine_data(r, ts),
-            _ => (),
-        }
-    }
-}
-
 type DataStream = Pin<Box<dyn Stream<Item = global::DataReply> + Send>>;
 type PlotStream = Pin<Box<dyn Stream<Item = types::PlotReplyData> + Send>>;
 
@@ -497,11 +470,9 @@ impl<'ctx> ACSysSubscriptions {
     async fn handle_continuous(
         &self, ctxt: &Context<'ctx>, drfs: Vec<String>,
         _window_size: Option<usize>, n_acquisitions: Option<usize>,
-        x_min: Option<f64>, x_max: Option<f64>, start_time: Option<f64>,
+        _x_min: Option<f64>, _x_max: Option<f64>, start_time: Option<f64>,
         end_time: Option<f64>,
     ) -> Result<PlotStream> {
-        let r = x_min.map(|v| v as usize).unwrap_or(0)
-            ..(x_max.map(|v| (v as usize) + 1).unwrap_or(DEF_MAX_WAVEFORM));
         let now = now();
         let mut reply = types::PlotReplyData {
             plot_id: "demo".into(),
@@ -516,8 +487,6 @@ impl<'ctx> ACSysSubscriptions {
                 })
                 .collect(),
         };
-
-        stuff_fake_data(&mut r.clone(), &drfs, 0.0, &mut reply.data);
 
         let strm = self
             .accelerator_data(ctxt, drfs.clone(), start_time, end_time)
@@ -548,7 +517,6 @@ impl<'ctx> ACSysSubscriptions {
                 if reply.data.iter().all(|e| {
                     e.channel_status != 0 || !e.channel_data.is_empty()
                 }) {
-                    let ts = e.data[0].timestamp;
                     let mut temp = types::PlotReplyData {
                         plot_id: "demo".into(),
                         timestamp: now,
@@ -565,7 +533,6 @@ impl<'ctx> ACSysSubscriptions {
                     };
 
                     std::mem::swap(&mut temp, &mut reply);
-                    stuff_fake_data(&mut r.clone(), &drfs, ts, &mut reply.data);
                     future::ready(Some(temp))
                 } else {
                     future::ready(None)
@@ -930,60 +897,6 @@ correlated, all the devices are collected on the same event."]
             .await
         }
     }
-}
-
-fn const_data(
-    r: &mut dyn Iterator<Item = usize>, ts: f64, y: f64,
-) -> Vec<global::DataInfo> {
-    vec![global::DataInfo {
-        timestamp: ts,
-        result: global::DataType::ScalarArray(global::ScalarArray {
-            scalar_array_value: r.map(|_| y).collect(),
-        }),
-    }]
-}
-
-fn ramp_data(
-    r: &mut dyn Iterator<Item = usize>, ts: f64,
-) -> Vec<global::DataInfo> {
-    vec![global::DataInfo {
-        timestamp: ts,
-        result: global::DataType::ScalarArray(global::ScalarArray {
-            scalar_array_value: r.map(|idx| idx as f64).collect(),
-        }),
-    }]
-}
-
-fn parabola_data(
-    r: &mut dyn Iterator<Item = usize>, ts: f64,
-) -> Vec<global::DataInfo> {
-    vec![global::DataInfo {
-        timestamp: ts,
-        result: global::DataType::ScalarArray(global::ScalarArray {
-            scalar_array_value: r
-                .map(|idx| {
-                    let x = idx as f64;
-
-                    (x * x) / 125.0 - 4.0 * x + 500.0
-                })
-                .collect(),
-        }),
-    }]
-}
-
-fn sine_data(
-    r: &mut dyn Iterator<Item = usize>, ts: f64,
-) -> Vec<global::DataInfo> {
-    let k = (std::f64::consts::PI * 2.0) / (DEF_MAX_WAVEFORM as f64);
-
-    vec![global::DataInfo {
-        timestamp: ts,
-        result: global::DataType::ScalarArray(global::ScalarArray {
-            scalar_array_value: r
-                .map(|idx| f64::sin(k * (idx as f64)))
-                .collect(),
-        }),
-    }]
 }
 
 #[cfg(test)]
