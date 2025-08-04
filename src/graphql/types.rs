@@ -298,6 +298,9 @@ impl TryFrom<device::Value> for DataType {
                     scalar_array_value: v.value,
                 }))
             }
+            Some(device::value::Value::Raw(v)) => Ok(DataType::Raw(Raw {
+                raw_value: v.clone(),
+            })),
             Some(device::value::Value::Text(v)) => {
                 Ok(DataType::Text(Text { text_value: v }))
             }
@@ -331,6 +334,9 @@ impl TryFrom<&device::Value> for DataType {
                     scalar_array_value: v.value.clone(),
                 }))
             }
+            Some(device::value::Value::Raw(v)) => Ok(DataType::Raw(Raw {
+                raw_value: v.clone(),
+            })),
             Some(device::value::Value::Text(v)) => Ok(DataType::Text(Text {
                 text_value: v.clone(),
             })),
