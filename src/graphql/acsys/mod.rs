@@ -345,12 +345,6 @@ fn strip_source(drf: &str) -> &str {
     &drf[0..drf.find('<').unwrap_or(drf.len())]
 }
 
-const NULL_WAVEFORM: &str = "Z:CACHE@N";
-const CONST_WAVEFORM: &str = "API TEST CONST";
-const RAMP_WAVEFORM: &str = "API TEST RAMP";
-const PARABOLA_WAVEFORM: &str = "API TEST PARABOLA";
-const SINE_WAVEFORM: &str = "API TEST SINE";
-
 // Adds an event specification to a device name to create a DRF specification.
 // If the `event` parameter is `None`, the `delay` parameter represents the
 // periodic sample time, in microseconds. If an event is specified, the delay
@@ -371,12 +365,7 @@ fn add_event(
     // in the array of devices. So we insert a DRF string that uses the
     // "never" event.
 
-    move |device| match device {
-        CONST_WAVEFORM | RAMP_WAVEFORM | PARABOLA_WAVEFORM | SINE_WAVEFORM => {
-            NULL_WAVEFORM.into()
-        }
-        _ => format!("{device}@{}", event),
-    }
+    move |device| format!("{device}@{}", event)
 }
 
 type DataStream = Pin<Box<dyn Stream<Item = global::DataReply> + Send>>;
@@ -931,51 +920,9 @@ mod test {
     #[test]
     fn test_add_event_specification() {
         use super::add_event;
-        use super::{
-            CONST_WAVEFORM, NULL_WAVEFORM, PARABOLA_WAVEFORM, RAMP_WAVEFORM,
-            SINE_WAVEFORM,
-        };
-
-        assert_eq!(add_event(None, None)(CONST_WAVEFORM), NULL_WAVEFORM);
-        assert_eq!(add_event(None, None)(RAMP_WAVEFORM), NULL_WAVEFORM);
-        assert_eq!(add_event(None, None)(PARABOLA_WAVEFORM), NULL_WAVEFORM);
-        assert_eq!(add_event(None, None)(SINE_WAVEFORM), NULL_WAVEFORM);
-
-        assert_eq!(add_event(Some(1234), None)(CONST_WAVEFORM), NULL_WAVEFORM);
-        assert_eq!(add_event(Some(1234), None)(RAMP_WAVEFORM), NULL_WAVEFORM);
-        assert_eq!(
-            add_event(Some(1234), None)(PARABOLA_WAVEFORM),
-            NULL_WAVEFORM
-        );
-        assert_eq!(add_event(Some(1234), None)(SINE_WAVEFORM), NULL_WAVEFORM);
 
         assert_eq!(add_event(None, None)("M:OUTTMP"), "M:OUTTMP@p,1000000u");
         assert_eq!(add_event(Some(1234), None)("M:OUTTMP"), "M:OUTTMP@p,1234u");
-
-        assert_eq!(add_event(None, Some(0x2))(CONST_WAVEFORM), NULL_WAVEFORM);
-        assert_eq!(add_event(None, Some(0xff))(RAMP_WAVEFORM), NULL_WAVEFORM);
-        assert_eq!(
-            add_event(None, Some(0x0))(PARABOLA_WAVEFORM),
-            NULL_WAVEFORM
-        );
-        assert_eq!(add_event(None, Some(0x10))(SINE_WAVEFORM), NULL_WAVEFORM);
-
-        assert_eq!(
-            add_event(Some(1234), Some(0x02))(CONST_WAVEFORM),
-            NULL_WAVEFORM
-        );
-        assert_eq!(
-            add_event(Some(1234), Some(0x8f))(RAMP_WAVEFORM),
-            NULL_WAVEFORM
-        );
-        assert_eq!(
-            add_event(Some(1234), Some(0x29))(PARABOLA_WAVEFORM),
-            NULL_WAVEFORM
-        );
-        assert_eq!(
-            add_event(Some(1234), Some(0x30))(SINE_WAVEFORM),
-            NULL_WAVEFORM
-        );
 
         assert_eq!(add_event(None, Some(0x02))("M:OUTTMP"), "M:OUTTMP@e,2,e");
         assert_eq!(
