@@ -466,6 +466,7 @@ impl<'ctx> ACSysSubscriptions {
         let mut reply = types::PlotReplyData {
             plot_id: "demo".into(),
             timestamp: now,
+            trigger_timestamp: None,
             data: drfs
                 .iter()
                 .map(|_| types::PlotChannelData {
@@ -509,6 +510,7 @@ impl<'ctx> ACSysSubscriptions {
                     let mut temp = types::PlotReplyData {
                         plot_id: "demo".into(),
                         timestamp: now,
+                        trigger_timestamp: None,
                         data: reply
                             .data
                             .iter()
@@ -570,6 +572,7 @@ impl<'ctx> ACSysSubscriptions {
                 out_data.timestamp -= ev_ts;
             }
         }
+        out.trigger_timestamp = Some(ev_ts)
     }
 
     // A helper method to handle plots that want to sync their data to
@@ -588,6 +591,7 @@ impl<'ctx> ACSysSubscriptions {
         let template = types::PlotReplyData {
             plot_id: "demo".into(),
             timestamp: now(),
+            trigger_timestamp: None,
             data: drfs
                 .iter()
                 .map(|_| types::PlotChannelData {
@@ -977,6 +981,7 @@ mod test {
         let mut buf = types::PlotReplyData {
             plot_id: "test".to_owned(),
             timestamp: 0.0,
+            trigger_timestamp: None,
             data: vec![types::PlotChannelData {
                 channel_rate: "Unknown".into(),
                 channel_units: "V".to_owned(),
@@ -1036,6 +1041,7 @@ mod test {
         let mut buf = types::PlotReplyData {
             plot_id: "test".to_owned(),
             timestamp: 0.0,
+            trigger_timestamp: None,
             data: vec![types::PlotChannelData {
                 channel_rate: "Unknown".into(),
                 channel_units: "V".to_owned(),
@@ -1049,12 +1055,14 @@ mod test {
         ACSysSubscriptions::prep_outgoing(&mut rem, &mut buf, 0.5, 0.0);
 
         assert!(buf.data[0].channel_data.is_empty());
+        assert_eq!(buf.trigger_timestamp, Some(0.5));
         assert_eq!(rem.data[0].channel_data, POINT_DATA);
 
         buf = rem.clone();
 
         ACSysSubscriptions::prep_outgoing(&mut rem, &mut buf, 0.5, 3.5);
 
+        assert_eq!(buf.trigger_timestamp, Some(0.5));
         assert_eq!(
             buf.data[0].channel_data,
             &[
