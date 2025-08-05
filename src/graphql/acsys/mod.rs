@@ -547,6 +547,7 @@ impl<'ctx> ACSysSubscriptions {
 
             chan.channel_data.drain(0..idx);
         }
+        buf.trigger_timestamp = None;
     }
 
     fn prep_outgoing(
@@ -992,14 +993,17 @@ mod test {
 
         ACSysSubscriptions::flush(&mut buf, 0.0);
 
+        assert_eq!(buf.trigger_timestamp, None);
         assert_eq!(buf.data[0].channel_data, POINT_DATA);
 
         ACSysSubscriptions::flush(&mut buf, 3.5);
 
+        assert_eq!(buf.trigger_timestamp, None);
         assert_eq!(buf.data[0].channel_data, &POINT_DATA[3..]);
 
         ACSysSubscriptions::flush(&mut buf, 10.0);
 
+        assert_eq!(buf.trigger_timestamp, None);
         assert!(buf.data[0].channel_data.is_empty());
     }
 
@@ -1092,6 +1096,7 @@ mod test {
 
         ACSysSubscriptions::prep_outgoing(&mut rem, &mut buf, 0.5, 10.0);
 
+        assert_eq!(buf.trigger_timestamp, Some(0.5));
         assert_eq!(
             buf.data[0].channel_data,
             &[
