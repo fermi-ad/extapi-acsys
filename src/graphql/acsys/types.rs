@@ -28,7 +28,15 @@ pub struct PlotReplyData {
 	     be cached for a limited time. Other clients can specify it to \
 	     re-use the configuration."]
     pub plot_id: String,
+    #[doc = "The time of the original request."]
     pub timestamp: f64,
+    #[doc = "If requesting a triggered plot, this will be the timestamp of \
+	     the last clock event (i.e. the \"trigger\"). All the timestamps \
+	     in the data will be relative to this timestamp."]
+    pub trigger_timestamp: Option<f64>,
+    #[doc = "The latest set of data points for the plot. Depending on the \
+	     sample rate or how much history is requested, this array will \
+	     contain a chunk of data."]
     pub data: Vec<PlotChannelData>,
 }
 
