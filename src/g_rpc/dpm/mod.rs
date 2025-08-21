@@ -5,8 +5,9 @@ use super::proto::{
         SettingReply,
     },
 };
+use tokio::time::{timeout, Duration};
 use tonic::transport::{Channel, Error};
-use tracing::{info, warn};
+use tracing::{error, info, instrument, warn};
 
 pub struct Connection(DaqClient<Channel>);
 
@@ -23,6 +24,7 @@ pub async fn build_connection() -> Result<Connection, Error> {
     Ok(Connection(DaqClient::connect(DPM).await?))
 }
 
+#[instrument(skip(conn, jwt))]
 pub async fn acquire_devices(
     conn: &Connection, jwt: Option<&String>, devices: Vec<String>,
 ) -> TonicStreamResult<ReadingReply> {
@@ -42,7 +44,18 @@ pub async fn acquire_devices(
         warn!("no JWT for this request");
     }
 
-    conn.0.clone().read(req).await
+    match timeout(Duration::from_secs(2), conn.0.clone().read(req)).await {
+        Ok(response) => {
+            if let Err(ref e) = response {
+                error!("error creating stream : {}", &e)
+            }
+            response
+        }
+        Err(_) => {
+            error!("connection to DPM timed-out");
+            Err(tonic::Status::cancelled("connection to DPM timed-out"))
+        }
+    }
 }
 
 // This function wraps the logic needed to make the `ApplySettings()`
