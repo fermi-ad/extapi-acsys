@@ -53,6 +53,8 @@ impl PlotReplyData {
 #[graphql(input_name = "ChannelSettingSnapshotIn")]
 pub struct ChannelSettingSnapshot {
     pub device: String,
+    pub y_min: Option<f64>,
+    pub y_max: Option<f64>,
     pub line_color: Option<u32>,
     pub marker_index: Option<u32>,
 }
@@ -66,8 +68,6 @@ pub struct PlotConfigurationSnapshot {
     pub channels: Vec<ChannelSettingSnapshot>,
     pub x_min: Option<f64>,
     pub x_max: Option<f64>,
-    pub y_min: Option<f64>,
-    pub y_max: Option<f64>,
     pub start_time: Option<f64>,
     pub end_time: Option<f64>,
     pub time_delta: Option<f64>,
