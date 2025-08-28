@@ -479,7 +479,13 @@ impl<'ctx> ACSysSubscriptions {
         };
 
         let strm = self
-            .accelerator_data(ctxt, drfs.clone(), start_time, end_time)
+            .accelerator_data(
+                ctxt,
+                drfs.clone(),
+                start_time,
+                end_time,
+                Some(false),
+            )
             .await?;
         let s =
             strm.filter_map(move |mut e: global::DataReply| {
@@ -619,7 +625,13 @@ impl<'ctx> ACSysSubscriptions {
         };
         let mut tclk = clock::subscribe(clock_list).await?.into_inner();
         let mut dev_data = self
-            .accelerator_data(ctxt, drfs.clone(), start_time, end_time)
+            .accelerator_data(
+                ctxt,
+                drfs.clone(),
+                start_time,
+                end_time,
+                Some(false),
+            )
             .await?;
 
         #[rustfmt::skip]
@@ -750,13 +762,49 @@ live data."]
 		    stream will return live data until the client closes it."
         )]
         end_time: Option<f64>,
+        #[graphql(desc = "If `true`, data points won't be returned if their \
+		   timestamp is deemed \"invalid\". Right now, this test \
+		   is only done on live data and the condition is that \
+		   live data timestamps must be greater than the time of \
+		   the request. If the `start_time` would require archived \
+		   data to be included, then timestamp validation is always \
+		   done.")]
+        validate_timestamp: Option<bool>,
     ) -> Result<DataStream> {
+        // TEMPORARY: The validate_timestamp parameter shouldn't be an
+        // Option. We're doing it right now so it's backward compatible
+        // with the version of `-core` that's out there. If not provided,
+        // we default to `false`.
+
+        let validate_timestamp = validate_timestamp.unwrap_or(false);
+
         let total = drfs.len() as i32;
         let now = now();
         let need_live = end_time.map(|v| v >= now).unwrap_or(true);
-        let start_live = start_time.map(|v| v.max(now)).unwrap_or(now);
         let archived_start = start_time.filter(|v| *v <= now);
         let archived_end = end_time.map(|v| v.min(now)).unwrap_or(now);
+
+        // The starting timestamp for live data is a little complicated.
+        // Timestamp validation is currently intended to prevent
+        // duplicates from the archived data and the live data (as we
+        // switch from one source to the other.)
+        //
+        // If we have archived data, we always check the timestamp. If we
+        // only have live data, then the caller can opt-in for checking
+        // timestamps.
+        //
+        // We "turn off" checking the timestamp by setting the cut-off
+        // time to be the EPOCH (i.e. 0.0).
+
+        let start_live = start_time
+            .map(|v| {
+                if v > now || validate_timestamp {
+                    v
+                } else {
+                    0.0
+                }
+            })
+            .unwrap_or_else(|| if validate_timestamp { now } else { 0.0 });
 
         info!("new request");
 
