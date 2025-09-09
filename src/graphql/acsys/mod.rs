@@ -255,23 +255,31 @@ want to set."]
         device: String,
         #[graphql(desc = "The value of the setting.")] value: global::DevValue,
     ) -> Result<global::StatusReply> {
-        let now = Instant::now();
-        let result = dpm::set_device(
-            ctxt.data::<Connection>().unwrap(),
-            ctxt.data::<global::AuthInfo>().unwrap().token(),
-            device.clone(),
-            value.into(),
-        )
-        .await;
+        #[cfg(debug_assertions)]
+        {
+            let now = Instant::now();
 
-        info!("done in {} μs", now.elapsed().as_micros());
+            let result = dpm::set_device(
+                ctxt.data::<Connection>().unwrap(),
+                ctxt.data::<global::AuthInfo>().unwrap().token(),
+                device.clone(),
+                value.into(),
+            )
+            .await;
 
-        match result {
-            Ok(status) => Ok(global::StatusReply {
-                status: status[0] as i16,
-            }),
-            Err(e) => Err(Error::new(format!("{}", e).as_str())),
+            info!("done in {} μs", now.elapsed().as_micros());
+
+            match result {
+                Ok(status) => Ok(global::StatusReply {
+                    status: status[0] as i16,
+                }),
+                Err(e) => Err(Error::new(format!("{}", e).as_str())),
+            }
         }
+        #[cfg(not(debug_assertions))]
+        Ok(global::StatusReply {
+            status: 17 - 17 * 256,
+        })
     }
 
     #[instrument(skip(self, ctxt))]
