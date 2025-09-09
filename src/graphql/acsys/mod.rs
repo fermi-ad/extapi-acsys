@@ -217,9 +217,10 @@ the username and this parameter will be removed."]
     ) -> Option<Arc<types::PlotConfigurationSnapshot>> {
         info!("new request");
         if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
-            // TEMPORARY: If a user account is specified, use it.
+            // TEMPORARY: If there isn't a JWT, use the account specified
+            // by the caller.
 
-            if let Some(account) = user.or_else(|| auth.unsafe_account()) {
+            if let Some(account) = auth.unsafe_account().or(user) {
                 info!("using account: {:?}", &account);
 
                 return ctxt
@@ -313,9 +314,10 @@ and this parameter will be removed."]
     ) -> Result<global::StatusReply> {
         info!("new request");
         if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
-            // TEMPORARY: If a user account is specified, use it.
+            // TEMPORARY: If there isn't a JWT, use the username
+            // specified by the caller.
 
-            if let Some(account) = user.or_else(|| auth.unsafe_account()) {
+            if let Some(account) = auth.unsafe_account().or(user) {
                 info!("using account: {:?}", &account);
 
                 ctxt.data_unchecked::<plotconfigdb::T>()
