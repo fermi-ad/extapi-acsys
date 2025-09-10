@@ -737,7 +737,7 @@ Accepts a list of DRF strings and streams the resulting data. The \
 data should be returned for the device(s). Dates in the past will \
 retrieve data from archivers and dates in the future will return \
 live data."]
-    #[instrument(skip(self, ctxt))]
+    #[instrument(skip(self, ctxt, drfs, validate_timestamp))]
     async fn accelerator_data(
         &self, ctxt: &Context<'ctx>,
         #[graphql(
@@ -807,8 +807,6 @@ live data."]
             })
             .unwrap_or_else(|| if validate_timestamp { now } else { 0.0 });
 
-        info!("new request");
-
         // If we need live data, start the collection now. This gives some
         // time for the data to also be saved in a data logger.
 
@@ -862,7 +860,7 @@ This query sets up a request which returns a stream of data, presumably \
 used for plotting. Unlike the `acceleratorData` query, this stream \
 returns data for all the devices in one reply. Since the data is \
 correlated, all the devices are collected on the same event."]
-    #[instrument(skip(self, ctxt))]
+    #[instrument(skip(self, ctxt, drf_list))]
     async fn start_plot(
         &self, ctxt: &Context<'ctx>,
         #[graphql(
@@ -912,8 +910,6 @@ correlated, all the devices are collected on the same event."]
         x_max: Option<f64>,
         start_time: Option<f64>, end_time: Option<f64>,
     ) -> Result<PlotStream> {
-        info!("new request");
-
         // Add the periodic rate to each of the device names after stripping
         // any event specifier.
 

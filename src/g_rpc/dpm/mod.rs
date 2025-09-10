@@ -42,8 +42,6 @@ pub async fn acquire_devices(
             }
             Err(e) => warn!("error creating JWT : {}", e),
         }
-    } else {
-        warn!("no JWT for this request");
     }
 
     match timeout(Duration::from_secs(2), conn.0.clone().read(req)).await {
@@ -85,17 +83,23 @@ pub async fn _set_device(
     // If a JWT token has been found, add it to the request.
 
     if let Some(token) = session_id {
-        if let Ok(val) = MetadataValue::try_from(format!("Bearer {token}")) {
-            req.metadata_mut().insert("authorization", val);
+        match MetadataValue::try_from(format!("Bearer {token}")) {
+            Ok(val) => {
+                req.metadata_mut().insert("authorization", val);
+
+                let SettingReply { status } =
+                    conn.0.clone().set(req).await?.into_inner();
+
+                Ok(status
+                    .iter()
+                    .map(|v| v.facility_code + v.status_code * 256)
+                    .collect())
+            }
+            Err(err) => {
+                error!("unable to pass credentials : {}", &err);
+                Err(tonic::Status::internal("couldn't add credentials"))
+            }
         }
-
-        let SettingReply { status } =
-            conn.0.clone().set(req).await?.into_inner();
-
-        Ok(status
-            .iter()
-            .map(|v| v.facility_code + v.status_code * 256)
-            .collect())
     } else {
         Err(tonic::Status::internal("not authorized"))
     }
