@@ -244,8 +244,7 @@ want to set."]
 		    `.CONTROL`."
         )]
         device: String,
-        #[graphql(desc = "The value of the setting.")]
-	_value: global::DevValue,
+        #[graphql(desc = "The value of the setting.")] _value: global::DevValue,
     ) -> Result<global::StatusReply> {
         #[cfg(debug_assertions)]
         {
