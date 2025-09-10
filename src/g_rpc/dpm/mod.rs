@@ -61,7 +61,7 @@ pub async fn acquire_devices(
 // This function wraps the logic needed to make the `ApplySettings()`
 // gRPC transaction.
 
-pub async fn set_device(
+pub async fn _set_device(
     conn: &Connection, session_id: Option<String>, device: String,
     value: device::Value,
 ) -> TonicQueryResult<Vec<i32>> {

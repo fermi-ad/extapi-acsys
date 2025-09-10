@@ -243,9 +243,9 @@ impl ACSysMutations {
 Not all devices can be set -- most are read-only. To be able to set a \
 device, your SSO account must be associated with every device you may \
 want to set."]
-    #[instrument(skip(self, ctxt, value))]
-    async fn set_device(
-        &self, ctxt: &Context<'_>,
+    #[instrument(skip(self, _ctxt, _value))]
+    async fn _set_device(
+        &self, _ctxt: &Context<'_>,
         #[graphql(
             desc = "The device to be set. This parameter should be expressed \
 		    as a DRF entity. For instance, for ACNET devices, the \
@@ -253,17 +253,18 @@ want to set."]
 		    `.CONTROL`."
         )]
         device: String,
-        #[graphql(desc = "The value of the setting.")] value: global::DevValue,
+        #[graphql(desc = "The value of the setting.")]
+	_value: global::DevValue,
     ) -> Result<global::StatusReply> {
         #[cfg(debug_assertions)]
         {
             let now = Instant::now();
 
-            let result = dpm::set_device(
-                ctxt.data::<Connection>().unwrap(),
-                ctxt.data::<global::AuthInfo>().unwrap().token(),
+            let result = dpm::_set_device(
+                _ctxt.data::<Connection>().unwrap(),
+                _ctxt.data::<global::AuthInfo>().unwrap().token(),
                 device.clone(),
-                value.into(),
+                _value.into(),
             )
             .await;
 
