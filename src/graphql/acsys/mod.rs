@@ -8,7 +8,6 @@ use chrono::{DateTime, Utc};
 use futures::future;
 use futures_util::{Stream, StreamExt};
 use std::{collections::HashSet, pin::Pin, sync::Arc};
-use tokio::time::Instant;
 use tonic::Status;
 use tracing::{error, info, instrument, warn};
 
@@ -250,7 +249,7 @@ want to set."]
     ) -> Result<global::StatusReply> {
         #[cfg(debug_assertions)]
         {
-            let now = Instant::now();
+            let now = tokio::time::Instant::now();
 
             let result = dpm::_set_device(
                 _ctxt.data::<Connection>().unwrap(),
