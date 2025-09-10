@@ -112,7 +112,7 @@ impl ACSysQueries {
 
 Depending upon the event in the DRF string, the data may come back \
 immediately or after a delay."]
-    #[instrument(skip(self, ctxt))]
+    #[instrument(skip(self, ctxt, device_list, _when))]
     async fn accelerator_data(
         &self, ctxt: &Context<'_>,
         #[graphql(
@@ -149,15 +149,7 @@ immediately or after a delay."]
             ctxt.data::<Connection>().unwrap(),
             ctxt.data::<global::AuthInfo>()
                 .ok()
-                .and_then(|auth| {
-                    if let Some(account) = auth.unsafe_account() {
-                        info!("account: {:?}", &account)
-                    } else {
-                        warn!("couldn't get account info")
-                    }
-
-                    global::AuthInfo::token(auth)
-                })
+                .and_then(global::AuthInfo::token)
                 .as_ref(),
             drfs.clone(),
         )
@@ -215,7 +207,6 @@ the username and this parameter will be removed."]
     async fn users_last_configuration(
         &self, ctxt: &Context<'_>, user: Option<String>,
     ) -> Option<Arc<types::PlotConfigurationSnapshot>> {
-        info!("new request");
         if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
             // TEMPORARY: If there isn't a JWT, use the account specified
             // by the caller.
@@ -229,6 +220,7 @@ the username and this parameter will be removed."]
                     .await;
             }
         }
+        warn!("unable to determine user : no config returned");
         None
     }
 }

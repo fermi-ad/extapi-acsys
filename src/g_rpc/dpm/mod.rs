@@ -24,10 +24,12 @@ pub async fn build_connection() -> Result<Connection, Error> {
     Ok(Connection(DaqClient::connect(DPM).await?))
 }
 
-#[instrument(skip(conn, jwt))]
+#[instrument(skip(conn, jwt, devices))]
 pub async fn acquire_devices(
     conn: &Connection, jwt: Option<&String>, devices: Vec<String>,
 ) -> TonicStreamResult<ReadingReply> {
+    info!("requesting {:?}", &devices);
+
     let mut req = tonic::Request::new(ReadingList { drf: devices });
 
     if let Some(jwt) = jwt {
