@@ -12,7 +12,7 @@ RUN cargo build --release
 # ------------------------
 # RUN
 # ------------------------
-FROM debian:bookworm-slim
+FROM gcr.io/distroless/cc-debian12
 
 COPY --from=builder /app/target/release/extapi-dpm /usr/local/bin/extapi-dpm
 EXPOSE 8000
