@@ -9,7 +9,7 @@ use axum::{
     routing::get,
     Router,
 };
-use tracing::info;
+use tracing::{info, instrument};
 
 use crate::g_rpc::dpm::build_connection;
 
@@ -23,32 +23,10 @@ mod tlg;
 mod types;
 mod xform;
 
-#[doc = "Fields in this section return data and won't cause side-effects in \
-the control system. Some queries may require privileges, but none will \
-affect the accelerator."]
-#[derive(MergedObject, Default)]
-struct Query(acsys::ACSysQueries, faas::FaasQueries);
-
-#[doc = "Queries in this section will affect the control system; updating \
-database tables and/or controlling accelerator hardware are possible. These \
-requests will always need to be accompanied by an authentication token and \
-will, most-likely, be tracked and audited."]
-#[derive(MergedObject, Default)]
-struct Mutation(acsys::ACSysMutations);
-
-#[doc = "This section contains requests that return a stream of results. \
-These requests are similar to Queries in that they don't affect the state \
-of the accelerator or any other state of the control system."]
-#[derive(MergedSubscription, Default)]
-struct Subscription(
-    acsys::ACSysSubscriptions,
-    clock::ClockSubscriptions,
-    xform::XFormSubscriptions,
-);
-
 // Generic function which adds `AuthInfo` to the context. This
 // function can be used for all the GraphQL schemas.
 
+#[instrument(name = "GRAPHQL", skip(schema, req, headers))]
 async fn graphql_handler<Q, M, S>(
     State(schema): State<Schema<Q, M, S>>, headers: HeaderMap,
     req: GraphQLRequest,
@@ -99,9 +77,9 @@ async fn create_acsys_router() -> Router {
     const S_ENDPOINT: &str = "/acsys/s";
 
     let schema = Schema::build(
-        Query::default(),
-        Mutation::default(),
-        Subscription::default(),
+        acsys::ACSysQueries,
+        acsys::ACSysMutations,
+        acsys::ACSysSubscriptions,
     )
     .data(
         build_connection()

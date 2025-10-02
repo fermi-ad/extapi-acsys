@@ -1,12 +1,6 @@
+use super::global;
 use async_graphql::*;
 use chrono::{DateTime, Duration, Utc};
-
-#[derive(SimpleObject, Clone, Debug, PartialEq)]
-pub struct PlotDataPoint {
-    pub t: f64,
-    pub x: f64,
-    pub y: f64,
-}
 
 #[derive(SimpleObject, Clone)]
 pub struct PlotChannelData {
@@ -23,7 +17,7 @@ pub struct PlotChannelData {
     pub channel_status: i16,
     #[doc = "A set of data points. If the return rate is slow (<= 1Hz), this \
 	     list will only have one element."]
-    pub channel_data: Vec<PlotDataPoint>,
+    pub channel_data: Vec<global::DataInfo>,
 }
 
 #[doc = "Contains plot data for a given plot request."]
@@ -34,7 +28,15 @@ pub struct PlotReplyData {
 	     be cached for a limited time. Other clients can specify it to \
 	     re-use the configuration."]
     pub plot_id: String,
+    #[doc = "The time of the original request."]
     pub timestamp: f64,
+    #[doc = "If requesting a triggered plot, this will be the timestamp of \
+	     the last clock event (i.e. the \"trigger\"). All the timestamps \
+	     in the data will be relative to this timestamp."]
+    pub trigger_timestamp: Option<f64>,
+    #[doc = "The latest set of data points for the plot. Depending on the \
+	     sample rate or how much history is requested, this array will \
+	     contain a chunk of data."]
     pub data: Vec<PlotChannelData>,
 }
 
@@ -51,6 +53,8 @@ impl PlotReplyData {
 #[graphql(input_name = "ChannelSettingSnapshotIn")]
 pub struct ChannelSettingSnapshot {
     pub device: String,
+    pub y_min: Option<f64>,
+    pub y_max: Option<f64>,
     pub line_color: Option<u32>,
     pub marker_index: Option<u32>,
 }
@@ -64,8 +68,6 @@ pub struct PlotConfigurationSnapshot {
     pub channels: Vec<ChannelSettingSnapshot>,
     pub x_min: Option<f64>,
     pub x_max: Option<f64>,
-    pub y_min: Option<f64>,
-    pub y_max: Option<f64>,
     pub start_time: Option<f64>,
     pub end_time: Option<f64>,
     pub time_delta: Option<f64>,

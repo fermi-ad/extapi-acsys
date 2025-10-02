@@ -31,22 +31,30 @@ impl AuthInfo {
     }
 
     pub fn unsafe_account(&self) -> Option<String> {
-        use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
-
         self.0.as_ref().and_then(|token| {
-            let mut validation = Validation::new(Algorithm::HS256);
+            if let [_, body, _] = token.split('.').collect::<Vec<&str>>()[..] {
+                use base64::{
+                    engine::general_purpose::STANDARD_NO_PAD, Engine as _,
+                };
+                use serde_json::{self, Value};
+                use std::collections::HashMap;
 
-            validation.insecure_disable_signature_validation();
+                if let Ok(json) = STANDARD_NO_PAD.decode(body) {
+                    let result: Result<
+                        HashMap<String, Value>,
+                        serde_json::Error,
+                    > = serde_json::from_slice(&json);
 
-            if let Ok(decoded) = decode::<Claims>(
-                token,
-                &DecodingKey::from_secret("".as_ref()), // No secret required
-                &validation,
-            ) {
-                Some(decoded.claims.sub)
-            } else {
-                None
+                    if let Ok(result) = result {
+                        if let Some(Value::String(user)) =
+                            result.get("preferred_username")
+                        {
+                            return Some(user.clone());
+                        }
+                    }
+                }
             }
+            None
         })
     }
 }

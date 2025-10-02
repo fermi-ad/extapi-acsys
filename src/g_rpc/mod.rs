@@ -3,9 +3,9 @@
 // are only generated and compiled once.
 
 pub mod proto {
-    pub mod google {
+    pub mod third_party {
         pub mod r#type {
-            include!("generated/google.r#type.rs");
+            include!("generated/third_party.r#type.rs");
         }
     }
 

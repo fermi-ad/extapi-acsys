@@ -5,8 +5,9 @@ use super::proto::{
         SettingReply,
     },
 };
+use tokio::time::{timeout, Duration};
 use tonic::transport::{Channel, Error};
-use tracing::{info, warn};
+use tracing::{error, info, instrument, warn};
 
 pub struct Connection(DaqClient<Channel>);
 
@@ -23,9 +24,12 @@ pub async fn build_connection() -> Result<Connection, Error> {
     Ok(Connection(DaqClient::connect(DPM).await?))
 }
 
+#[instrument(skip(conn, jwt, devices))]
 pub async fn acquire_devices(
     conn: &Connection, jwt: Option<&String>, devices: Vec<String>,
 ) -> TonicStreamResult<ReadingReply> {
+    info!("requesting {:?}", &devices);
+
     let mut req = tonic::Request::new(ReadingList { drf: devices });
 
     if let Some(jwt) = jwt {
@@ -38,17 +42,26 @@ pub async fn acquire_devices(
             }
             Err(e) => warn!("error creating JWT : {}", e),
         }
-    } else {
-        warn!("no JWT for this request");
     }
 
-    conn.0.clone().read(req).await
+    match timeout(Duration::from_secs(2), conn.0.clone().read(req)).await {
+        Ok(response) => {
+            if let Err(ref e) = response {
+                error!("error creating stream : {}", &e)
+            }
+            response
+        }
+        Err(_) => {
+            error!("connection to DPM timed-out");
+            Err(tonic::Status::cancelled("connection to DPM timed-out"))
+        }
+    }
 }
 
 // This function wraps the logic needed to make the `ApplySettings()`
 // gRPC transaction.
 
-pub async fn set_device(
+pub async fn _set_device(
     conn: &Connection, session_id: Option<String>, device: String,
     value: device::Value,
 ) -> TonicQueryResult<Vec<i32>> {
@@ -70,17 +83,23 @@ pub async fn set_device(
     // If a JWT token has been found, add it to the request.
 
     if let Some(token) = session_id {
-        if let Ok(val) = MetadataValue::try_from(format!("Bearer {token}")) {
-            req.metadata_mut().insert("authorization", val);
+        match MetadataValue::try_from(format!("Bearer {token}")) {
+            Ok(val) => {
+                req.metadata_mut().insert("authorization", val);
+
+                let SettingReply { status } =
+                    conn.0.clone().set(req).await?.into_inner();
+
+                Ok(status
+                    .iter()
+                    .map(|v| v.facility_code + v.status_code * 256)
+                    .collect())
+            }
+            Err(err) => {
+                error!("unable to pass credentials : {}", &err);
+                Err(tonic::Status::internal("couldn't add credentials"))
+            }
         }
-
-        let SettingReply { status } =
-            conn.0.clone().set(req).await?.into_inner();
-
-        Ok(status
-            .iter()
-            .map(|v| v.facility_code + v.status_code * 256)
-            .collect())
     } else {
         Err(tonic::Status::internal("not authorized"))
     }
