@@ -336,14 +336,14 @@ and this parameter will be removed."]
 // specification.
 
 fn strip_event(drf: &str) -> &str {
-    &drf[0..drf.find('@').unwrap_or(drf.len())]
+    &drf[0..drf.find('@').unwrap_or(drf.len())].trim_end()
 }
 
 // Returns the portion of the DRF string that precedes any source
 // specification.
 
 fn strip_source(drf: &str) -> &str {
-    &drf[0..drf.find('<').unwrap_or(drf.len())]
+    &drf[0..drf.find('<').unwrap_or(drf.len())].trim_end()
 }
 
 // Adds an event specification to a device name to create a DRF specification.
@@ -948,9 +948,11 @@ mod test {
 
         assert_eq!(strip_event("abc"), "abc");
         assert_eq!(strip_event("abc@e,23"), "abc");
+        assert_eq!(strip_event("abc @e,23"), "abc");
 
         assert_eq!(strip_event(""), "");
         assert_eq!(strip_event("@"), "");
+        assert_eq!(strip_event(" @"), "");
     }
 
     #[test]
@@ -960,10 +962,13 @@ mod test {
         assert_eq!(strip_source("abc"), "abc");
         assert_eq!(strip_source("abc@e,23"), "abc@e,23");
         assert_eq!(strip_source("abc<-JUNK"), "abc");
+        assert_eq!(strip_source("abc <-JUNK"), "abc");
         assert_eq!(strip_source("abc@e,23<-JUNK"), "abc@e,23");
+        assert_eq!(strip_source("abc@e,23 <-JUNK"), "abc@e,23");
 
         assert_eq!(strip_source(""), "");
         assert_eq!(strip_source("<"), "");
+        assert_eq!(strip_source(" <"), "");
         assert_eq!(strip_source("abc@e,23<-JUNK<-MOREJUNK"), "abc@e,23");
     }
 
