@@ -346,6 +346,13 @@ fn strip_source(drf: &str) -> &str {
     &drf[0..drf.find('<').unwrap_or(drf.len())].trim_end()
 }
 
+// Returns the device name but stripping off any trailing DRF fields. This is
+// a weak form of extracting; we should really have a DRF parser.
+
+fn device_name(drf: &str) -> &str {
+    &drf[0..drf.find(['[', '@', '<']).unwrap_or(drf.len())].trim_end()
+}
+
 // Adds an event specification to a device name to create a DRF specification.
 // If the `event` parameter is `None`, the `delay` parameter represents the
 // periodic sample time, in microseconds. If an event is specified, the delay
@@ -428,9 +435,21 @@ impl<'ctx> ACSysSubscriptions {
     ) -> Result<DataStream> {
         use tokio_stream::StreamExt;
 
+        // If the device has a subscript, then the client wants archived
+        // data for an array device. Due to quirks in the array data
+        // logger, we can't specify the subscript or event.
+
+        let device = if device.find('[').is_some() {
+            device_name(device)
+        } else {
+            strip_source(device)
+        };
+
+        // Build the DRF string needed for the archived data.
+
         let drf = format!(
             "{}<-LOGGER:{}:{}",
-            strip_source(device),
+            device,
             (start_time * 1_000.0) as u128,
             (end_time * 1_000.0) as u128
         );
@@ -970,6 +989,18 @@ mod test {
         assert_eq!(strip_source("<"), "");
         assert_eq!(strip_source(" <"), "");
         assert_eq!(strip_source("abc@e,23<-JUNK<-MOREJUNK"), "abc@e,23");
+        assert_eq!(strip_source("abc@e,23 <-JUNK<-MOREJUNK"), "abc@e,23");
+    }
+
+    #[test]
+    fn test_getting_device_name() {
+        use super::device_name;
+
+        assert_eq!(device_name("abc"), "abc");
+        assert_eq!(device_name("abc[]"), "abc");
+        assert_eq!(device_name("abc@e,2"), "abc");
+        assert_eq!(device_name("abc<-LOGGER"), "abc");
+        assert_eq!(device_name("abc.READING"), "abc.READING");
     }
 
     #[test]
