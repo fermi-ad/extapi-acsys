@@ -13,7 +13,7 @@ pub mod proto {
     }
 }
 
-const URL: &str = "http://unknown.fnal.gov:50051/";
+const URL: &str = "http://10.200.24.116:9090/";
 
 // Local helper function to get a connection to the gRPC service.
 
