@@ -26,7 +26,8 @@ mod xform;
 // Generic function which adds `AuthInfo` to the context. This
 // function can be used for all the GraphQL schemas.
 
-#[instrument(name = "GRAPHQL", skip(schema, req, headers))]
+#[instrument(name = "GRAPHQL", skip(schema, req, headers),
+	     fields(who = tracing::field::Empty))]
 async fn graphql_handler<Q, M, S>(
     State(schema): State<Schema<Q, M, S>>, headers: HeaderMap,
     req: GraphQLRequest,
