@@ -350,7 +350,7 @@ fn strip_source(drf: &str) -> &str {
 // a weak form of extracting; we should really have a DRF parser.
 
 fn device_name(drf: &str) -> &str {
-    drf[0..drf.find(['[', '@', '<']).unwrap_or(drf.len())].trim_end()
+    drf[0..drf.find(['@', '<']).unwrap_or(drf.len())].trim_end()
 }
 
 // Adds an event specification to a device name to create a DRF specification.
@@ -999,7 +999,7 @@ mod test {
         use super::device_name;
 
         assert_eq!(device_name("abc"), "abc");
-        assert_eq!(device_name("abc[]"), "abc");
+        assert_eq!(device_name("abc[]"), "abc[]");
         assert_eq!(device_name("abc@e,2"), "abc");
         assert_eq!(device_name("abc<-LOGGER"), "abc");
         assert_eq!(device_name("abc.READING"), "abc.READING");
