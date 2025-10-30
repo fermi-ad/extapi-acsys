@@ -930,6 +930,8 @@ correlated, all the devices are collected on the same event."]
         )]
         _x_max: Option<f64>,
         start_time: Option<f64>, end_time: Option<f64>,
+	_sample_on_event: Option<u8>,
+	_ch_x_axis: Option<String>
     ) -> Result<PlotStream> {
         // Add the periodic rate to each of the device names after stripping
         // any event specifier.

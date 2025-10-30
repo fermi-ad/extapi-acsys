@@ -87,4 +87,6 @@ pub struct PlotConfigurationSnapshot {
 	     will return waveforms until the client cancels the subscription."]
     pub n_acquisitions: Option<usize>,
     pub tclk_event: Option<u8>,
+    pub sample_on_event: Option<String>,
+    pub x_axis: Option<String>,
 }
