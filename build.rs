@@ -23,13 +23,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tonic_prost_build::configure()
         .build_client(true)
         .build_server(false)
-	.emit_rerun_if_changed(true)
+        .emit_rerun_if_changed(true)
         .compile_protos(&["src/g_rpc/xform/XForm.proto"], &incl)?;
 
     tonic_prost_build::configure()
         .build_client(true)
         .build_server(false)
-	.emit_rerun_if_changed(true)
+        .emit_rerun_if_changed(true)
         .compile_protos(&["src/g_rpc/wscan/WScan.proto"], &incl)?;
 
     tonic_prost_build::configure()
