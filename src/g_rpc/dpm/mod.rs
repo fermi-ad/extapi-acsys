@@ -48,7 +48,7 @@ pub async fn acquire_devices(
         }
     }
 
-    match timeout(Duration::from_secs(2), conn.0.clone().read(req)).await {
+    match timeout(Duration::from_secs(10), conn.0.clone().read(req)).await {
         Ok(response) => {
             if let Err(ref e) = response {
                 error!("error creating stream : {}", &e)
