@@ -5,7 +5,7 @@ FROM adregistry.fnal.gov/dev-containers/rust:1.90.0 AS builder
 
 WORKDIR /app
 COPY . .
-RUN umask 777 && cargo build --release
+RUN umask 000 && cargo build --release
 
 # ------------------------
 # RUN
