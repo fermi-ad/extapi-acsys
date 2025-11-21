@@ -1,9 +1,7 @@
 # ------------------------
 # BUILD
 # ------------------------
-FROM rust:1.87-slim as builder
-
-RUN apt-get update && apt-get install -y protobuf-compiler
+FROM adregistry.fnal.gov/dev-containers/rust:1.90.0 AS builder
 
 WORKDIR /app
 COPY . .
