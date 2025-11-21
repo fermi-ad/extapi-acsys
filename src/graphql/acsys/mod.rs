@@ -336,21 +336,21 @@ and this parameter will be removed."]
 // specification.
 
 fn strip_event(drf: &str) -> &str {
-    &drf[0..drf.find('@').unwrap_or(drf.len())].trim_end()
+    drf[0..drf.find('@').unwrap_or(drf.len())].trim_end()
 }
 
 // Returns the portion of the DRF string that precedes any source
 // specification.
 
 fn strip_source(drf: &str) -> &str {
-    &drf[0..drf.find('<').unwrap_or(drf.len())].trim_end()
+    drf[0..drf.find('<').unwrap_or(drf.len())].trim_end()
 }
 
 // Returns the device name but stripping off any trailing DRF fields. This is
 // a weak form of extracting; we should really have a DRF parser.
 
 fn device_name(drf: &str) -> &str {
-    &drf[0..drf.find(['[', '@', '<']).unwrap_or(drf.len())].trim_end()
+    drf[0..drf.find(['[', '@', '<']).unwrap_or(drf.len())].trim_end()
 }
 
 // Adds an event specification to a device name to create a DRF specification.
@@ -378,6 +378,11 @@ fn add_event(
 
 type DataStream = Pin<Box<dyn Stream<Item = global::DataReply> + Send>>;
 type PlotStream = Pin<Box<dyn Stream<Item = types::PlotReplyData> + Send>>;
+
+struct TimeBounds {
+    pub end: Option<f64>,
+    pub start: Option<f64>,
+}
 
 #[derive(Default)]
 pub struct ACSysSubscriptions;
@@ -475,12 +480,10 @@ impl<'ctx> ACSysSubscriptions {
     }
 
     // A helper method to handle plots that request continuous data.
-
     async fn handle_continuous(
         &self, ctxt: &Context<'ctx>, drfs: Vec<String>,
         _window_size: Option<usize>, n_acquisitions: Option<usize>,
-        _x_min: Option<f64>, _x_max: Option<f64>, start_time: Option<f64>,
-        end_time: Option<f64>,
+        time_bounds: TimeBounds,
     ) -> Result<PlotStream> {
         let now = now();
         let mut reply = types::PlotReplyData {
@@ -502,8 +505,8 @@ impl<'ctx> ACSysSubscriptions {
             .accelerator_data(
                 ctxt,
                 drfs.clone(),
-                start_time,
-                end_time,
+                time_bounds.start,
+                time_bounds.end,
                 Some(false),
             )
             .await?;
@@ -873,6 +876,7 @@ live data."]
         ))
     }
 
+    #[allow(clippy::too_many_arguments)]
     #[doc = "Retrieve correlated plot data.
 
 This query sets up a request which returns a stream of data, presumably \
@@ -918,15 +922,13 @@ correlated, all the devices are collected on the same event."]
         )]
         trigger_event: Option<u8>,
         #[graphql(
-            desc = "Minimum timestamp. All data before this timestamp will be \
-		    filtered from the result set."
+            desc = "Minimum timestamp. DEPRECATED: This does nothing. Still in spec for backwards compatibility. "
         )]
-        x_min: Option<f64>,
+        _x_min: Option<f64>,
         #[graphql(
-            desc = "Maximum timestamp. All data after this timestamp will be \
-		    filtered from the result set."
+            desc = "Maximum timestamp. DEPRECATED: This does nothing. Still in spec for backwards compatibility. "
         )]
-        x_max: Option<f64>,
+        _x_max: Option<f64>,
         start_time: Option<f64>, end_time: Option<f64>,
     ) -> Result<PlotStream> {
         // Add the periodic rate to each of the device names after stripping
@@ -947,10 +949,10 @@ correlated, all the devices are collected on the same event."]
                 drfs,
                 window_size,
                 n_acquisitions,
-                x_min,
-                x_max,
-                start_time,
-                end_time,
+                TimeBounds {
+                    start: start_time,
+                    end: end_time,
+                },
             )
             .await
         }

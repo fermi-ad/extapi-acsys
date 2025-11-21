@@ -1,6 +1,6 @@
 use crate::g_rpc::devdb;
 
-use async_graphql::*;
+use async_graphql::Object;
 use tokio::time::Instant;
 use tracing::info;
 

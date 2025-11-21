@@ -1,9 +1,10 @@
-use async_graphql::*;
+use async_graphql::{ComplexObject, Interface, SimpleObject, Union};
 
 // Pull in global types.
 
 use crate::graphql::types as global;
 
+#[allow(clippy::duplicated_attributes)] // Needed to stop flagging false positive in `ty` attributes
 #[doc = "Common set of attributes for reading and setting properties."]
 #[derive(Interface)]
 #[graphql(
@@ -300,6 +301,7 @@ pub struct DeviceInfo {
     pub dig_status: Option<DigStatus>,
 }
 
+#[allow(clippy::large_enum_variant)]
 #[doc = "The result of the device info query. It can return device \
 	 information or an error message describing why information \
 	 wasn't returned."]

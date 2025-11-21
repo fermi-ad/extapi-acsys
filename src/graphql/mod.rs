@@ -14,14 +14,13 @@ use tracing::{info, instrument};
 use crate::g_rpc::dpm::build_connection;
 
 mod acsys;
+mod alarms;
 mod bbm;
-mod clock;
 mod devdb;
 mod faas;
 mod scanner;
 mod tlg;
 mod types;
-mod xform;
 
 // Generic function which adds `AuthInfo` to the context. This
 // function can be used for all the GraphQL schemas.
@@ -97,6 +96,33 @@ async fn create_acsys_router() -> Router {
             .finish(),
     );
 
+    Router::new()
+        .route(
+            Q_ENDPOINT,
+            get(graphiql)
+                .post(graphql_handler)
+                .with_state(schema.clone()),
+        )
+        .route_service(S_ENDPOINT, GraphQLSubscription::new(schema))
+}
+
+fn create_alarms_router() -> Router {
+    const Q_ENDPOINT: &str = "/alarms";
+    const S_ENDPOINT: &str = "/alarms/s";
+
+    let schema = Schema::build(
+        alarms::AlarmsQueries,
+        EmptyMutation,
+        alarms::AlarmsSubscriptions,
+    )
+    .data(alarms::get_alarms_subscriber())
+    .finish();
+    let graphiql = axum::response::Html(
+        async_graphql::http::GraphiQLSource::build()
+            .endpoint(Q_ENDPOINT)
+            .subscription_endpoint(S_ENDPOINT)
+            .finish(),
+    );
     Router::new()
         .route(
             Q_ENDPOINT,
@@ -234,6 +260,7 @@ async fn create_site() -> Router {
     Router::new()
         .route("/", get(base_page))
         .merge(create_acsys_router().await)
+        .merge(create_alarms_router())
         .merge(create_bbm_router())
         .merge(create_devdb_router())
         .merge(create_faas_router())

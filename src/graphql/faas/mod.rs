@@ -1,5 +1,5 @@
 use async_graphql::*;
-use tracing::{info, instrument};
+use tracing::instrument;
 
 const CLINK_OFFSET: u64 = (24 * 365 * 2 + 6) * 60 * 60;
 

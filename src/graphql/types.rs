@@ -1,14 +1,8 @@
 use async_graphql::*;
 use chrono::*;
-use serde::Deserialize;
 
 #[derive(Debug)]
 pub struct AuthInfo(Option<String>);
-
-#[derive(Deserialize)]
-struct Claims {
-    sub: String,
-}
 
 impl AuthInfo {
     pub fn new(info: &Option<String>) -> Self {
