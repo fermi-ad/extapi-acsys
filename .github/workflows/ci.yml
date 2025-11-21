@@ -9,7 +9,7 @@ env:
 
 jobs:
   check:
-    uses: fermi-ad/.github/.github/workflows/rust-integration.yaml@95d2feab90f427f3d40df3b471f4609fd4676efa
+    uses: fermi-ad/.github/.github/workflows/rust-integration.yaml@2542b872bebffdb72fa0f246eeb1640b6a5b7e0c
     secrets: inherit
     permissions:
       contents: write
