@@ -20,9 +20,8 @@ jobs:
           images: adregistry.fnal.gov/applications/extapi-acsys
           tags: |
             # This is the default tag for the last commit of the default branch
-            type=edge
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=${{ github.run_number }},enable={{is_default_branch}}
+            type=raw,value=test_branch,enable=false
+            type=raw,value=${{ github.run_number }},enable=false
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
