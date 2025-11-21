@@ -11,7 +11,7 @@ pub struct TlgQueries;
 
 #[Object]
 impl TlgQueries {
-    #[doc = ""]
+    #[doc = "Returns the version of the TLG service"]
     async fn get_version(&self) -> String {
         tlg::get_version().await.unwrap()
     }
@@ -22,7 +22,7 @@ pub struct TlgMutations;
 
 #[Object]
 impl TlgMutations {
-    #[doc = ""]
+    #[doc = "Returns the diagnostics of the requested devices"]
     async fn diagnostics_inline(
         &self, devices: types::TlgDevices,
     ) -> types::TlgPlacementResponse {
@@ -35,7 +35,7 @@ impl TlgMutations {
         }
     }
 
-    #[doc = ""]
+    #[doc = "Returns the placement of the requested devices"]
     async fn placement_inline(
         &self, devices: types::TlgDevices,
     ) -> types::TlgPlacementResponse {

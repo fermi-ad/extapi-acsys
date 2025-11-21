@@ -2,6 +2,7 @@ use tracing::{info, Level};
 
 mod g_rpc;
 mod graphql;
+mod pubsub;
 
 #[tokio::main]
 async fn main() {
