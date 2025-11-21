@@ -5,7 +5,7 @@ FROM adregistry.fnal.gov/dev-containers/rust:1.90.0 AS builder
 
 WORKDIR /app
 COPY . .
-RUN cargo build --release
+RUN chmod -R 700 ~/.cargo && cargo build --release
 
 # ------------------------
 # RUN
