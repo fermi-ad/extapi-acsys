@@ -1,7 +1,7 @@
 use async_graphql::{Context, Error, Object, Subscription};
 use tokio_stream::wrappers::BroadcastStream;
 
-use crate::pubsub::Subscriber;
+use crate::pubsub::{Snapshot, Subscriber};
 
 const ALARMS_KAFKA_TOPIC: &str = "ACsys";
 pub fn get_alarms_subscriber() -> Option<Subscriber> {
@@ -15,7 +15,10 @@ impl AlarmsQueries {
     async fn alarms_snapshot(
         &self, _ctxt: &Context<'_>,
     ) -> Result<Vec<String>, Error> {
-        Ok(Vec::new())
+        match Snapshot::for_topic(String::from(ALARMS_KAFKA_TOPIC)) {
+            Ok(snapshot) => Ok(snapshot.data),
+            Err(err) => Err(Error::new(format!("{}", err))),
+        }
     }
 }
 
@@ -37,10 +40,43 @@ impl<'ctx> AlarmsSubscriptions {
 
 #[cfg(test)]
 mod tests {
+    use crate::pubsub::PubSubError;
+
     use super::*;
     use async_graphql::{EmptyMutation, Response, Schema};
     use futures::StreamExt;
     use std::env;
+
+    #[tokio::test]
+    async fn get_alarms_snapshot_returns_err_when_bad_address() {
+        unsafe {
+            env::set_var("KAFKA_HOST_ADDR", "fake value");
+        }
+        let schema =
+            Schema::build(AlarmsQueries, EmptyMutation, AlarmsSubscriptions)
+                .finish();
+        let result = schema
+            .execute(
+                r#"
+            query Alarms {
+                alarmsSnapshot
+            }
+        "#,
+            )
+            .await;
+        unsafe {
+            env::remove_var("KAFKA_HOST_ADDR");
+        }
+        assert_eq!(result.errors.len(), 1);
+        match result.errors.first() {
+            Some(err) => {
+                assert_eq!(err.message, format!("{}", PubSubError::default()))
+            }
+            None => {
+                panic!("Err length was 1, but first() returned None")
+            }
+        };
+    }
 
     #[test]
     fn get_alarms_subscriber_returns_none_when_bad_address() {
