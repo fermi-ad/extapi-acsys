@@ -26,8 +26,8 @@ const DEFAULT_DPM_PORT: &str = "50051";
 // same connection.
 
 pub async fn build_connection() -> Result<Connection, Error> {
-    let host = env_var::get(DPM_HOST).as_str_or(DEFAULT_DPM_HOST);
-    let port = env_var::get(DPM_PORT).as_str_or(DEFAULT_DPM_PORT);
+    let host = env_var::get(DPM_HOST).into_str_or(DEFAULT_DPM_HOST);
+    let port = env_var::get(DPM_PORT).into_str_or(DEFAULT_DPM_PORT);
     let address = format!("http://{}:{}", host, port);
 
     Ok(Connection(DaqClient::connect(address).await?))

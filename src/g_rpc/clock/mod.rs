@@ -13,8 +13,8 @@ const DEFAULT_CLOCK_PORT: &str = "6803";
 pub async fn subscribe(
     events: &[i32],
 ) -> Result<tonic::Response<tonic::Streaming<EventInfo>>, tonic::Status> {
-    let host = env_var::get(CLOCK_HOST).as_str_or(DEFAULT_CLOCK_HOST);
-    let port = env_var::get(CLOCK_PORT).as_str_or(DEFAULT_CLOCK_PORT);
+    let host = env_var::get(CLOCK_HOST).into_str_or(DEFAULT_CLOCK_HOST);
+    let port = env_var::get(CLOCK_PORT).into_str_or(DEFAULT_CLOCK_PORT);
     let address = format!("http://{}:{}", host, port);
     match ClockEventClient::connect(address).await {
         Ok(mut client) => {

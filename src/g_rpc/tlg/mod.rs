@@ -21,8 +21,8 @@ const TLG_PORT: &str = "TLG_GRPC_PORT";
 const DEFAULT_TLG_PORT: &str = "9090";
 
 fn build_address() -> String {
-    let host = env_var::get(TLG_HOST).as_str_or(DEFAULT_TLG_HOST);
-    let port = env_var::get(TLG_PORT).as_str_or(DEFAULT_TLG_PORT);
+    let host = env_var::get(TLG_HOST).into_str_or(DEFAULT_TLG_HOST);
+    let port = env_var::get(TLG_PORT).into_str_or(DEFAULT_TLG_PORT);
     format!("http://{}:{}", host, port)
 }
 

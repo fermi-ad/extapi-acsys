@@ -6,16 +6,16 @@ pub struct EnvVal {
     result: Result<String, VarError>,
 }
 impl EnvVal {
-    pub fn as_str_or(self, default: &str) -> String {
+    pub fn into_str_or(self, default: &str) -> String {
         self.result.unwrap_or_else(|err| {
             warn!("{}. Using default: {}", err, default);
             default.to_string()
         })
     }
 
-    pub fn as_u16_or(self, default: u16) -> u16 {
+    pub fn into_u16_or(self, default: u16) -> u16 {
         match self.result {
-            Ok(val) => match u16::from_str_radix(&val, 10) {
+            Ok(val) => match val.parse::<u16>() {
                 Ok(parsed) => parsed,
                 Err(err) => {
                     error!("Could not read the value for {}. {}. Using default: {}", self.var_name, err, default);

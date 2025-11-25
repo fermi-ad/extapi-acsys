@@ -298,7 +298,7 @@ pub async fn start_service() {
     // Define the binding address for the web service. The address is
     // different between the operational and development versions.
 
-    let port = env_var::get(GQL_PORT).as_u16_or(DEFAULT_GQL_PORT);
+    let port = env_var::get(GQL_PORT).into_u16_or(DEFAULT_GQL_PORT);
     let bind_addr: SocketAddr =
         SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), port));
 

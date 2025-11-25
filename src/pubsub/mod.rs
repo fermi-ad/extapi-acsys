@@ -71,8 +71,8 @@ const DEFAULT_KAFKA_HOST: &str = "acsys-services.fnal.gov";
 const KAFKA_PORT: &str = "KAFKA_PORT";
 const DEFAULT_KAFKA_PORT: &str = "9092";
 fn get_consumer(topic: String) -> Result<Consumer, PubSubError> {
-    let host = env_var::get(KAFKA_HOST).as_str_or(DEFAULT_KAFKA_HOST);
-    let port = env_var::get(KAFKA_PORT).as_str_or(DEFAULT_KAFKA_PORT);
+    let host = env_var::get(KAFKA_HOST).into_str_or(DEFAULT_KAFKA_HOST);
+    let port = env_var::get(KAFKA_PORT).into_str_or(DEFAULT_KAFKA_PORT);
     let addr = format!("{}:{}", host, port);
     Consumer::from_hosts(vec![addr])
         .with_topic(topic)

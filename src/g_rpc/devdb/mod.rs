@@ -15,8 +15,8 @@ const DEFAULT_DEVDB_PORT: &str = "6802";
 pub async fn get_device_info(
     device: &[String],
 ) -> Result<tonic::Response<proto::DeviceInfoReply>, tonic::Status> {
-    let host = env_var::get(DEVDB_HOST).as_str_or(DEFAULT_DEVDB_HOST);
-    let port = env_var::get(DEVDB_PORT).as_str_or(DEFAULT_DEVDB_PORT);
+    let host = env_var::get(DEVDB_HOST).into_str_or(DEFAULT_DEVDB_HOST);
+    let port = env_var::get(DEVDB_PORT).into_str_or(DEFAULT_DEVDB_PORT);
     let address = format!("http://{}:{}", host, port);
     match DevDbClient::connect(address).await {
         Ok(mut client) => {

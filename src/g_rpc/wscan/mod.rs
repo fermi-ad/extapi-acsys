@@ -24,9 +24,9 @@ const DEFAULT_WIRE_SCANNER_PORT: &str = "50051";
 
 async fn get_client() -> Result<ScannerClient<transport::Channel>, Status> {
     let host =
-        env_var::get(WIRE_SCANNER_HOST).as_str_or(DEFAULT_WIRE_SCANNER_HOST);
+        env_var::get(WIRE_SCANNER_HOST).into_str_or(DEFAULT_WIRE_SCANNER_HOST);
     let port =
-        env_var::get(WIRE_SCANNER_PORT).as_str_or(DEFAULT_WIRE_SCANNER_PORT);
+        env_var::get(WIRE_SCANNER_PORT).into_str_or(DEFAULT_WIRE_SCANNER_PORT);
     let address = format!("http://{}:{}", host, port);
     ScannerClient::connect(address)
         .await
