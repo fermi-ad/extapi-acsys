@@ -12,12 +12,23 @@ pub mod proto {
     tonic::include_proto!("scanner");
 }
 
-const SCANNER_URL: &str = "http://unknown.fnal.gov:50051/";
+use crate::env_var;
+
+const WIRE_SCANNER_HOST: &str = "SCANNER_GRPC_HOST";
+const DEFAULT_WIRE_SCANNER_HOST: &str = "unknown.fnal.gov";
+
+const WIRE_SCANNER_PORT: &str = "SCANNER_GRPC_PORT";
+const DEFAULT_WIRE_SCANNER_PORT: &str = "50051";
 
 // Local helper function to get a connection to the gRPC service.
 
 async fn get_client() -> Result<ScannerClient<transport::Channel>, Status> {
-    ScannerClient::connect(SCANNER_URL)
+    let host =
+        env_var::get(WIRE_SCANNER_HOST).as_str_or(DEFAULT_WIRE_SCANNER_HOST);
+    let port =
+        env_var::get(WIRE_SCANNER_PORT).as_str_or(DEFAULT_WIRE_SCANNER_PORT);
+    let address = format!("http://{}:{}", host, port);
+    ScannerClient::connect(address)
         .await
         .map_err(|_| Status::unavailable("wire-scanner service unavailable"))
 }

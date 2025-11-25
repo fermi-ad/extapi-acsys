@@ -1,11 +1,17 @@
 use async_graphql::{Context, Error, Object, Subscription};
 use tokio_stream::wrappers::BroadcastStream;
 
+use crate::env_var;
 use crate::pubsub::{Snapshot, Subscriber};
 
-const ALARMS_KAFKA_TOPIC: &str = "ACsys";
+const ALARMS_KAFKA_TOPIC: &str = "ALARMS_KAFKA_TOPIC";
+const DEFAULT_ALARMS_TOPIC: &str = "ACsys";
+fn get_topic() -> String {
+    env_var::get(ALARMS_KAFKA_TOPIC).as_str_or(DEFAULT_ALARMS_TOPIC)
+}
+
 pub fn get_alarms_subscriber() -> Option<Subscriber> {
-    Subscriber::for_topic(String::from(ALARMS_KAFKA_TOPIC)).ok()
+    Subscriber::for_topic(get_topic()).ok()
 }
 
 #[derive(Default)]
@@ -15,7 +21,7 @@ impl AlarmsQueries {
     async fn alarms_snapshot(
         &self, _ctxt: &Context<'_>,
     ) -> Result<Vec<String>, Error> {
-        match Snapshot::for_topic(String::from(ALARMS_KAFKA_TOPIC)) {
+        match Snapshot::for_topic(get_topic()) {
             Ok(snapshot) => Ok(snapshot.data),
             Err(err) => Err(Error::new(format!("{}", err))),
         }
@@ -50,7 +56,7 @@ mod tests {
     #[tokio::test]
     async fn get_alarms_snapshot_returns_err_when_bad_address() {
         unsafe {
-            env::set_var("KAFKA_HOST_ADDR", "fake value");
+            env::set_var("KAFKA_HOST", "fake value");
         }
         let schema =
             Schema::build(AlarmsQueries, EmptyMutation, AlarmsSubscriptions)
@@ -64,9 +70,6 @@ mod tests {
         "#,
             )
             .await;
-        unsafe {
-            env::remove_var("KAFKA_HOST_ADDR");
-        }
         assert_eq!(result.errors.len(), 1);
         match result.errors.first() {
             Some(err) => {
@@ -81,12 +84,9 @@ mod tests {
     #[test]
     fn get_alarms_subscriber_returns_none_when_bad_address() {
         unsafe {
-            env::set_var("KAFKA_HOST_ADDR", "fake value");
+            env::set_var("KAFKA_HOST", "fake value");
         }
         assert!(get_alarms_subscriber().is_none());
-        unsafe {
-            env::remove_var("KAFKA_HOST_ADDR");
-        }
     }
 
     #[tokio::test]

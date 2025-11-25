@@ -4,10 +4,21 @@ pub mod proto {
     tonic::include_proto!("devdb");
 }
 
+use crate::env_var;
+
+const DEVDB_HOST: &str = "DEVDB_GRPC_HOST";
+const DEFAULT_DEVDB_HOST: &str = "10.200.24.105";
+
+const DEVDB_PORT: &str = "DEVDB_GRPC_PORT";
+const DEFAULT_DEVDB_PORT: &str = "6802";
+
 pub async fn get_device_info(
     device: &[String],
 ) -> Result<tonic::Response<proto::DeviceInfoReply>, tonic::Status> {
-    match DevDbClient::connect("http://10.200.24.105:6802/").await {
+    let host = env_var::get(DEVDB_HOST).as_str_or(DEFAULT_DEVDB_HOST);
+    let port = env_var::get(DEVDB_PORT).as_str_or(DEFAULT_DEVDB_PORT);
+    let address = format!("http://{}:{}", host, port);
+    match DevDbClient::connect(address).await {
         Ok(mut client) => {
             let req = proto::DeviceList {
                 device: device.to_vec(),
