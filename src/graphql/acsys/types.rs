@@ -75,6 +75,7 @@ pub struct PlotConfigurationSnapshot {
     pub is_one_shot: bool,
     pub is_show_labels: bool,
     pub is_persistent: bool,
+    pub is_blink: bool,
     pub data_limit: usize,
     #[doc = "If `triggerEvent` is null, this parameter specifies the \
 	     delay, in milliseconds, between points in a waveform. If a \
