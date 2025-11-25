@@ -88,13 +88,23 @@ impl Snapshot {
         let mut consumer = get_consumer(topic)?;
         let mut data: Vec<String> = Vec::new();
 
-        match do_poll(&mut consumer, |msg: String| {
-            data.push(msg);
-            Result::<(), PubSubError>::Ok(())
-        }) {
-            Ok(_) => Ok(Self { data }),
-            Err(err) => Err(err),
+        let mut cur_size: usize = 0;
+        loop {
+            match do_poll(&mut consumer, |msg: String| {
+                data.push(msg);
+                Result::<(), PubSubError>::Ok(())
+            }) {
+                Ok(_) => {
+                    if cur_size < data.len() {
+                        cur_size = data.len();
+                    } else {
+                        break;
+                    }
+                }
+                Err(err) => return Err(err),
+            }
         }
+        Ok(Self { data })
     }
 }
 
