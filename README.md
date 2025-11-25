@@ -17,19 +17,12 @@ The middle layer of the control system uses gRPCs for communications. The GraphQ
 The following variables exist for configuring the service at runtime:
 - `ALARMS_KAFKA_TOPIC` -> Topic name for alarms in Kafka
 - `CLOCK_GRPC_HOST` -> Hostname for the clock gRPC service
-- `CLOCK_GRPC_PORT` -> Port for the clock gRPC service
 - `DEVDB_GRPC_HOST` -> Hostname for the DevDB gRPC service
-- `DEVDB_GRPC_PORT` -> Port for the DevDB gRPC service
 - `DPM_GRPC_HOST` -> Hostname for the DPM gRPC service
-- `DPM_GRPC_PORT` -> Port for the DPM gRPC service
-- `GRAPHQL_DEBUG_PORT` -> Port for the GraphQL service in debug mode
 - `GRAPHQL_PORT` -> Port for the GraphQL service
 - `KAFKA_HOST` -> Hostname for the Controls Kafka instance
-- `KAFKA_PORT` -> Port for the Controls Kafka instance
 - `SCANNER_GRPC_HOST` -> Hostname for the wire scanner gRPC service
-- `SCANNER_GRPC_PORT` -> Port for the wire scanner gRPC service
 - `TLG_GRPC_HOST` -> Hostname for the TLG gRPC service
-- `TLG_GRPC_PORT` -> Port for the TLG gRPC service
 
 
 ### Check out the project:

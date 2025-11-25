@@ -66,15 +66,10 @@ impl MessageJob {
 }
 
 const KAFKA_HOST: &str = "KAFKA_HOST";
-const DEFAULT_KAFKA_HOST: &str = "acsys-services.fnal.gov";
-
-const KAFKA_PORT: &str = "KAFKA_PORT";
-const DEFAULT_KAFKA_PORT: &str = "9092";
+const DEFAULT_KAFKA_HOST: &str = "acsys-services.fnal.gov:9092";
 fn get_consumer(topic: String) -> Result<Consumer, PubSubError> {
     let host = env_var::get(KAFKA_HOST).into_str_or(DEFAULT_KAFKA_HOST);
-    let port = env_var::get(KAFKA_PORT).into_str_or(DEFAULT_KAFKA_PORT);
-    let addr = format!("{}:{}", host, port);
-    Consumer::from_hosts(vec![addr])
+    Consumer::from_hosts(vec![host])
         .with_topic(topic)
         .with_fallback_offset(FetchOffset::Earliest)
         .with_offset_storage(Some(GroupOffsetStorage::Kafka))
@@ -193,9 +188,6 @@ mod tests {
         let err = result
             .expect_err("Expected the connection to fail, but it succeeded");
         assert_eq!(CANNED_ERR_MESSAGE, format!("{}", err));
-        unsafe {
-            env::remove_var(KAFKA_HOST);
-        }
     }
 
     #[test]
