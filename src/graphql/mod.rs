@@ -11,6 +11,7 @@ use axum::{
 };
 use tracing::{info, instrument};
 
+use crate::env_var;
 use crate::g_rpc::dpm::build_connection;
 
 mod acsys;
@@ -285,18 +286,21 @@ async fn create_site() -> Router {
 // configuration information from the submodules. All accesses are
 // wrapped with CORS support from the `warp` crate.
 
+const GQL_PORT: &str = "GRAPHQL_PORT";
+#[cfg(not(debug_assertions))]
+const DEFAULT_GQL_PORT: u16 = 8000;
+#[cfg(debug_assertions)]
+const DEFAULT_GQL_PORT: u16 = 8001;
+
 pub async fn start_service() {
     use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 
     // Define the binding address for the web service. The address is
     // different between the operational and development versions.
 
-    #[cfg(not(debug_assertions))]
-    const BIND_ADDR: SocketAddr =
-        SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 8000));
-    #[cfg(debug_assertions)]
-    const BIND_ADDR: SocketAddr =
-        SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 8001));
+    let port = env_var::get(GQL_PORT).into_u16_or(DEFAULT_GQL_PORT);
+    let bind_addr: SocketAddr =
+        SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), port));
 
     // Load TLS certificate information. If there's an error, we panic.
 
@@ -317,7 +321,7 @@ pub async fn start_service() {
 
     // Start the server.
 
-    axum_server::tls_rustls::bind_rustls(BIND_ADDR, config)
+    axum_server::tls_rustls::bind_rustls(bind_addr, config)
         .serve(app.into_make_service())
         .await
         .unwrap();

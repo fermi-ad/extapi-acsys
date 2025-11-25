@@ -2,10 +2,16 @@ use crate::g_rpc::proto::services::aclk::{
     clock_event_client::ClockEventClient, EventInfo, SubscribeReq,
 };
 
+use crate::env_var;
+
+const CLOCK_HOST: &str = "CLOCK_GRPC_HOST";
+const DEFAULT_CLOCK_HOST: &str = "http://clx76.fnal.gov:6803";
+
 pub async fn subscribe(
     events: &[i32],
 ) -> Result<tonic::Response<tonic::Streaming<EventInfo>>, tonic::Status> {
-    match ClockEventClient::connect("http://clx76.fnal.gov:6803/").await {
+    let host = env_var::get(CLOCK_HOST).into_str_or(DEFAULT_CLOCK_HOST);
+    match ClockEventClient::connect(host).await {
         Ok(mut client) => {
             let req = SubscribeReq {
                 events: events.to_vec(),
