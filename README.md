@@ -19,7 +19,7 @@ The following variables exist for configuring the service at runtime:
 - `CLOCK_GRPC_HOST` -> Hostname for the clock gRPC service
 - `DEVDB_GRPC_HOST` -> Hostname for the DevDB gRPC service
 - `DPM_GRPC_HOST` -> Hostname for the DPM gRPC service
-- `GRAPHQL_PORT` -> Port for the GraphQL service
+- `GRAPHQL_PORT` -> Port for clients to connect via GraphQL to this service
 - `KAFKA_HOST` -> Hostname for the Controls Kafka instance
 - `SCANNER_GRPC_HOST` -> Hostname for the wire scanner gRPC service
 - `TLG_GRPC_HOST` -> Hostname for the TLG gRPC service
