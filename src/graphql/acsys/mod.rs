@@ -4,7 +4,6 @@ use crate::g_rpc::{
 };
 
 use async_graphql::*;
-use chrono::{DateTime, Utc};
 use futures::future;
 use futures_util::{Stream, StreamExt};
 use std::{collections::HashSet, pin::Pin, sync::Arc};
@@ -111,7 +110,7 @@ impl ACSysQueries {
 
 Depending upon the event in the DRF string, the data may come back \
 immediately or after a delay."]
-    #[instrument(skip(self, ctxt, device_list, _when))]
+    #[instrument(skip(self, ctxt, device_list))]
     async fn accelerator_data(
         &self, ctxt: &Context<'_>,
         #[graphql(
@@ -119,12 +118,6 @@ immediately or after a delay."]
 		    in the same order as specified in this array."
         )]
         device_list: Vec<String>,
-        #[graphql(
-            desc = "Returns device values at or before this timestamp. If \
-		    this parameter is `null`, then the current, live value \
-		    is returned. NOTE: THIS FEATURE HAS NOT BEEN ADDED YET."
-        )]
-        _when: Option<DateTime<Utc>>,
     ) -> Result<Vec<global::DataReply>> {
         // Strip any event designation and append the once-immediate.
 

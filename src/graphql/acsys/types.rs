@@ -65,7 +65,7 @@ pub enum AcquisitionMode {
     OneShotTriggeredOnEvent,
     RepetitivePeriodic,
     RepetitiveTriggeredOnEvent,
-    SampleOnEvent
+    SampleOnEvent,
 }
 
 #[derive(InputObject, SimpleObject, Debug, Clone, Default)]
