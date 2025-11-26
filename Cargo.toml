@@ -61,3 +61,6 @@ incremental = false
 debug = 1
 opt-level = 2
 lto = false
+
+[lints.clippy]
+enum_variant_names = "allow"

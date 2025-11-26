@@ -12,8 +12,10 @@ pub struct TlgQueries;
 #[Object]
 impl TlgQueries {
     #[doc = "Returns the version of the TLG service"]
-    async fn get_version(&self) -> String {
-        tlg::get_version().await.unwrap()
+    async fn get_version(&self) -> Result<String> {
+        tlg::get_version()
+            .await
+            .map_err(|e| Error::new(format!("{:?}", e)))
     }
 }
 
@@ -25,12 +27,14 @@ impl TlgMutations {
     #[doc = "Returns the diagnostics of the requested devices"]
     async fn diagnostics_inline(
         &self, devices: types::TlgDevices,
-    ) -> types::TlgPlacementResponse {
+    ) -> Result<types::TlgPlacementResponse> {
         match tlg::diagnostics(devices.into()).await {
-            Ok(resp) => resp.into(),
+            Ok(resp) => Ok(resp.into()),
             Err(e) => {
-                error!("diag err -- {}", e);
-                todo!()
+                let msg = format!("{:?}", e);
+
+                error!("{}", &msg);
+                Err(Error::new(msg))
             }
         }
     }
@@ -38,12 +42,14 @@ impl TlgMutations {
     #[doc = "Returns the placement of the requested devices"]
     async fn placement_inline(
         &self, devices: types::TlgDevices,
-    ) -> types::TlgPlacementResponse {
+    ) -> Result<types::TlgPlacementResponse> {
         match tlg::placement(devices.into()).await {
-            Ok(resp) => resp.into(),
+            Ok(resp) => Ok(resp.into()),
             Err(e) => {
-                error!("place err -- {}", e);
-                todo!()
+                let msg = format!("{:?}", e);
+
+                error!("{}", &msg);
+                Err(Error::new(msg))
             }
         }
     }

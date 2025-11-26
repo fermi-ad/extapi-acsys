@@ -8,10 +8,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_client(true)
         .build_server(false)
         .out_dir("src/g_rpc/generated")
+	.emit_rerun_if_changed(true)
         .compile_protos(
             &[
                 "src/g_rpc/protos/proto/controls/service/DAQ/v1/DAQ.proto",
                 "src/g_rpc/protos/proto/controls/service/ACLK/v1/ACLK.proto",
+		"src/g_rpc/protos/proto/controls/service/TlgPlacement/v1/TlgPlacement.proto",
                 "src/g_rpc/protos/proto/controls/common/v1/status.proto",
                 "src/g_rpc/protos/proto/controls/third-party/interval.proto",
             ],
@@ -21,6 +23,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tonic_prost_build::configure()
         .build_client(true)
         .build_server(false)
+        .emit_rerun_if_changed(true)
         .compile_protos(&["src/g_rpc/wscan/WScan.proto"], &incl)?;
 
     tonic_prost_build::configure()
@@ -32,15 +35,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "#[allow(clippy::large_enum_variant)]",
         )
         .compile_protos(&["src/g_rpc/devdb/DevDB.proto"], &incl)?;
-
-    tonic_prost_build::configure()
-        .build_client(true)
-        .build_server(false)
-        .out_dir("src/g_rpc/generated")
-        .compile_protos(
-            &["proto/controls/service/TlgPlacement/v1/TlgPlacement.proto"],
-            &["src/g_rpc/protos"],
-        )?;
 
     Ok(())
 }
