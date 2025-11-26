@@ -48,6 +48,10 @@ pub async fn acquire_devices(
         }
     }
 
+    // XXX: This 10 second timeout is excessive. While we learn more about
+    // GraphQL and gRPCs, we stretched this so that we're not competing
+    // with DPM's timeouts.
+
     match timeout(Duration::from_secs(10), conn.0.clone().read(req)).await {
         Ok(response) => {
             if let Err(ref e) = response {
