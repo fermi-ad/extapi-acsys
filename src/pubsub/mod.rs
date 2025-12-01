@@ -6,7 +6,7 @@ use kafka::{
 use std::{
     error::Error,
     fmt::{self, Debug},
-    sync::Arc,
+    sync::{mpsc, Arc},
     thread,
     time::Duration,
 };
@@ -69,15 +69,26 @@ const KAFKA_HOST: &str = "KAFKA_HOST";
 const DEFAULT_KAFKA_HOST: &str = "acsys-services.fnal.gov:9092";
 fn get_consumer(topic: String) -> Result<Consumer, PubSubError> {
     let host = env_var::get(KAFKA_HOST).into_str_or(DEFAULT_KAFKA_HOST);
-    Consumer::from_hosts(vec![host])
-        .with_topic(topic)
-        .with_fallback_offset(FetchOffset::Earliest)
-        .with_offset_storage(Some(GroupOffsetStorage::Kafka))
-        .create()
-        .map_err(|err| {
+    let (sender, receiver) = mpsc::channel();
+    let _ = thread::spawn(move || {
+        let consumer = Consumer::from_hosts(vec![host])
+            .with_topic(topic)
+            .with_fallback_offset(FetchOffset::Earliest)
+            .with_offset_storage(Some(GroupOffsetStorage::Kafka))
+            .create()
+            .map_err(|err| {
+                error!("{}", err);
+                PubSubError::default()
+            });
+        handle(sender.send(consumer));
+    });
+    match receiver.recv_timeout(Duration::from_secs(1)) {
+        Ok(result) => result,
+        Err(err) => {
             error!("{}", err);
-            PubSubError::default()
-        })
+            Err(PubSubError::default())
+        }
+    }
 }
 
 pub struct Snapshot {
@@ -171,7 +182,6 @@ impl std::error::Error for PubSubError {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::env;
 
     #[test]
     fn pubsub_error_display() {
@@ -181,9 +191,6 @@ mod tests {
 
     #[test]
     fn error_on_bad_subscriber_host() {
-        unsafe {
-            env::set_var(KAFKA_HOST, "bad_host");
-        }
         let result = Subscriber::for_topic(String::from("my_topic"));
         let err = result
             .expect_err("Expected the connection to fail, but it succeeded");
