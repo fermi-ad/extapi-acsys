@@ -23,7 +23,7 @@ const DEFAULT_DPM_HOST: &str = "http://dce07.fnal.gov:50051";
 // same connection.
 
 pub async fn build_connection() -> Result<Connection, Error> {
-    let host = env_var::get(DPM_HOST).into_str_or(DEFAULT_DPM_HOST);
+    let host = env_var::get(DPM_HOST).or(DEFAULT_DPM_HOST.to_owned());
 
     Ok(Connection(DaqClient::connect(host).await?))
 }

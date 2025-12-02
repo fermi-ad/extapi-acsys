@@ -7,7 +7,7 @@ use crate::pubsub::{Snapshot, Subscriber};
 const ALARMS_KAFKA_TOPIC: &str = "ALARMS_KAFKA_TOPIC";
 const DEFAULT_ALARMS_TOPIC: &str = "ACsys";
 fn get_topic() -> String {
-    env_var::get(ALARMS_KAFKA_TOPIC).into_str_or(DEFAULT_ALARMS_TOPIC)
+    env_var::get(ALARMS_KAFKA_TOPIC).or(DEFAULT_ALARMS_TOPIC.to_owned())
 }
 
 pub fn get_alarms_subscriber() -> Option<Subscriber> {
@@ -51,13 +51,9 @@ mod tests {
     use super::*;
     use async_graphql::{EmptyMutation, Response, Schema};
     use futures::StreamExt;
-    use std::env;
 
     #[tokio::test]
     async fn get_alarms_snapshot_returns_err_when_bad_address() {
-        unsafe {
-            env::set_var("KAFKA_HOST", "fake value");
-        }
         let schema =
             Schema::build(AlarmsQueries, EmptyMutation, AlarmsSubscriptions)
                 .finish();
@@ -83,9 +79,6 @@ mod tests {
 
     #[test]
     fn get_alarms_subscriber_returns_none_when_bad_address() {
-        unsafe {
-            env::set_var("KAFKA_HOST", "fake value");
-        }
         assert!(get_alarms_subscriber().is_none());
     }
 

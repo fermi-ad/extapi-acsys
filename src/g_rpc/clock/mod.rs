@@ -10,7 +10,7 @@ const DEFAULT_CLOCK_HOST: &str = "http://clx76.fnal.gov:6803";
 pub async fn subscribe(
     events: &[i32],
 ) -> Result<tonic::Response<tonic::Streaming<EventInfo>>, tonic::Status> {
-    let host = env_var::get(CLOCK_HOST).into_str_or(DEFAULT_CLOCK_HOST);
+    let host = env_var::get(CLOCK_HOST).or(DEFAULT_CLOCK_HOST.to_owned());
     match ClockEventClient::connect(host).await {
         Ok(mut client) => {
             let req = SubscribeReq {
