@@ -67,8 +67,10 @@ impl MessageJob {
 
 const KAFKA_HOST: &str = "KAFKA_HOST";
 const DEFAULT_KAFKA_HOST: &str = "acsys-services.fnal.gov:9092";
+const KAFKA_CONN_SECS: &str = "KAFKA_CONNECTION_SECONDS";
+const DEFAULT_CONN_TIME: u64 = 1;
 fn get_consumer(topic: String) -> Result<Consumer, PubSubError> {
-    let host = env_var::get(KAFKA_HOST).into_str_or(DEFAULT_KAFKA_HOST);
+    let host = env_var::get(KAFKA_HOST).or(DEFAULT_KAFKA_HOST.to_owned());
     let (sender, receiver) = mpsc::channel();
     let _ = thread::spawn(move || {
         let consumer = Consumer::from_hosts(vec![host])
@@ -82,7 +84,9 @@ fn get_consumer(topic: String) -> Result<Consumer, PubSubError> {
             });
         handle(sender.send(consumer));
     });
-    match receiver.recv_timeout(Duration::from_secs(1)) {
+    let connection_seconds =
+        env_var::get(KAFKA_CONN_SECS).or(DEFAULT_CONN_TIME);
+    match receiver.recv_timeout(Duration::from_secs(connection_seconds)) {
         Ok(result) => result,
         Err(err) => {
             error!("{}", err);

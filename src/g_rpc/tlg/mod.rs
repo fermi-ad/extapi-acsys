@@ -21,7 +21,7 @@ const DEFAULT_TLG_HOST: &str = "http://10.200.24.116:9090";
 
 async fn get_service_client(
 ) -> Result<TlgPlacementServiceClient<transport::Channel>, Status> {
-    let host = env_var::get(TLG_HOST).into_str_or(DEFAULT_TLG_HOST);
+    let host = env_var::get(TLG_HOST).or(DEFAULT_TLG_HOST.to_owned());
     TlgPlacementServiceClient::connect(host)
         .await
         .map_err(|_| Status::unavailable("TLG service unavailable"))
@@ -29,7 +29,7 @@ async fn get_service_client(
 
 async fn get_mutation_service_client(
 ) -> Result<TlgPlacementMutationServiceClient<transport::Channel>, Status> {
-    let host = env_var::get(TLG_HOST).into_str_or(DEFAULT_TLG_HOST);
+    let host = env_var::get(TLG_HOST).or(DEFAULT_TLG_HOST.to_owned());
     TlgPlacementMutationServiceClient::connect(host)
         .await
         .map_err(|_| Status::unavailable("TLG service unavailable"))

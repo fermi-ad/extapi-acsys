@@ -1,4 +1,8 @@
-use std::env::{self, VarError};
+use std::{
+    env::{self, VarError},
+    fmt::Display,
+    str::FromStr,
+};
 use tracing::{error, warn};
 
 pub struct EnvVal {
@@ -6,24 +10,19 @@ pub struct EnvVal {
     result: Result<String, VarError>,
 }
 impl EnvVal {
-    pub fn into_str_or(self, default: &str) -> String {
-        self.result.unwrap_or_else(|err| {
-            warn!("{}. Using default: {}", err, default);
-            default.to_string()
-        })
-    }
-
-    pub fn into_u16_or(self, default: u16) -> u16 {
+    pub fn or<T: FromStr + Display>(self, default: T) -> T {
         match self.result {
-            Ok(val) => match val.parse::<u16>() {
-                Ok(parsed) => parsed,
-                Err(err) => {
-                    error!("Could not read the value for {}. {}. Using default: {}", self.var_name, err, default);
-                    default
+            Ok(val) => {
+                match val.parse::<T>() {
+                    Ok(parsed) => parsed,
+                    Err(_) => {
+                        error!("Could not read the value for {}. Using default: {}", self.var_name, default);
+                        default
+                    }
                 }
-            },
+            }
             Err(err) => {
-                warn!("{}. Using default: {}", err, default);
+                warn!("{}: {}. Using default: {}", err, self.var_name, default);
                 default
             }
         }

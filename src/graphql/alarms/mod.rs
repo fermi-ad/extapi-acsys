@@ -7,7 +7,7 @@ use crate::pubsub::{Snapshot, Subscriber};
 const ALARMS_KAFKA_TOPIC: &str = "ALARMS_KAFKA_TOPIC";
 const DEFAULT_ALARMS_TOPIC: &str = "ACsys";
 fn get_topic() -> String {
-    env_var::get(ALARMS_KAFKA_TOPIC).into_str_or(DEFAULT_ALARMS_TOPIC)
+    env_var::get(ALARMS_KAFKA_TOPIC).or(DEFAULT_ALARMS_TOPIC.to_owned())
 }
 
 pub fn get_alarms_subscriber() -> Option<Subscriber> {
