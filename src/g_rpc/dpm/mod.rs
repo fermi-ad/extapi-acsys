@@ -5,6 +5,7 @@ use super::proto::{
         SettingReply,
     },
 };
+use crate::env_var;
 use tokio::time::{timeout, Duration};
 use tonic::transport::{Channel, Error};
 use tracing::{error, info, instrument, warn};
@@ -15,13 +16,16 @@ type TonicStreamResult<T> =
     Result<tonic::Response<tonic::Streaming<T>>, tonic::Status>;
 type TonicQueryResult<T> = Result<T, tonic::Status>;
 
+const DPM_HOST: &str = "DPM_GRPC_HOST";
+const DEFAULT_DPM_HOST: &str = "http://dce07.fnal.gov:50051";
+
 // Builds a sharable connection to the DPM pool. All instances will use the
 // same connection.
 
 pub async fn build_connection() -> Result<Connection, Error> {
-    const DPM: &'static str = "http://dce07.fnal.gov:50051/";
+    let host = env_var::get(DPM_HOST).or(DEFAULT_DPM_HOST.to_owned());
 
-    Ok(Connection(DaqClient::connect(DPM).await?))
+    Ok(Connection(DaqClient::connect(host).await?))
 }
 
 #[instrument(skip(conn, jwt, devices))]
@@ -44,7 +48,11 @@ pub async fn acquire_devices(
         }
     }
 
-    match timeout(Duration::from_secs(2), conn.0.clone().read(req)).await {
+    // XXX: This 10 second timeout is excessive. While we learn more about
+    // GraphQL and gRPCs, we stretched this so that we're not competing
+    // with DPM's timeouts.
+
+    match timeout(Duration::from_secs(10), conn.0.clone().read(req)).await {
         Ok(response) => {
             if let Err(ref e) = response {
                 error!("error creating stream : {}", &e)

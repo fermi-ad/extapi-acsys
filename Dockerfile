@@ -1,12 +1,10 @@
 # ------------------------
 # BUILD
 # ------------------------
-FROM rust:1.87-slim as builder
+FROM adregistry.fnal.gov/dev-containers/rust:1.90.0 AS builder
 
-RUN apt-get update && apt-get install -y protobuf-compiler
-
+COPY --chown=dev . /app/
 WORKDIR /app
-COPY . .
 RUN cargo build --release
 
 # ------------------------

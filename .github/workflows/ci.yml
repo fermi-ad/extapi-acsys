@@ -1,7 +1,6 @@
 name: Rust
 
 on:
-
   pull_request:
     branches: [ "main" ]
 
@@ -10,36 +9,10 @@ env:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v1
-        with:
-          version: '3.x'
-
-      - name: Set up cargo cache
-        uses: actions/cache@v3
-        continue-on-error: false
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/            
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
-
-      - name: Lint
-        run: |
-          cargo fmt --all -- --check
-          #cargo clippy -- -D warnings          
-
-      - name: Test
-        run: cargo test
-
+    uses: fermi-ad/.github/.github/workflows/rust-integration.yaml@b5db5a6894d0da9a2c5c490b73b2431182d95cc9
+    secrets: inherit
+    permissions:
+      contents: write
+      pull-requests: write
+    with:
+      pull-git-submodules: true

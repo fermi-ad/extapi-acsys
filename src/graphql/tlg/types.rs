@@ -8,7 +8,7 @@ pub struct TlgDevice {
     pub device: String,
     pub data: Vec<i32>,
 }
-
+#[allow(clippy::from_over_into)]
 impl Into<gRPC::TlgDevice> for TlgDevice {
     fn into(self) -> gRPC::TlgDevice {
         gRPC::TlgDevice {
@@ -22,10 +22,10 @@ impl Into<gRPC::TlgDevice> for TlgDevice {
 
 #[derive(InputObject)]
 pub struct TlgDevices {
-    #[doc = ""]
     pub devices: Vec<TlgDevice>,
 }
 
+#[allow(clippy::from_over_into)]
 impl Into<gRPC::TlgDevices> for TlgDevices {
     fn into(mut self) -> gRPC::TlgDevices {
         gRPC::TlgDevices {

@@ -59,6 +59,15 @@ pub struct ChannelSettingSnapshot {
     pub marker_index: Option<u32>,
 }
 
+#[derive(Enum, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum AcquisitionMode {
+    OneShot,
+    OneShotTriggeredOnEvent,
+    RepetitivePeriodic,
+    RepetitiveTriggeredOnEvent,
+    SampleOnEvent,
+}
+
 #[derive(InputObject, SimpleObject, Debug, Clone, Default)]
 #[graphql(input_name = "PlotConfigurationSnapshotIn")]
 pub struct PlotConfigurationSnapshot {
@@ -75,6 +84,8 @@ pub struct PlotConfigurationSnapshot {
     pub is_one_shot: bool,
     pub is_show_labels: bool,
     pub is_persistent: bool,
+    pub is_blink: bool,
+    pub acquisition_mode: Option<AcquisitionMode>,
     pub data_limit: usize,
     #[doc = "If `triggerEvent` is null, this parameter specifies the \
 	     delay, in milliseconds, between points in a waveform. If a \
@@ -87,4 +98,6 @@ pub struct PlotConfigurationSnapshot {
 	     will return waveforms until the client cancels the subscription."]
     pub n_acquisitions: Option<usize>,
     pub tclk_event: Option<u8>,
+    pub sample_on_event: Option<String>,
+    pub x_axis: Option<String>,
 }

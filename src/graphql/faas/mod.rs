@@ -5,6 +5,7 @@ use chrono::format;
 use reqwest;
 use serde::{Deserialize, Serialize};
 use serde_json;
+use tracing::instrument;
 use tracing::{info, instrument};
 
 const CLINK_OFFSET: u64 = (24 * 365 * 2 + 6) * 60 * 60;

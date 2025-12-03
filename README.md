@@ -10,8 +10,20 @@ The middle layer of the control system uses gRPCs for communications. The GraphQ
 
 ### Prerequisites
 
-- [Rust >= 1.87](https://www.rust-lang.org/learn/get-started)
+- [Rust >= 1.90](https://www.rust-lang.org/learn/get-started)
 - [Protocol Buffer](https://grpc.io/docs/protoc-installation/)
+
+### Environment variables
+The following variables exist for configuring the service at runtime:
+- `ALARMS_KAFKA_TOPIC` -> Topic name for alarms in Kafka
+- `CLOCK_GRPC_HOST` -> Hostname for the clock gRPC service
+- `DEVDB_GRPC_HOST` -> Hostname for the DevDB gRPC service
+- `DPM_GRPC_HOST` -> Hostname for the DPM gRPC service
+- `GRAPHQL_PORT` -> Port for clients to connect via GraphQL to this service
+- `KAFKA_CONNECTION_SECONDS` -> The number of seconds to wait for a connection to Kafka before timing out
+- `KAFKA_HOST` -> Hostname for the Controls Kafka instance
+- `SCANNER_GRPC_HOST` -> Hostname for the wire scanner gRPC service
+- `TLG_GRPC_HOST` -> Hostname for the TLG gRPC service
 
 
 ### Check out the project:

@@ -1,3 +1,4 @@
+use crate::g_rpc::dpm::build_connection;
 use async_graphql::*;
 use async_graphql_axum::{
     GraphQLRequest, GraphQLResponse, GraphQLSubscription,
@@ -9,19 +10,17 @@ use axum::{
     routing::get,
     Router,
 };
+use std::net::IpAddr;
 use tracing::{info, instrument};
 
-use crate::g_rpc::dpm::build_connection;
-
 mod acsys;
+mod alarms;
 mod bbm;
-mod clock;
 mod devdb;
 mod faas;
 mod scanner;
 mod tlg;
 mod types;
-mod xform;
 
 // Generic function which adds `AuthInfo` to the context. This
 // function can be used for all the GraphQL schemas.
@@ -59,6 +58,7 @@ async fn base_page() -> Html<&'static str> {
 
     <ul>
       <li><a href="/acsys">ACSys</a> (data acquisition)</li>
+      <li><a href="/alarms">Alarms</a></li>
       <li><a href="/bbm">Beam Budget monitoring</a> (WIP)</li>
       <li><a href="/devdb">Device Database</a></li>
       <li><a href="/faas">Functions as a Service</a></li>
@@ -97,6 +97,33 @@ async fn create_acsys_router() -> Router {
             .finish(),
     );
 
+    Router::new()
+        .route(
+            Q_ENDPOINT,
+            get(graphiql)
+                .post(graphql_handler)
+                .with_state(schema.clone()),
+        )
+        .route_service(S_ENDPOINT, GraphQLSubscription::new(schema))
+}
+
+fn create_alarms_router() -> Router {
+    const Q_ENDPOINT: &str = "/alarms";
+    const S_ENDPOINT: &str = "/alarms/s";
+
+    let schema = Schema::build(
+        alarms::AlarmsQueries,
+        EmptyMutation,
+        alarms::AlarmsSubscriptions,
+    )
+    .data(alarms::get_alarms_subscriber())
+    .finish();
+    let graphiql = axum::response::Html(
+        async_graphql::http::GraphiQLSource::build()
+            .endpoint(Q_ENDPOINT)
+            .subscription_endpoint(S_ENDPOINT)
+            .finish(),
+    );
     Router::new()
         .route(
             Q_ENDPOINT,
@@ -257,18 +284,10 @@ async fn create_site() -> Router {
 // configuration information from the submodules. All accesses are
 // wrapped with CORS support from the `warp` crate.
 
-pub async fn start_service() {
-    use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+pub async fn start_service(address: IpAddr, port: u16) {
+    use std::net::SocketAddr;
 
-    // Define the binding address for the web service. The address is
-    // different between the operational and development versions.
-
-    #[cfg(not(debug_assertions))]
-    const BIND_ADDR: SocketAddr =
-        SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 8000));
-    #[cfg(debug_assertions)]
-    const BIND_ADDR: SocketAddr =
-        SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 8001));
+    let bind_addr: SocketAddr = SocketAddr::new(address, port);
 
     // Load TLS certificate information. If there's an error, we panic.
 
@@ -289,7 +308,7 @@ pub async fn start_service() {
 
     // Start the server.
 
-    axum_server::bind(BIND_ADDR)
+    axum_server::tls_rustls::bind_rustls(bind_addr, config)
         .serve(app.into_make_service())
         .await
         .unwrap();

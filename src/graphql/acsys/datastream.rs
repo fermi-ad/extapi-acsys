@@ -219,6 +219,27 @@ impl Stream for DataMerge {
                             continue;
                         }
 
+                        // TEMP: Log any error status. This won't
+                        // be in the final product!
+
+                        for point in &data {
+                            if let global::DataInfo {
+                                result:
+                                    global::DataType::StatusReply(
+                                        global::StatusReply { status },
+                                    ),
+                                ..
+                            } = point
+                            {
+                                warn!(
+                                    "ref {} returned status [{} {}]",
+                                    ref_id,
+                                    status & 255,
+                                    status / 256
+                                )
+                            }
+                        }
+
                         // Return the data (either archive data or buffered
                         // live data).
 
@@ -261,6 +282,27 @@ impl Stream for DataMerge {
                             if data.is_empty() {
                                 warn!("received empty data packet");
                             } else {
+                                // TEMP: Log any error status. This won't
+                                // be in the final product!
+
+                                for point in &data {
+                                    if let global::DataInfo {
+                                        result:
+                                            global::DataType::StatusReply(
+                                                global::StatusReply { status },
+                                            ),
+                                        ..
+                                    } = point
+                                    {
+                                        warn!(
+                                            "ref {} returned status [{} {}]",
+                                            ref_id,
+                                            status & 255,
+                                            status / 256
+                                        )
+                                    }
+                                }
+
                                 return Poll::Ready(Some(global::DataReply {
                                     ref_id,
                                     data,

@@ -4,7 +4,6 @@ use crate::g_rpc::{
 };
 
 use async_graphql::*;
-use chrono::{DateTime, Utc};
 use futures::future;
 use futures_util::{Stream, StreamExt};
 use std::{collections::HashSet, pin::Pin, sync::Arc};
@@ -111,7 +110,7 @@ impl ACSysQueries {
 
 Depending upon the event in the DRF string, the data may come back \
 immediately or after a delay."]
-    #[instrument(skip(self, ctxt, device_list, _when))]
+    #[instrument(skip(self, ctxt, device_list))]
     async fn accelerator_data(
         &self, ctxt: &Context<'_>,
         #[graphql(
@@ -119,12 +118,6 @@ immediately or after a delay."]
 		    in the same order as specified in this array."
         )]
         device_list: Vec<String>,
-        #[graphql(
-            desc = "Returns device values at or before this timestamp. If \
-		    this parameter is `null`, then the current, live value \
-		    is returned. NOTE: THIS FEATURE HAS NOT BEEN ADDED YET."
-        )]
-        _when: Option<DateTime<Utc>>,
     ) -> Result<Vec<global::DataReply>> {
         // Strip any event designation and append the once-immediate.
 
@@ -248,6 +241,15 @@ want to set."]
     ) -> Result<global::StatusReply> {
         #[cfg(debug_assertions)]
         {
+            if let Ok(auth) = _ctxt.data::<global::AuthInfo>() {
+                // TEMPORARY: If there isn't a JWT, use the account
+                // specified by the caller.
+
+                if let Some(account) = auth.unsafe_account() {
+                    info!("using account: {:?}", &account);
+                }
+            }
+
             let now = tokio::time::Instant::now();
 
             let result = dpm::_set_device(
@@ -336,21 +338,21 @@ and this parameter will be removed."]
 // specification.
 
 fn strip_event(drf: &str) -> &str {
-    &drf[0..drf.find('@').unwrap_or(drf.len())].trim_end()
+    drf[0..drf.find('@').unwrap_or(drf.len())].trim_end()
 }
 
 // Returns the portion of the DRF string that precedes any source
 // specification.
 
 fn strip_source(drf: &str) -> &str {
-    &drf[0..drf.find('<').unwrap_or(drf.len())].trim_end()
+    drf[0..drf.find('<').unwrap_or(drf.len())].trim_end()
 }
 
 // Returns the device name but stripping off any trailing DRF fields. This is
 // a weak form of extracting; we should really have a DRF parser.
 
 fn device_name(drf: &str) -> &str {
-    &drf[0..drf.find(['[', '@', '<']).unwrap_or(drf.len())].trim_end()
+    drf[0..drf.find(['@', '<']).unwrap_or(drf.len())].trim_end()
 }
 
 // Adds an event specification to a device name to create a DRF specification.
@@ -378,6 +380,11 @@ fn add_event(
 
 type DataStream = Pin<Box<dyn Stream<Item = global::DataReply> + Send>>;
 type PlotStream = Pin<Box<dyn Stream<Item = types::PlotReplyData> + Send>>;
+
+struct TimeBounds {
+    pub end: Option<f64>,
+    pub start: Option<f64>,
+}
 
 #[derive(Default)]
 pub struct ACSysSubscriptions;
@@ -475,12 +482,10 @@ impl<'ctx> ACSysSubscriptions {
     }
 
     // A helper method to handle plots that request continuous data.
-
     async fn handle_continuous(
         &self, ctxt: &Context<'ctx>, drfs: Vec<String>,
         _window_size: Option<usize>, n_acquisitions: Option<usize>,
-        _x_min: Option<f64>, _x_max: Option<f64>, start_time: Option<f64>,
-        end_time: Option<f64>,
+        time_bounds: TimeBounds,
     ) -> Result<PlotStream> {
         let now = now();
         let mut reply = types::PlotReplyData {
@@ -502,8 +507,8 @@ impl<'ctx> ACSysSubscriptions {
             .accelerator_data(
                 ctxt,
                 drfs.clone(),
-                start_time,
-                end_time,
+                time_bounds.start,
+                time_bounds.end,
                 Some(false),
             )
             .await?;
@@ -873,6 +878,7 @@ live data."]
         ))
     }
 
+    #[allow(clippy::too_many_arguments)]
     #[doc = "Retrieve correlated plot data.
 
 This query sets up a request which returns a stream of data, presumably \
@@ -918,16 +924,15 @@ correlated, all the devices are collected on the same event."]
         )]
         trigger_event: Option<u8>,
         #[graphql(
-            desc = "Minimum timestamp. All data before this timestamp will be \
-		    filtered from the result set."
+            desc = "Minimum timestamp. DEPRECATED: This does nothing. Still in spec for backwards compatibility. "
         )]
-        x_min: Option<f64>,
+        _x_min: Option<f64>,
         #[graphql(
-            desc = "Maximum timestamp. All data after this timestamp will be \
-		    filtered from the result set."
+            desc = "Maximum timestamp. DEPRECATED: This does nothing. Still in spec for backwards compatibility. "
         )]
-        x_max: Option<f64>,
+        _x_max: Option<f64>,
         start_time: Option<f64>, end_time: Option<f64>,
+        _sample_on_event: Option<u8>, _ch_x_axis: Option<String>,
     ) -> Result<PlotStream> {
         // Add the periodic rate to each of the device names after stripping
         // any event specifier.
@@ -947,10 +952,10 @@ correlated, all the devices are collected on the same event."]
                 drfs,
                 window_size,
                 n_acquisitions,
-                x_min,
-                x_max,
-                start_time,
-                end_time,
+                TimeBounds {
+                    start: start_time,
+                    end: end_time,
+                },
             )
             .await
         }
@@ -997,7 +1002,7 @@ mod test {
         use super::device_name;
 
         assert_eq!(device_name("abc"), "abc");
-        assert_eq!(device_name("abc[]"), "abc");
+        assert_eq!(device_name("abc[]"), "abc[]");
         assert_eq!(device_name("abc@e,2"), "abc");
         assert_eq!(device_name("abc<-LOGGER"), "abc");
         assert_eq!(device_name("abc.READING"), "abc.READING");
