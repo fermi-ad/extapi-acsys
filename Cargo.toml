@@ -46,7 +46,9 @@ tonic-prost = "0.14"
 prost = "0.14"
 prost-types = "0.14"
 
-kafka = "0.10.0"
+clap = { version = "4.5", features = ["derive", "env"] }
+
+kafka = { version = "0.10.0", default-features = false }
 
 [dev-dependencies]
 tower = "0.5"
