@@ -233,12 +233,12 @@ async fn create_site() -> Router {
 
     Router::new()
         .route("/", get(base_page))
-        .merge(create_acsys_router().await)
-        .merge(create_bbm_router())
-        .merge(create_devdb_router())
+ //       .merge(create_acsys_router().await)
+//        .merge(create_bbm_router())
+//        .merge(create_devdb_router())
         .merge(create_faas_router())
-        .merge(create_tlg_router())
-        .merge(create_wscan_router())
+//        .merge(create_tlg_router())
+//        .merge(create_wscan_router())
         .layer(
             CorsLayer::new()
                 .allow_methods([Method::OPTIONS, Method::GET, Method::POST])
@@ -272,12 +272,12 @@ pub async fn start_service() {
 
     // Load TLS certificate information. If there's an error, we panic.
 
-    let config = axum_server::tls_rustls::RustlsConfig::from_pem_file(
-        "/etc/ssl/private/acsys-proxy.fnal.gov/cert.pem",
-        "/etc/ssl/private/acsys-proxy.fnal.gov/key.pem",
-    )
-    .await
-    .expect("couldn't load certificate info from PEM file(s)");
+    // let config = axum_server::tls_rustls::RustlsConfig::from_pem_file(
+    //     "/etc/ssl/private/acsys-proxy.fnal.gov/cert.pem",
+    //     "/etc/ssl/private/acsys-proxy.fnal.gov/key.pem",
+    // )
+    // .await
+    // .expect("couldn't load certificate info from PEM file(s)");
 
     info!("site certificate successfully read");
 
@@ -289,7 +289,7 @@ pub async fn start_service() {
 
     // Start the server.
 
-    axum_server::tls_rustls::bind_rustls(BIND_ADDR, config)
+    axum_server::bind(BIND_ADDR)
         .serve(app.into_make_service())
         .await
         .unwrap();
