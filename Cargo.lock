@@ -354,7 +354,6 @@ dependencies = [
 ]
 
 [[package]]
-<<<<<<< HEAD
 name = "backtrace"
 version = "0.3.76"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -370,8 +369,6 @@ dependencies = [
 ]
 
 [[package]]
-=======
->>>>>>> main
 name = "base64"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
