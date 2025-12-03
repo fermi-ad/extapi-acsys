@@ -241,6 +241,15 @@ want to set."]
     ) -> Result<global::StatusReply> {
         #[cfg(debug_assertions)]
         {
+            if let Ok(auth) = _ctxt.data::<global::AuthInfo>() {
+                // TEMPORARY: If there isn't a JWT, use the account
+                // specified by the caller.
+
+                if let Some(account) = auth.unsafe_account() {
+                    info!("using account: {:?}", &account);
+                }
+            }
+
             let now = tokio::time::Instant::now();
 
             let result = dpm::_set_device(

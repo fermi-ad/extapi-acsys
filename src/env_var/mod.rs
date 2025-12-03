@@ -9,6 +9,7 @@ pub struct EnvVal {
     var_name: String,
     result: Result<String, VarError>,
 }
+
 impl EnvVal {
     pub fn or<T: FromStr + Display>(self, default: T) -> T {
         match self.result {
