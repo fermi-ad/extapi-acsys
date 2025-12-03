@@ -260,12 +260,13 @@ async fn create_site() -> Router {
 
     Router::new()
         .route("/", get(base_page))
- //       .merge(create_acsys_router().await)
-//        .merge(create_bbm_router())
-//        .merge(create_devdb_router())
+        .merge(create_acsys_router().await)
+        .merge(create_alarms_router())
+        .merge(create_bbm_router())
+        .merge(create_devdb_router())
         .merge(create_faas_router())
-//        .merge(create_tlg_router())
-//        .merge(create_wscan_router())
+        .merge(create_tlg_router())
+        .merge(create_wscan_router())
         .layer(
             CorsLayer::new()
                 .allow_methods([Method::OPTIONS, Method::GET, Method::POST])
