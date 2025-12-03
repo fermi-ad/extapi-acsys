@@ -32,7 +32,7 @@ impl EnvVal {
 
 pub fn get(var: &str) -> EnvVal {
     EnvVal {
-	var_name: var.to_owned(),
+        var_name: var.to_owned(),
         result: env::var(var),
     }
 }

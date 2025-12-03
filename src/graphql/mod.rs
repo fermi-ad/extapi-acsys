@@ -1,3 +1,4 @@
+use crate::g_rpc::dpm::build_connection;
 use async_graphql::*;
 use async_graphql_axum::{
     GraphQLRequest, GraphQLResponse, GraphQLSubscription,
@@ -9,9 +10,8 @@ use axum::{
     routing::get,
     Router,
 };
-use tracing::{info, instrument};
 use std::net::IpAddr;
-use crate::g_rpc::dpm::build_connection;
+use tracing::{info, instrument};
 
 mod acsys;
 mod alarms;
