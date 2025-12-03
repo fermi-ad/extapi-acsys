@@ -10,8 +10,7 @@ use axum::{
     Router,
 };
 use tracing::{info, instrument};
-
-use crate::env_var;
+use std::net::IpAddr;
 use crate::g_rpc::dpm::build_connection;
 
 mod acsys;
@@ -286,21 +285,10 @@ async fn create_site() -> Router {
 // configuration information from the submodules. All accesses are
 // wrapped with CORS support from the `warp` crate.
 
-const GQL_PORT: &str = "GRAPHQL_PORT";
-#[cfg(not(debug_assertions))]
-const DEFAULT_GQL_PORT: u16 = 8000;
-#[cfg(debug_assertions)]
-const DEFAULT_GQL_PORT: u16 = 8001;
+pub async fn start_service(address: IpAddr, port: u16) {
+    use std::net::SocketAddr;
 
-pub async fn start_service() {
-    use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-
-    // Define the binding address for the web service. The address is
-    // different between the operational and development versions.
-
-    let port = env_var::get(GQL_PORT).or(DEFAULT_GQL_PORT);
-    let bind_addr: SocketAddr =
-        SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), port));
+    let bind_addr: SocketAddr = SocketAddr::new(address, port);
 
     // Load TLS certificate information. If there's an error, we panic.
 

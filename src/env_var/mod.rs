@@ -9,6 +9,7 @@ pub struct EnvVal {
     var_name: String,
     result: Result<String, VarError>,
 }
+
 impl EnvVal {
     pub fn or<T: FromStr + Display>(self, default: T) -> T {
         match self.result {
@@ -31,7 +32,7 @@ impl EnvVal {
 
 pub fn get(var: &str) -> EnvVal {
     EnvVal {
-        var_name: var.to_owned(),
+	var_name: var.to_owned(),
         result: env::var(var),
     }
 }
