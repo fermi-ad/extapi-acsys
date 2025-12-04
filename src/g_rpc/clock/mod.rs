@@ -2,7 +2,7 @@ use crate::g_rpc::proto::services::aclk::{
     clock_event_client::ClockEventClient, EventInfo, SubscribeReq,
 };
 
-use crate::env_var;
+use rust_env_var_lib::env_var;
 
 const CLOCK_HOST: &str = "CLOCK_GRPC_HOST";
 const DEFAULT_CLOCK_HOST: &str = "http://clx76.fnal.gov:6803";

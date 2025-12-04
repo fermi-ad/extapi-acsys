@@ -5,7 +5,7 @@ use super::proto::{
         SettingReply,
     },
 };
-use crate::env_var;
+use rust_env_var_lib::env_var;
 use tokio::time::{timeout, Duration};
 use tonic::transport::{Channel, Error};
 use tracing::{error, info, instrument, warn};

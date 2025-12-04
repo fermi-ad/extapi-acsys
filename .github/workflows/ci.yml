@@ -9,10 +9,11 @@ env:
 
 jobs:
   check:
-    uses: fermi-ad/.github/.github/workflows/rust-integration.yaml@b5db5a6894d0da9a2c5c490b73b2431182d95cc9
+    uses: fermi-ad/.github/.github/workflows/rust-integration.yaml@2dd68f88d25662a51dc93bc5657900dab5c51063
     secrets: inherit
     permissions:
       contents: write
       pull-requests: write
     with:
       pull-git-submodules: true
+      references-internal-git-repo: true

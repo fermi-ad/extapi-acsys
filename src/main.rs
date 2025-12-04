@@ -2,10 +2,8 @@ use clap::Parser;
 use std::net::IpAddr;
 use tracing::{info, Level};
 
-mod env_var;
 mod g_rpc;
 mod graphql;
-mod pubsub;
 
 #[cfg(not(debug_assertions))]
 const DEFAULT_GQL_PORT: u16 = 8000;

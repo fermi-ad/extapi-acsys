@@ -1,8 +1,8 @@
 use async_graphql::{Context, Error, Object, Subscription};
 use tokio_stream::wrappers::BroadcastStream;
 
-use crate::env_var;
-use crate::pubsub::{Snapshot, Subscriber};
+use rust_env_var_lib::env_var;
+use rust_pubsub_lib::{Snapshot, Subscriber};
 
 const ALARMS_KAFKA_TOPIC: &str = "ALARMS_KAFKA_TOPIC";
 const DEFAULT_ALARMS_TOPIC: &str = "ACsys";
@@ -46,7 +46,7 @@ impl<'ctx> AlarmsSubscriptions {
 
 #[cfg(test)]
 mod tests {
-    use crate::pubsub::PubSubError;
+    use rust_pubsub_lib::PubSubError;
 
     use super::*;
     use async_graphql::{EmptyMutation, Response, Schema};
@@ -100,7 +100,7 @@ mod tests {
             Some(output) => {
                 assert_eq!(output.errors.len(), 1);
                 match output.errors.first() {
-                    Some(err) => assert_eq!(err.message.as_str(), "Data `core::option::Option<extapi_dpm::pubsub::Subscriber>` does not exist."),
+                    Some(err) => assert_eq!(err.message.as_str(), "Data `core::option::Option<rust_pubsub_lib::Subscriber>` does not exist."),
                     None => {
                         panic!("Err length was 1, but first() returned None")
                     }
