@@ -292,12 +292,12 @@ pub async fn start_service(address: IpAddr, port: u16) {
 
     // Load TLS certificate information. If there's an error, we panic.
 
-    // let config = axum_server::tls_rustls::RustlsConfig::from_pem_file(
-    //     "/etc/ssl/private/acsys-proxy.fnal.gov/cert.pem",
-    //     "/etc/ssl/private/acsys-proxy.fnal.gov/key.pem",
-    // )
-    // .await
-    // .expect("couldn't load certificate info from PEM file(s)");
+    let config = axum_server::tls_rustls::RustlsConfig::from_pem_file(
+        "/etc/ssl/private/acsys-proxy.fnal.gov/cert.pem",
+        "/etc/ssl/private/acsys-proxy.fnal.gov/key.pem",
+    )
+    .await
+    .expect("couldn't load certificate info from PEM file(s)");
 
     info!("site certificate successfully read");
 
