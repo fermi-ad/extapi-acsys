@@ -44,6 +44,8 @@ async fn main() {
     tracing::subscriber::set_global_default(subscriber)
         .expect("Unable to set global default subscriber");
 
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     info!("starting");
 
     // Start the web server.
