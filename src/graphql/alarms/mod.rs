@@ -1,8 +1,20 @@
 use async_graphql::{Context, Error, Object, Subscription};
-use tokio_stream::wrappers::BroadcastStream;
+use futures::Stream;
+use tokio_stream::{wrappers::errors::BroadcastStreamRecvError, StreamExt};
 
 use rust_env_var_lib::env_var;
-use rust_pubsub_lib::{Snapshot, Subscriber};
+use rust_pubsub_lib::{Message, Snapshot, Subscriber};
+
+use crate::graphql::types::AlarmsMessage;
+
+impl From<Message> for AlarmsMessage {
+    fn from(msg: Message) -> Self {
+        Self {
+            key: msg.key,
+            value: msg.value,
+        }
+    }
+}
 
 const ALARMS_KAFKA_TOPIC: &str = "ALARMS_KAFKA_TOPIC";
 const DEFAULT_ALARMS_TOPIC: &str = "ACsys";
@@ -20,9 +32,11 @@ pub struct AlarmsQueries;
 impl AlarmsQueries {
     async fn alarms_snapshot(
         &self, _ctxt: &Context<'_>,
-    ) -> Result<Vec<String>, Error> {
+    ) -> Result<Vec<AlarmsMessage>, Error> {
         match Snapshot::for_topic(get_topic()) {
-            Ok(snapshot) => Ok(snapshot.data),
+            Ok(snapshot) => {
+                Ok(snapshot.data.into_iter().map(AlarmsMessage::from).collect())
+            }
             Err(err) => Err(Error::new(format!("{}", err))),
         }
     }
@@ -35,10 +49,16 @@ pub struct AlarmsSubscriptions;
 impl<'ctx> AlarmsSubscriptions {
     async fn alarms(
         &self, ctxt: &Context<'ctx>,
-    ) -> Result<BroadcastStream<String>, Error> {
+    ) -> Result<
+        impl Stream<Item = Result<AlarmsMessage, BroadcastStreamRecvError>>,
+        Error,
+    > {
         let subscriber = ctxt.data::<Option<Subscriber>>()?;
         match subscriber {
-            Some(sub) => Ok(sub.get_stream()),
+            Some(sub) => Ok(sub.get_stream().map(|res| match res {
+                Ok(msg) => Ok(AlarmsMessage::from(msg)),
+                Err(err) => Err(err),
+            })),
             None => Err(Error::new("No alarms Subscriber available")),
         }
     }
@@ -61,7 +81,10 @@ mod tests {
             .execute(
                 r#"
             query Alarms {
-                alarmsSnapshot
+                alarmsSnapshot {
+                    key,
+                    value
+                }
             }
         "#,
             )
@@ -90,7 +113,10 @@ mod tests {
         let result = schema.execute_stream(
             r#"
             subscription Alarms {
-                alarms
+                alarms {
+                    key,
+                    value
+                }
             }
         "#,
         );
@@ -119,7 +145,10 @@ mod tests {
         let result = schema.execute_stream(
             r#"
             subscription Alarms {
-                alarms
+                alarms {
+                    key,
+                    value
+                }
             }
         "#,
         );

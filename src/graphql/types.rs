@@ -1,5 +1,12 @@
-use async_graphql::*;
-use chrono::*;
+use async_graphql::{ComplexObject, InputObject, SimpleObject, Union};
+use chrono::{DateTime, Duration, Utc};
+
+#[doc = "Represents a message from the Alarms server"]
+#[derive(SimpleObject, Clone, Debug, PartialEq)]
+pub struct AlarmsMessage {
+    pub key: Option<String>,
+    pub value: String,
+}
 
 #[derive(Debug)]
 pub struct AuthInfo(Option<String>);
