@@ -20,19 +20,27 @@ impl FaasQueries {
 	    1970 UTC.)"]
     #[graphql(deprecation = "This is a test API and will be removed.")]
     #[instrument(skip(self))]
-    async fn clinks_to_unix(&self, clinks: u64) -> u64 {
+    async fn clinks_to_unix(&self, clinks: u64) -> Option<String> {
         info!("[ClinkToUnix] Processing Clinks: {clinks}");
-        let result = reqwest::get(format!(
+        let result: String = reqwest::get(format!(
             "https://ad-services.fnal.gov/faas/clinks/{}",
             clinks
         ))
         .await
-        .unwrap()
-        .json::<HashMap<String, String>>()
+        .ok()?
+        .text()
         .await
         .unwrap();
 
-        result["unix"].parse().unwrap()
+        Some(result)
+
+        // .await
+        // .ok()?
+        // .json::<HashMap<String, String>>()
+        // .await
+        // .unwrap();
+
+        //result["unix"].parse().unwrap()
     }
 
     #[doc = "Converts a Unix timestamp (seconds since Jan 1, 1970 UTC) into \
