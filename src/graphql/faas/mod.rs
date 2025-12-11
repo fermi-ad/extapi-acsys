@@ -38,22 +38,24 @@ impl FaasQueries {
 
         // Some(result)
 
-        let response = reqwest::get(format!(
-            "https://ad-services.fnal.gov/faas/clinks/{}",
-            clinks
-        ))
-        .await
-        .ok()?
-        .json::<ClinksUnix>()
-        .await;
+        let res: std::result::Result<ClinksUnix, reqwest::Error> =
+            reqwest::get(format!(
+                "https://ad-services.fnal.gov/faas/clinks/{}",
+                clinks
+            ))
+            .await
+            .ok()?
+            .json::<ClinksUnix>()
+            .await;
 
-        let unwrapped: ClinksUnix = response.unwrap();
-        let clnks: String = unwrapped.clinks;
-        let unx: String = unwrapped.unix;
+        let unwrapped = match res {
+            Ok(gh) => gh.unix,
+            Err(er) => String::from("error found"),
+        };
 
-        info!("[ClinksToUnix] Processing ClinksUnix object clinks {clnks} and unix {unx}");
+        info!("[ClinksToUnix] Processing ClinksUnix object unix {unwrapped}");
 
-        Some(unx)
+        Some(unwrapped)
     }
 
     #[doc = "Converts a Unix timestamp (seconds since Jan 1, 1970 UTC) into \
