@@ -64,9 +64,10 @@ impl FaasQueries {
 	     conversion fails."]
     #[graphql(deprecation = "This is a test API and will be removed.")]
     #[instrument(skip(self))]
-    async fn unix_to_clinks(&self, time: u64) -> Option<String> {
-        let result =
-            reqwest::get("https://ad-services.fnal.gov/faas/fun-hello-py")
+    async fn unix_to_clinks(&self, unix: u64) -> Option<String> {
+        info!("[UnixToClinks] Processing Unix: {unix}");
+	let result =
+            reqwest::get(format!("https://ad-services.fnal.gov/faas/unix/{}", unix))
                 .await
                 .ok()?
                 .text()
