@@ -1,13 +1,17 @@
 use crate::info;
 use async_graphql::*;
 use reqwest;
-use std::collections::HashMap;
+use serde::{Deserialize, Serialize};
 use tracing::instrument;
-
-const CLINK_OFFSET: u64 = (24 * 365 * 2 + 6) * 60 * 60;
 
 #[derive(Default)]
 pub struct FaasQueries;
+
+#[derive(Serialize, Deserialize, Debug)]
+struct ClinksUnix {
+    clinks: String,
+    unix: String,
+}
 
 // Define the schema's query entry points. Any methods defined in this
 // section will appear in the schema.
@@ -22,25 +26,34 @@ impl FaasQueries {
     #[instrument(skip(self))]
     async fn clinks_to_unix(&self, clinks: u64) -> Option<String> {
         info!("[ClinkToUnix] Processing Clinks: {clinks}");
-        let result: String = reqwest::get(format!(
+        // let result: String = reqwest::get(format!(
+        //     "https://ad-services.fnal.gov/faas/clinks/{}",
+        //     clinks
+        // ))
+        // .await
+        // .ok()?
+        // .text()
+        // .await
+        // .unwrap();
+
+        // Some(result)
+
+        let response = reqwest::get(format!(
             "https://ad-services.fnal.gov/faas/clinks/{}",
             clinks
         ))
         .await
         .ok()?
-        .text()
-        .await
-        .unwrap();
+        .json::<ClinksUnix>()
+        .await;
 
-        Some(result)
+        let unwrapped: ClinksUnix = response.unwrap();
+        let clnks: String = unwrapped.clinks;
+        let unx: String = unwrapped.unix;
 
-        // .await
-        // .ok()?
-        // .json::<HashMap<String, String>>()
-        // .await
-        // .unwrap();
+        info!("[ClinksToUnix] Processing ClinksUnix object clinks {clnks} and unix {unx}");
 
-        //result["unix"].parse().unwrap()
+        Some(unx)
     }
 
     #[doc = "Converts a Unix timestamp (seconds since Jan 1, 1970 UTC) into \
