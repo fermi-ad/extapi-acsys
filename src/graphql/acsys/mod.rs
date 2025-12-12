@@ -5,7 +5,8 @@ use crate::g_rpc::{
 
 use async_graphql::*;
 use futures::future;
-use futures_util::{Stream, StreamExt};
+use futures_util::{stream, Stream, StreamExt};
+use serde::Deserialize;
 use std::{collections::HashSet, pin::Pin, sync::Arc};
 use tonic::Status;
 use tracing::{error, info, instrument, warn};
@@ -386,8 +387,75 @@ struct TimeBounds {
     pub start: Option<f64>,
 }
 
+// Represents a single PV data point (event)
+
+#[derive(Debug, Deserialize)]
+struct ArchiverEvent {
+    pub secs: i64,
+    pub nanos: u32,
+    pub val: serde_json::Value,
+}
+
+// Represents the data structure for a single PV in the response array
+#[derive(Debug, Deserialize)]
+struct PvData {
+    pub data: Vec<ArchiverEvent>,
+}
+
+// The root response is an array of PvData objects
+type ArchiverResponse = Vec<PvData>;
+
 #[derive(Default)]
 pub struct ACSysSubscriptions;
+
+// Converts an f64 representing time since the epoch into a an RFC
+// 3339 string.
+
+fn to_iso(timestamp_f64: f64) -> String {
+    use chrono::{TimeZone, Utc};
+
+    let seconds = timestamp_f64.trunc() as i64;
+    let nanoseconds =
+        ((timestamp_f64.fract() * 1_000_000_000.0).round()) as u32;
+    let datetime_utc = Utc
+        .timestamp_opt(seconds, nanoseconds)
+        .earliest()
+        .unwrap_or_else(|| {
+            Utc.timestamp_millis_opt(0).unwrap() // Default to epoch start
+        });
+
+    datetime_utc.format("%Y-%m-%dT%H:%M:%S.%fZ").to_string()
+}
+
+fn transform_event(event: &ArchiverEvent) -> global::DataReply {
+    let timestamp = event.secs as f64 + (event.nanos as f64 / 1_000_000_000.0);
+    let result = match &event.val {
+        serde_json::Value::Array(arr) => {
+            global::DataType::ScalarArray(global::ScalarArray {
+                scalar_array_value: arr
+                    .iter()
+                    .filter_map(|v| match v {
+                        serde_json::Value::Number(n) => {
+                            Some(n.as_f64().unwrap())
+                        }
+                        _ => None,
+                    })
+                    .collect(),
+            })
+        }
+        serde_json::Value::Number(n) => {
+            global::DataType::Scalar(global::Scalar {
+                scalar_value: n.as_f64().unwrap(),
+            })
+        }
+        _ => global::DataType::Scalar(global::Scalar { scalar_value: 0.0 }),
+    };
+
+    global::DataReply {
+        ref_id: 0,
+        data: vec![global::DataInfo { timestamp, result }],
+    }
+}
 
 // Private methods used by subscriptions.
 
@@ -435,8 +503,42 @@ impl<'ctx> ACSysSubscriptions {
         }
     }
 
+    #[instrument(name = "EPICS_ARCH", skip(device, start_time, end_time))]
+    async fn epics_archived_data(
+        device: &str, start_time: f64, end_time: f64,
+    ) -> Result<DataStream> {
+        const BASE_URL: &str =
+            "http://archiverdev.fnal.gov:17668/retrieval/data/getData.json";
+
+        let request_url = format!(
+            "{}?pv={}&from={}&to={}",
+            BASE_URL,
+            device_name(device),
+            to_iso(start_time.min(end_time)),
+            to_iso(end_time.max(start_time))
+        );
+
+        info!("URL : {}", &request_url);
+
+        let response = reqwest::Client::new()
+            .get(&request_url)
+            .send()
+            .await?
+            .error_for_status()?;
+
+        if let [json_data] = &response.json::<ArchiverResponse>().await?[..] {
+            let data: Vec<_> =
+                json_data.data.iter().map(transform_event).collect();
+
+            Ok(Box::pin(stream::iter(data)) as DataStream)
+        } else {
+            Err(Error::new("archiver didn't return only one PV's history"))
+        }
+    }
+
     // Returns a stream containing archived data for a device.
 
+    #[instrument(name = "ACNET_ARCH", skip(ctxt, device, start_time, end_time))]
     async fn archived_data(
         ctxt: &Context<'ctx>, device: &str, start_time: f64, end_time: f64,
     ) -> Result<DataStream> {
@@ -850,15 +952,27 @@ live data."]
             // correct ref ID with the stream.
 
             for (ref_id, drf) in drfs.into_iter().enumerate() {
-                let stream = ACSysSubscriptions::archived_data(
-                    ctxt,
-                    &drf,
-                    st,
-                    archived_end,
-                )
-                .await?;
+                let strms = tokio::join!(
+                    ACSysSubscriptions::epics_archived_data(
+                        &drf,
+                        st,
+                        archived_end,
+                    ),
+                    ACSysSubscriptions::archived_data(
+                        ctxt,
+                        &drf,
+                        st,
+                        archived_end,
+                    )
+                );
 
-                streams.insert(ref_id as i32, Box::pin(stream) as DataStream);
+                let actual = match strms {
+                    (Ok(epics), _) => epics,
+                    (_, Ok(acnet)) => acnet,
+                    (_, err @ Err(_)) => return err,
+                };
+
+                streams.insert(ref_id as i32, actual);
             }
 
             // Modify incoming DataReplies by updating their ref IDs.
