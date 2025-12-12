@@ -12,7 +12,7 @@ pub mod proto {
     tonic::include_proto!("scanner");
 }
 
-use crate::env_var;
+use rust_env_var_lib::env_var;
 
 const WIRE_SCANNER_HOST: &str = "SCANNER_GRPC_HOST";
 const DEFAULT_WIRE_SCANNER_HOST: &str = "http://unknown.fnal.gov:50051";

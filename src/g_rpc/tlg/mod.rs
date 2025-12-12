@@ -1,9 +1,9 @@
-use crate::env_var;
 use proto::services::tlg_placement::{
     tlg_placement_mutation_service_client::TlgPlacementMutationServiceClient,
     tlg_placement_service_client::TlgPlacementServiceClient, TlgDevices,
     TlgPlacementResponse,
 };
+use rust_env_var_lib::env_var;
 use tonic::{transport, Status};
 
 pub mod proto {

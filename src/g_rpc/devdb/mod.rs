@@ -4,7 +4,7 @@ pub mod proto {
     tonic::include_proto!("devdb");
 }
 
-use crate::env_var;
+use rust_env_var_lib::env_var;
 
 const DEVDB_HOST: &str = "DEVDB_GRPC_HOST";
 const DEFAULT_DEVDB_HOST: &str = "http://10.200.24.105:6802";

@@ -1,8 +1,26 @@
 use async_graphql::{Context, Error, Object, Subscription};
-use tokio_stream::wrappers::BroadcastStream;
+use futures::Stream;
+use tokio_stream::{wrappers::errors::BroadcastStreamRecvError, StreamExt};
 
-use crate::env_var;
-use crate::pubsub::{Snapshot, Subscriber};
+use rust_env_var_lib::env_var;
+use rust_pubsub_lib::{Message, Snapshot, Subscriber};
+
+use crate::graphql::types::AlarmsMessage;
+
+impl From<Message> for AlarmsMessage {
+    fn from(msg: Message) -> Self {
+        Self {
+            key: msg.key,
+            value: msg.value,
+        }
+    }
+}
+
+const PIP_II_KAFKA_HOST: &str = "PIP_II_KAFKA_HOST";
+const DEFAULT_PIP_II_KAFKA_HOST: &str = "acsys-services.fnal.gov:9092";
+fn get_host() -> String {
+    env_var::get(PIP_II_KAFKA_HOST).or(DEFAULT_PIP_II_KAFKA_HOST.to_owned())
+}
 
 const ALARMS_KAFKA_TOPIC: &str = "ALARMS_KAFKA_TOPIC";
 const DEFAULT_ALARMS_TOPIC: &str = "ACsys";
@@ -11,7 +29,7 @@ fn get_topic() -> String {
 }
 
 pub fn get_alarms_subscriber() -> Option<Subscriber> {
-    Subscriber::for_topic(get_topic()).ok()
+    Subscriber::new(get_host(), get_topic()).ok()
 }
 
 #[derive(Default)]
@@ -20,9 +38,11 @@ pub struct AlarmsQueries;
 impl AlarmsQueries {
     async fn alarms_snapshot(
         &self, _ctxt: &Context<'_>,
-    ) -> Result<Vec<String>, Error> {
-        match Snapshot::for_topic(get_topic()) {
-            Ok(snapshot) => Ok(snapshot.data),
+    ) -> Result<Vec<AlarmsMessage>, Error> {
+        match Snapshot::new(get_host(), get_topic()) {
+            Ok(snapshot) => {
+                Ok(snapshot.data.into_iter().map(AlarmsMessage::from).collect())
+            }
             Err(err) => Err(Error::new(format!("{}", err))),
         }
     }
@@ -35,10 +55,16 @@ pub struct AlarmsSubscriptions;
 impl<'ctx> AlarmsSubscriptions {
     async fn alarms(
         &self, ctxt: &Context<'ctx>,
-    ) -> Result<BroadcastStream<String>, Error> {
+    ) -> Result<
+        impl Stream<Item = Result<AlarmsMessage, BroadcastStreamRecvError>>,
+        Error,
+    > {
         let subscriber = ctxt.data::<Option<Subscriber>>()?;
         match subscriber {
-            Some(sub) => Ok(sub.get_stream()),
+            Some(sub) => Ok(sub.get_stream().map(|res| match res {
+                Ok(msg) => Ok(AlarmsMessage::from(msg)),
+                Err(err) => Err(err),
+            })),
             None => Err(Error::new("No alarms Subscriber available")),
         }
     }
@@ -46,7 +72,7 @@ impl<'ctx> AlarmsSubscriptions {
 
 #[cfg(test)]
 mod tests {
-    use crate::pubsub::PubSubError;
+    use rust_pubsub_lib::PubSubError;
 
     use super::*;
     use async_graphql::{EmptyMutation, Response, Schema};
@@ -61,7 +87,10 @@ mod tests {
             .execute(
                 r#"
             query Alarms {
-                alarmsSnapshot
+                alarmsSnapshot {
+                    key,
+                    value
+                }
             }
         "#,
             )
@@ -90,7 +119,10 @@ mod tests {
         let result = schema.execute_stream(
             r#"
             subscription Alarms {
-                alarms
+                alarms {
+                    key,
+                    value
+                }
             }
         "#,
         );
@@ -100,7 +132,7 @@ mod tests {
             Some(output) => {
                 assert_eq!(output.errors.len(), 1);
                 match output.errors.first() {
-                    Some(err) => assert_eq!(err.message.as_str(), "Data `core::option::Option<extapi_dpm::pubsub::Subscriber>` does not exist."),
+                    Some(err) => assert_eq!(err.message.as_str(), "Data `core::option::Option<rust_pubsub_lib::Subscriber>` does not exist."),
                     None => {
                         panic!("Err length was 1, but first() returned None")
                     }
@@ -119,7 +151,10 @@ mod tests {
         let result = schema.execute_stream(
             r#"
             subscription Alarms {
-                alarms
+                alarms {
+                    key,
+                    value
+                }
             }
         "#,
         );
