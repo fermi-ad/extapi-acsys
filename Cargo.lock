@@ -1711,8 +1711,8 @@ dependencies = [
 
 [[package]]
 name = "rust-pubsub-lib"
-version = "1.1.1"
-source = "git+https://github.com/fermi-ad/rust-pubsub-lib.git?tag=v1.1.1#63c02a6a2fad33aa90cd966a91ec11e6e11c8f4a"
+version = "2.0.0"
+source = "git+https://github.com/fermi-ad/rust-pubsub-lib.git?tag=v2.0.0#95c9cf59df776d1c679f81196afc7a681fed0b2f"
 dependencies = [
  "kafka",
  "rust-env-var-lib",

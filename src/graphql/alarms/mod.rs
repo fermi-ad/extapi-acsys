@@ -16,6 +16,12 @@ impl From<Message> for AlarmsMessage {
     }
 }
 
+const PIP_II_KAFKA_HOST: &str = "PIP_II_KAFKA_HOST";
+const DEFAULT_PIP_II_KAFKA_HOST: &str = "acsys-services.fnal.gov:9092";
+fn get_host() -> String {
+    env_var::get(PIP_II_KAFKA_HOST).or(DEFAULT_PIP_II_KAFKA_HOST.to_owned())
+}
+
 const ALARMS_KAFKA_TOPIC: &str = "ALARMS_KAFKA_TOPIC";
 const DEFAULT_ALARMS_TOPIC: &str = "ACsys";
 fn get_topic() -> String {
@@ -23,7 +29,7 @@ fn get_topic() -> String {
 }
 
 pub fn get_alarms_subscriber() -> Option<Subscriber> {
-    Subscriber::for_topic(get_topic()).ok()
+    Subscriber::new(get_host(), get_topic()).ok()
 }
 
 #[derive(Default)]
@@ -33,7 +39,7 @@ impl AlarmsQueries {
     async fn alarms_snapshot(
         &self, _ctxt: &Context<'_>,
     ) -> Result<Vec<AlarmsMessage>, Error> {
-        match Snapshot::for_topic(get_topic()) {
+        match Snapshot::new(get_host(), get_topic()) {
             Ok(snapshot) => {
                 Ok(snapshot.data.into_iter().map(AlarmsMessage::from).collect())
             }
