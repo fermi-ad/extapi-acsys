@@ -54,12 +54,12 @@ impl FaasQueries {
 	     conversion fails."]
     #[graphql(deprecation = "This is a test API and will be removed.")]
     #[instrument(skip(self))]
-    async fn unix_to_clinks(&self, unix: u64) -> Option<u64> {
-        info!("[ClinkToUnix] Processing Unix: {unix}");
+    async fn unix_to_clinks(&self, time: u64) -> Option<u64> {
+        info!("[UnixToClinks] Processing Unix: {time}");
 
         let res: Option<reqwest::Response> = reqwest::get(format!(
-            "https://ad-services.fnal.gov/faas/clinks/{}",
-            unix
+            "https://ad-services.fnal.gov/faas/unix/{}",
+            time
         ))
         .await
         .ok();
@@ -68,7 +68,7 @@ impl FaasQueries {
             match resp.json::<ClinksUnix>().await {
                 Ok(clunx) => Some(clunx.clinks),
                 Err(er) => {
-                    info!("If case - Show error {er}");
+                    info!("[UnixToClinks] If case - Show error {er}");
                     Some(0)
                 }
             }
