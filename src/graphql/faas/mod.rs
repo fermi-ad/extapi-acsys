@@ -9,8 +9,8 @@ pub struct FaasQueries;
 
 #[derive(Serialize, Deserialize, Debug)]
 struct ClinksUnix {
-    clinks: String,
-    unix: String,
+    clinks: u64,
+    unix: u64,
 }
 
 // Define the schema's query entry points. Any methods defined in this
@@ -24,7 +24,7 @@ impl FaasQueries {
 	    1970 UTC.)"]
     #[graphql(deprecation = "This is a test API and will be removed.")]
     #[instrument(skip(self))]
-    async fn clinks_to_unix(&self, clinks: u64) -> Option<String> {
+    async fn clinks_to_unix(&self, clinks: u64) -> u64 {
         info!("[ClinkToUnix] Processing Clinks: {clinks}");
         // let result: String = reqwest::get(format!(
         //     "https://ad-services.fnal.gov/faas/clinks/{}",
@@ -37,7 +37,7 @@ impl FaasQueries {
         // .unwrap();
 
         // Some(result)
-
+	/*
         let res: std::result::Result<ClinksUnix, reqwest::Error> =
             reqwest::get(format!(
                 "https://ad-services.fnal.gov/faas/clinks/{}",
@@ -47,15 +47,36 @@ impl FaasQueries {
             .ok()?
             .json::<ClinksUnix>()
             .await;
+*/
+        //let unwrapped = match res {
+        //    Ok(gh) => println("{}", gh)
+        //    Err(er) => eprintln!("error found {:?}", er)
+        //};
+	//info!("[ClinksToUnix] Processing Response: {:?}", res);
+	//let unwrapped = match res {
+        //    Ok(gh) => gh.unix,
+        //    Err(er) => String::from("error found"),
+        //};
 
-        let unwrapped = match res {
-            Ok(gh) => gh.unix,
-            Err(er) => String::from("error found"),
-        };
+        //info!("[ClinksToUnix] Processing ClinksUnix object unix {unwrapped}");
 
-        info!("[ClinksToUnix] Processing ClinksUnix object unix {unwrapped}");
+        //Some(unwrapped)
 
-        Some(unwrapped)
+	        let res: Option<reqwest::Response> = reqwest::get(format!(
+            "https://ad-services.fnal.gov/faas/clinks/{}",
+            clinks
+        ))
+        .await
+        .ok();
+
+        if let Some(resp) = res {
+            match resp.json::<ClinksUnix>().await {
+                Ok(gh) => return gh.unix, //return not required
+                Err(er) => {info!("If case - {er}") ;0},
+            }
+        } else {
+            info!("Made it to else case"); 0
+        }
     }
 
     #[doc = "Converts a Unix timestamp (seconds since Jan 1, 1970 UTC) into \
