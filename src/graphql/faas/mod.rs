@@ -26,43 +26,8 @@ impl FaasQueries {
     #[instrument(skip(self))]
     async fn clinks_to_unix(&self, clinks: u64) -> u64 {
         info!("[ClinkToUnix] Processing Clinks: {clinks}");
-        // let result: String = reqwest::get(format!(
-        //     "https://ad-services.fnal.gov/faas/clinks/{}",
-        //     clinks
-        // ))
-        // .await
-        // .ok()?
-        // .text()
-        // .await
-        // .unwrap();
 
-        // Some(result)
-	/*
-        let res: std::result::Result<ClinksUnix, reqwest::Error> =
-            reqwest::get(format!(
-                "https://ad-services.fnal.gov/faas/clinks/{}",
-                clinks
-            ))
-            .await
-            .ok()?
-            .json::<ClinksUnix>()
-            .await;
-*/
-        //let unwrapped = match res {
-        //    Ok(gh) => println("{}", gh)
-        //    Err(er) => eprintln!("error found {:?}", er)
-        //};
-	//info!("[ClinksToUnix] Processing Response: {:?}", res);
-	//let unwrapped = match res {
-        //    Ok(gh) => gh.unix,
-        //    Err(er) => String::from("error found"),
-        //};
-
-        //info!("[ClinksToUnix] Processing ClinksUnix object unix {unwrapped}");
-
-        //Some(unwrapped)
-
-	        let res: Option<reqwest::Response> = reqwest::get(format!(
+        let res: Option<reqwest::Response> = reqwest::get(format!(
             "https://ad-services.fnal.gov/faas/clinks/{}",
             clinks
         ))
@@ -71,11 +36,15 @@ impl FaasQueries {
 
         if let Some(resp) = res {
             match resp.json::<ClinksUnix>().await {
-                Ok(gh) => return gh.unix, //return not required
-                Err(er) => {info!("If case - {er}") ;0},
+                Ok(clunx) => clunx.unix,
+                Err(er) => {
+                    info!("If case - Show error {er}");
+                    0
+                }
             }
         } else {
-            info!("Made it to else case"); 0
+            info!("[ClinksToUnix] Made it to the else case");
+            0
         }
     }
 
@@ -85,15 +54,27 @@ impl FaasQueries {
 	     conversion fails."]
     #[graphql(deprecation = "This is a test API and will be removed.")]
     #[instrument(skip(self))]
-    async fn unix_to_clinks(&self, unix: u64) -> Option<String> {
-        info!("[UnixToClinks] Processing Unix: {unix}");
-	let result =
-            reqwest::get(format!("https://ad-services.fnal.gov/faas/unix/{}", unix))
-                .await
-                .ok()?
-                .text()
-                .await
-                .unwrap();
-        Some(result)
+    async fn unix_to_clinks(&self, unix: u64) -> Option<u64> {
+        info!("[ClinkToUnix] Processing Unix: {unix}");
+
+        let res: Option<reqwest::Response> = reqwest::get(format!(
+            "https://ad-services.fnal.gov/faas/clinks/{}",
+            unix
+        ))
+        .await
+        .ok();
+
+        if let Some(resp) = res {
+            match resp.json::<ClinksUnix>().await {
+                Ok(clunx) => Some(clunx.clinks),
+                Err(er) => {
+                    info!("If case - Show error {er}");
+                    Some(0)
+                }
+            }
+        } else {
+            info!("[UnixToClinks] Made it to the else case");
+            Some(0)
+        }
     }
 }
