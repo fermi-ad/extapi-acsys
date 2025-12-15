@@ -38,12 +38,12 @@ impl FaasQueries {
             match resp.json::<ClinksUnix>().await {
                 Ok(clunx) => clunx.unix,
                 Err(er) => {
-                    info!("If case - Show error {er}");
+                    info!("[ClinksToUnix] Error: {er}");
                     0
                 }
             }
         } else {
-            info!("[ClinksToUnix] Made it to the else case");
+            info!("[ClinksToUnix] Response was not received");
             0
         }
     }
@@ -68,12 +68,12 @@ impl FaasQueries {
             match resp.json::<ClinksUnix>().await {
                 Ok(clunx) => Some(clunx.clinks),
                 Err(er) => {
-                    info!("[UnixToClinks] If case - Show error {er}");
+                    info!("[UnixToClinks] Error: {er}");
                     Some(0)
                 }
             }
         } else {
-            info!("[UnixToClinks] Made it to the else case");
+            info!("[UnixToClinks] Response was not received");
             Some(0)
         }
     }
