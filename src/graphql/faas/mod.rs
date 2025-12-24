@@ -1,6 +1,5 @@
 use crate::info;
 use async_graphql::*;
-use reqwest;
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
@@ -25,7 +24,7 @@ impl FaasQueries {
     #[graphql(deprecation = "This is a test API and will be removed.")]
     #[instrument(skip(self))]
     async fn clinks_to_unix(&self, clinks: u64) -> u64 {
-        info!("[ClinkToUnix] Processing Clinks: {clinks}");
+        info!("Processing Clinks: {clinks}");
 
         let res: Option<reqwest::Response> = reqwest::get(format!(
             "https://ad-services.fnal.gov/faas/clinks/{}",
@@ -38,12 +37,12 @@ impl FaasQueries {
             match resp.json::<ClinksUnix>().await {
                 Ok(clunx) => clunx.unix,
                 Err(er) => {
-                    info!("[ClinksToUnix] Error: {er}");
+                    info!("Error: {er}");
                     0
                 }
             }
         } else {
-            info!("[ClinksToUnix] Response was not received");
+            info!("Response was not received");
             0
         }
     }
@@ -55,7 +54,7 @@ impl FaasQueries {
     #[graphql(deprecation = "This is a test API and will be removed.")]
     #[instrument(skip(self))]
     async fn unix_to_clinks(&self, time: u64) -> Option<u64> {
-        info!("[UnixToClinks] Processing Unix: {time}");
+        info!("Processing Unix: {time}");
 
         let res: Option<reqwest::Response> = reqwest::get(format!(
             "https://ad-services.fnal.gov/faas/unix/{}",
@@ -68,12 +67,12 @@ impl FaasQueries {
             match resp.json::<ClinksUnix>().await {
                 Ok(clunx) => Some(clunx.clinks),
                 Err(er) => {
-                    info!("[UnixToClinks] Error: {er}");
+                    info!("Error: {er}");
                     Some(0)
                 }
             }
         } else {
-            info!("[UnixToClinks] Response was not received");
+            info!("Response was not received");
             Some(0)
         }
     }
