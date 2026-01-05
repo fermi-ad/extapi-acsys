@@ -14,7 +14,6 @@ futures-util = { version = "0.3", features = ["tokio-io"] }
 tokio = { version = "1", features = [
     "rt-multi-thread",
     "macros",
-    "rt",
     "time",
 ] }
 tokio-stream = { version = "0.1", features = ["sync"] }
