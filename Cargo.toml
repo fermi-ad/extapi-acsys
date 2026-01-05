@@ -14,7 +14,6 @@ futures-util = { version = "0.3", features = ["tokio-io"] }
 tokio = { version = "1", features = [
     "rt-multi-thread",
     "macros",
-    "rt",
     "time",
 ] }
 tokio-stream = { version = "0.1", features = ["sync"] }
@@ -40,6 +39,13 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.22"
 #jsonwebtoken = { version = "9.3", default-features = false }
+
+reqwest.version = "0.12"
+reqwest.default-features = false
+reqwest.features = ["rustls-tls-webpki-roots", "json"]
+
+rustls.version = "0.23"
+rustls.features = ["ring"]
 
 tonic = "0.14"
 tonic-prost = "0.14"
