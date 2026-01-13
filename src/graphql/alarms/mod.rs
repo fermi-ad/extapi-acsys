@@ -3,7 +3,10 @@ use futures::Stream;
 use tokio_stream::{wrappers::errors::BroadcastStreamRecvError, StreamExt};
 
 use rust_env_var_lib::env_var;
-use rust_pubsub_lib::{Message, Snapshot, Subscriber};
+use rust_pubsub_lib::{
+    kafka_impl::{KafkaSnapshot, KafkaSubscriber},
+    Message, Snapshot, Subscriber,
+};
 
 use crate::graphql::types::AlarmsMessage;
 
@@ -28,8 +31,8 @@ fn get_topic() -> String {
     env_var::get(ALARMS_KAFKA_TOPIC).or(DEFAULT_ALARMS_TOPIC.to_owned())
 }
 
-pub fn get_alarms_subscriber() -> Option<Subscriber> {
-    Subscriber::new(get_host(), get_topic()).ok()
+pub fn get_alarms_subscriber() -> Option<impl Subscriber> {
+    KafkaSubscriber::new(get_host(), get_topic()).ok()
 }
 
 #[derive(Default)]
@@ -39,9 +42,9 @@ impl AlarmsQueries {
     async fn alarms_snapshot(
         &self, _ctxt: &Context<'_>,
     ) -> Result<Vec<AlarmsMessage>, Error> {
-        match Snapshot::new(get_host(), get_topic()) {
+        match KafkaSnapshot::get(get_host(), get_topic()) {
             Ok(snapshot) => {
-                Ok(snapshot.data.into_iter().map(AlarmsMessage::from).collect())
+                Ok(snapshot.into_iter().map(AlarmsMessage::from).collect())
             }
             Err(err) => Err(Error::new(format!("{}", err))),
         }
@@ -59,12 +62,11 @@ impl<'ctx> AlarmsSubscriptions {
         impl Stream<Item = Result<AlarmsMessage, BroadcastStreamRecvError>>,
         Error,
     > {
-        let subscriber = ctxt.data::<Option<Subscriber>>()?;
+        let subscriber = ctxt.data::<Option<KafkaSubscriber>>()?;
         match subscriber {
-            Some(sub) => Ok(sub.get_stream().map(|res| match res {
-                Ok(msg) => Ok(AlarmsMessage::from(msg)),
-                Err(err) => Err(err),
-            })),
+            Some(sub) => {
+                Ok(sub.get_stream().map(|res| res.map(AlarmsMessage::from)))
+            }
             None => Err(Error::new("No alarms Subscriber available")),
         }
     }
@@ -132,7 +134,7 @@ mod tests {
             Some(output) => {
                 assert_eq!(output.errors.len(), 1);
                 match output.errors.first() {
-                    Some(err) => assert_eq!(err.message.as_str(), "Data `core::option::Option<rust_pubsub_lib::Subscriber>` does not exist."),
+                    Some(err) => assert_eq!(err.message.as_str(), "Data `core::option::Option<rust_pubsub_lib::kafka_impl::KafkaSubscriber>` does not exist."),
                     None => {
                         panic!("Err length was 1, but first() returned None")
                     }
@@ -146,7 +148,7 @@ mod tests {
     async fn alarms_sub_returns_none_when_no_subscriber_provided() {
         let schema =
             Schema::build(AlarmsQueries, EmptyMutation, AlarmsSubscriptions)
-                .data::<Option<Subscriber>>(None)
+                .data::<Option<KafkaSubscriber>>(None)
                 .finish();
         let result = schema.execute_stream(
             r#"
