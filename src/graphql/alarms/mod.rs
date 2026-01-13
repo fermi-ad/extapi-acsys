@@ -22,13 +22,15 @@ impl From<Message> for AlarmsMessage {
 const PIP_II_KAFKA_HOST: &str = "PIP_II_KAFKA_HOST";
 const DEFAULT_PIP_II_KAFKA_HOST: &str = "acsys-services.fnal.gov:9092";
 fn get_host() -> String {
-    env_var::get(PIP_II_KAFKA_HOST).or(DEFAULT_PIP_II_KAFKA_HOST.to_owned())
+    env_var::get(PIP_II_KAFKA_HOST)
+        .or_else(|| DEFAULT_PIP_II_KAFKA_HOST.to_string())
 }
 
 const ALARMS_KAFKA_TOPIC: &str = "ALARMS_KAFKA_TOPIC";
 const DEFAULT_ALARMS_TOPIC: &str = "ACsys";
 fn get_topic() -> String {
-    env_var::get(ALARMS_KAFKA_TOPIC).or(DEFAULT_ALARMS_TOPIC.to_owned())
+    env_var::get(ALARMS_KAFKA_TOPIC)
+        .or_else(|| DEFAULT_ALARMS_TOPIC.to_string())
 }
 
 pub fn get_alarms_subscriber() -> Option<impl Subscriber> {
