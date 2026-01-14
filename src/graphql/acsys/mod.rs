@@ -530,11 +530,9 @@ impl<'ctx> ACSysSubscriptions {
             let data: Vec<_> =
                 json_data.data.iter().map(transform_event).collect();
 
-            Ok(
-                Box::pin(datastream::group_scalars(Box::pin(stream::iter(
-                    data,
-                )))) as DataStream,
-            )
+            Ok(Box::pin(datastream::group_scalars::<500>(Box::pin(
+                stream::iter(data),
+            ))) as DataStream)
         } else {
             Err(Error::new("archiver didn't return only one PV's history"))
         }

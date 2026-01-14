@@ -10,20 +10,18 @@ use futures_util::StreamExt;
 use std::{pin::Pin, task::Poll};
 use tracing::warn;
 
-const MAX_PAYLOAD: usize = 500;
-
 enum StreamState {
     Unknown,
     Scalar(global::DataReply),
     Waveform,
 }
 
-pub struct GroupScalars {
+pub struct GroupScalars<const MAX_PAYLOAD: usize> {
     archived: DataStream,
     state: StreamState,
 }
 
-impl GroupScalars {
+impl<const MAX_PAYLOAD: usize> GroupScalars<MAX_PAYLOAD> {
     pub fn new(archived: DataStream) -> Self {
         GroupScalars {
             archived,
@@ -32,11 +30,11 @@ impl GroupScalars {
     }
 }
 
-pub fn group_scalars(s: DataStream) -> DataStream {
-    Box::pin(GroupScalars::new(s)) as DataStream
+pub fn group_scalars<const MAX_PAYLOAD: usize>(s: DataStream) -> DataStream {
+    Box::pin(GroupScalars::<MAX_PAYLOAD>::new(s)) as DataStream
 }
 
-impl Stream for GroupScalars {
+impl<const MAX_PAYLOAD: usize> Stream for GroupScalars<MAX_PAYLOAD> {
     type Item = global::DataReply;
 
     fn poll_next(
