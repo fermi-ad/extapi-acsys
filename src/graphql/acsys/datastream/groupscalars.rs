@@ -168,3 +168,120 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::global;
+
+    fn scalar_info(ts: f64) -> global::DataInfo {
+        global::DataInfo {
+            timestamp: ts,
+            result: global::DataType::Scalar(global::Scalar {
+                scalar_value: ts / 2.0,
+            }),
+        }
+    }
+
+    fn waveform_info(ts: f64) -> global::DataInfo {
+        global::DataInfo {
+            timestamp: ts,
+            result: global::DataType::ScalarArray(global::ScalarArray {
+                scalar_array_value: vec![
+                    ts / 2.0,
+                    ts / 2.0 + 1.0,
+                    ts / 2.0 + 2.0,
+                ],
+            }),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_grouping_waveforms() {
+        use futures::stream::{self, StreamExt};
+
+        let input = &[
+            global::DataReply {
+                ref_id: 0,
+                data: vec![waveform_info(100.0)],
+            },
+            global::DataReply {
+                ref_id: 0,
+                data: vec![waveform_info(110.0)],
+            },
+            // Should return both waveforms.
+            global::DataReply {
+                ref_id: 0,
+                data: vec![waveform_info(120.0), waveform_info(130.0)],
+            },
+        ];
+        let mut s = super::group_scalars::<4, _>(stream::iter(input.clone()));
+
+        assert_eq!(
+            s.next().await.unwrap(),
+            global::DataReply {
+                ref_id: 0,
+                data: vec![waveform_info(100.0)]
+            },
+        );
+        assert_eq!(
+            s.next().await.unwrap(),
+            global::DataReply {
+                ref_id: 0,
+                data: vec![waveform_info(110.0),]
+            },
+        );
+        assert_eq!(
+            s.next().await.unwrap(),
+            global::DataReply {
+                ref_id: 0,
+                data: vec![waveform_info(120.0), waveform_info(130.0)]
+            },
+        );
+    }
+
+    #[tokio::test]
+    async fn test_grouping_scalars() {
+        use futures::stream::{self, StreamExt};
+
+        let input = &[
+            global::DataReply {
+                ref_id: 0,
+                data: vec![scalar_info(100.0)],
+            },
+            global::DataReply {
+                ref_id: 0,
+                data: vec![scalar_info(110.0)],
+            },
+            // Should return both waveforms.
+            global::DataReply {
+                ref_id: 0,
+                data: vec![scalar_info(120.0), scalar_info(130.0)],
+            },
+            global::DataReply {
+                ref_id: 0,
+                data: vec![scalar_info(140.0)],
+            },
+        ];
+        let mut s = super::group_scalars::<4, _>(stream::iter(input.clone()));
+
+        assert_eq!(
+            s.next().await.unwrap(),
+            global::DataReply {
+                ref_id: 0,
+                data: vec![
+                    scalar_info(100.0),
+                    scalar_info(110.0),
+                    scalar_info(120.0),
+                    scalar_info(130.0)
+                ]
+            },
+        );
+        assert_eq!(
+            s.next().await.unwrap(),
+            global::DataReply {
+                ref_id: 0,
+                data: vec![scalar_info(140.0),]
+            },
+        );
+    }
+}
