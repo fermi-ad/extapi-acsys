@@ -1,4 +1,4 @@
-use super::{global, DataChannel, DataStream};
+use super::{global, DataChannel};
 use futures::Stream;
 use futures_util::StreamExt;
 use std::{
@@ -18,22 +18,33 @@ use tracing::warn;
 //      be polled and the data buffered until the archived data has been
 //      delivered.
 
-pub struct DataMerge {
-    archived: DataStream,
+pub struct DataMerge<SA, SL>
+where
+    SA: Stream<Item = global::DataReply> + Send + 'static + Unpin,
+    SL: Stream<Item = global::DataReply> + Send + 'static + Unpin,
+{
+    archived: SA,
     archived_done: bool,
-    live: DataStream,
+    live: SL,
     live_done: bool,
     pending: HashMap<i32, DataChannel>,
 }
 
 // Useful combinator that assembles the internal stream type.
 
-pub fn merge(archived: DataStream, live: DataStream) -> DataStream {
-    Box::pin(DataMerge::new(archived, live)) as DataStream
+pub fn merge(
+    archived: impl Stream<Item = global::DataReply> + Send + 'static + Unpin,
+    live: impl Stream<Item = global::DataReply> + Send + 'static + Unpin,
+) -> impl Stream<Item = global::DataReply> + Send + 'static + Unpin {
+    DataMerge::new(archived, live)
 }
 
-impl DataMerge {
-    pub fn new(archived: DataStream, live: DataStream) -> Self {
+impl<SA, SL> DataMerge<SA, SL>
+where
+    SA: Stream<Item = global::DataReply> + Send + 'static + Unpin,
+    SL: Stream<Item = global::DataReply> + Send + 'static + Unpin,
+{
+    pub fn new(archived: SA, live: SL) -> Self {
         DataMerge {
             archived,
             archived_done: false,
@@ -44,7 +55,11 @@ impl DataMerge {
     }
 }
 
-impl Stream for DataMerge {
+impl<SA, SL> Stream for DataMerge<SA, SL>
+where
+    SA: Stream<Item = global::DataReply> + Send + 'static + Unpin,
+    SL: Stream<Item = global::DataReply> + Send + 'static + Unpin,
+{
     type Item = global::DataReply;
 
     fn poll_next(
@@ -217,10 +232,8 @@ mod test {
                 data: vec![data_info(130.0)],
             },
         ];
-        let mut s = super::merge(
-            Box::pin(stream::empty()) as super::DataStream,
-            Box::pin(stream::iter(live_input.clone())) as super::DataStream,
-        );
+        let mut s =
+            super::merge(stream::empty(), stream::iter(live_input.clone()));
 
         assert_eq!(
             s.next().await.unwrap(),
@@ -264,8 +277,8 @@ mod test {
             },
         ];
         let mut s = super::merge(
-            Box::pin(stream::iter(archive_input.clone())) as super::DataStream,
-            Box::pin(stream::iter(live_input.clone())) as super::DataStream,
+            stream::iter(archive_input.clone()),
+            stream::iter(live_input.clone()),
         );
 
         assert_eq!(

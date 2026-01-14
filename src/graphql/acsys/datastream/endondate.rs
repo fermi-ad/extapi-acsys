@@ -1,16 +1,22 @@
-use super::{global, DataStream};
-use futures::Stream;
+use super::global;
+use futures::{future::Either, Stream};
 use futures_util::StreamExt;
 use std::{collections::HashSet, pin::Pin, task::Poll};
 
-pub struct EndOnDate {
-    s: DataStream,
+pub struct EndOnDate<S>
+where
+    S: Stream<Item = global::DataReply> + Send + 'static + Unpin,
+{
+    s: S,
     end_date: f64,
     remaining: HashSet<i32>,
 }
 
-impl EndOnDate {
-    pub fn new(s: DataStream, end_date: f64, total: i32) -> Self {
+impl<S> EndOnDate<S>
+where
+    S: Stream<Item = global::DataReply> + Send + 'static + Unpin,
+{
+    pub fn new(s: S, end_date: f64, total: i32) -> Self {
         EndOnDate {
             s,
             end_date,
@@ -20,16 +26,20 @@ impl EndOnDate {
 }
 
 pub fn end_stream_at(
-    s: DataStream, total: i32, end_date: Option<f64>,
-) -> DataStream {
+    s: impl Stream<Item = global::DataReply> + Send + 'static + Unpin,
+    total: i32, end_date: Option<f64>,
+) -> impl Stream<Item = global::DataReply> + Send + 'static + Unpin {
     if let Some(ts) = end_date {
-        Box::pin(EndOnDate::new(s, ts, total)) as DataStream
+        Either::Left(EndOnDate::new(s, ts, total))
     } else {
-        s
+        Either::Right(s)
     }
 }
 
-impl Stream for EndOnDate {
+impl<S> Stream for EndOnDate<S>
+where
+    S: Stream<Item = global::DataReply> + Send + 'static + Unpin,
+{
     type Item = global::DataReply;
 
     fn poll_next(
@@ -121,11 +131,8 @@ mod test {
                 data: vec![data_info(110.0), data_info(120.0)],
             },
         ];
-        let mut s = super::end_stream_at(
-            Box::pin(stream::iter(input.clone())) as super::DataStream,
-            2,
-            Some(115.0),
-        );
+        let mut s =
+            super::end_stream_at(stream::iter(input.clone()), 2, Some(115.0));
 
         assert_eq!(
             s.next().await.unwrap(),

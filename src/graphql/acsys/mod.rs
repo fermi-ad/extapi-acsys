@@ -4,7 +4,7 @@ use crate::g_rpc::{
 };
 
 use async_graphql::*;
-use futures::future;
+use futures::future::{self, Either};
 use futures_util::{stream, Stream, StreamExt};
 use serde::Deserialize;
 use std::{collections::HashSet, pin::Pin, sync::Arc};
@@ -465,7 +465,8 @@ impl<'ctx> ACSysSubscriptions {
 
     async fn live_data(
         ctxt: &Context<'ctx>, drfs: &[String], start_time: f64,
-    ) -> Result<DataStream> {
+    ) -> Result<impl Stream<Item = global::DataReply> + Send + 'static + Unpin>
+    {
         use tokio_stream::StreamExt;
 
         // Strip any source designation and append the once-immediate.
@@ -485,20 +486,18 @@ impl<'ctx> ACSysSubscriptions {
         )
         .await
         {
-            Ok(s) => {
-                Ok(Box::pin(StreamExt::filter_map(s.into_inner(), move |v| {
-                    let mut reply = xlat_reply(v);
-                    let idx = reply.data[..]
-                        .partition_point(|info| info.timestamp < start_time);
+            Ok(s) => Ok(StreamExt::filter_map(s.into_inner(), move |v| {
+                let mut reply = xlat_reply(v);
+                let idx = reply.data[..]
+                    .partition_point(|info| info.timestamp < start_time);
 
-                    reply.data.drain(..idx);
-                    if reply.data.is_empty() {
-                        None
-                    } else {
-                        Some(reply)
-                    }
-                })) as DataStream)
-            }
+                reply.data.drain(..idx);
+                if reply.data.is_empty() {
+                    None
+                } else {
+                    Some(reply)
+                }
+            })),
             Err(e) => Err(Error::new(format!("{}", e).as_str())),
         }
     }
@@ -939,9 +938,11 @@ live data."]
         // time for the data to also be saved in a data logger.
 
         let s_live = if need_live {
-            ACSysSubscriptions::live_data(ctxt, &drfs, start_live).await?
+            Either::Left(
+                ACSysSubscriptions::live_data(ctxt, &drfs, start_live).await?,
+            )
         } else {
-            Box::pin(tokio_stream::empty()) as DataStream
+            Either::Right(tokio_stream::empty())
         };
 
         // Build up the set of streams that will return archived data.
@@ -979,19 +980,19 @@ live data."]
 
             // Modify incoming DataReplies by updating their ref IDs.
 
-            Box::pin(tokio_stream::StreamExt::map(streams, |mut v| {
+            Either::Left(tokio_stream::StreamExt::map(streams, |mut v| {
                 v.1.ref_id = v.0;
                 v.1
-            })) as DataStream
+            }))
         } else {
-            Box::pin(tokio_stream::empty()) as DataStream
+            Either::Right(tokio_stream::empty())
         };
 
-        Ok(datastream::end_stream_at(
+        Ok(Box::pin(datastream::end_stream_at(
             datastream::filter_dupes(datastream::merge(s_archived, s_live)),
             total,
             end_time,
-        ))
+        )) as DataStream)
     }
 
     #[allow(clippy::too_many_arguments)]

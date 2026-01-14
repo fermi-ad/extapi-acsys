@@ -1,4 +1,4 @@
-use super::{global, DataStream};
+use super::global;
 use futures::Stream;
 use futures_util::StreamExt;
 use std::{collections::HashMap, pin::Pin, task::Poll};
@@ -7,19 +7,25 @@ use std::{collections::HashMap, pin::Pin, task::Poll};
 // decreasing timestamp (i.e. data duplicated in archive and live data
 // streams.
 
-struct FilterDupes {
-    s: DataStream,
+struct FilterDupes<S: Stream<Item = global::DataReply> + Send + 'static + Unpin>
+{
+    s: S,
     latest: HashMap<i32, f64>,
 }
 
 // Friendly function to wrap a stream with the FilterDupes stream.
 
-pub fn filter_dupes(s: DataStream) -> DataStream {
-    Box::pin(FilterDupes::new(s))
+pub fn filter_dupes(
+    s: impl Stream<Item = global::DataReply> + Send + 'static + Unpin,
+) -> impl Stream<Item = global::DataReply> + Send + 'static + Unpin {
+    FilterDupes::new(s)
 }
 
-impl FilterDupes {
-    pub fn new(s: DataStream) -> Self {
+impl<S> FilterDupes<S>
+where
+    S: Stream<Item = global::DataReply> + Send + 'static + Unpin,
+{
+    pub fn new(s: S) -> Self {
         FilterDupes {
             s,
             latest: HashMap::new(),
@@ -27,7 +33,10 @@ impl FilterDupes {
     }
 }
 
-impl Stream for FilterDupes {
+impl<S> Stream for FilterDupes<S>
+where
+    S: Stream<Item = global::DataReply> + Send + 'static + Unpin,
+{
     type Item = global::DataReply;
 
     fn poll_next(
@@ -115,9 +124,7 @@ mod test {
                 data: vec![data_info(105.0), data_info(115.0)],
             },
         ];
-        let mut s = super::filter_dupes(
-            Box::pin(stream::iter(input.clone())) as super::DataStream
-        );
+        let mut s = super::filter_dupes(stream::iter(input.clone()));
 
         assert_eq!(
             s.next().await.unwrap(),
