@@ -4,7 +4,7 @@
 // forwarded one at a time. The first element returned by the stream
 // determines what data is forwarded.
 
-use super::{global, DataStream};
+use super::global;
 use futures::Stream;
 use futures_util::StreamExt;
 use std::{pin::Pin, task::Poll};
@@ -16,13 +16,19 @@ enum StreamState {
     Waveform,
 }
 
-pub struct GroupScalars<const MAX_PAYLOAD: usize> {
-    archived: DataStream,
+pub struct GroupScalars<const MAX_PAYLOAD: usize, S>
+where
+    S: Stream<Item = global::DataReply> + Send + 'static + Unpin,
+{
+    archived: S,
     state: StreamState,
 }
 
-impl<const MAX_PAYLOAD: usize> GroupScalars<MAX_PAYLOAD> {
-    pub fn new(archived: DataStream) -> Self {
+impl<const MAX_PAYLOAD: usize, S> GroupScalars<MAX_PAYLOAD, S>
+where
+    S: Stream<Item = global::DataReply> + Send + 'static + Unpin,
+{
+    pub fn new(archived: S) -> Self {
         GroupScalars {
             archived,
             state: StreamState::Unknown,
@@ -30,11 +36,19 @@ impl<const MAX_PAYLOAD: usize> GroupScalars<MAX_PAYLOAD> {
     }
 }
 
-pub fn group_scalars<const MAX_PAYLOAD: usize>(s: DataStream) -> DataStream {
-    Box::pin(GroupScalars::<MAX_PAYLOAD>::new(s)) as DataStream
+pub fn group_scalars<const MAX_PAYLOAD: usize, S>(
+    s: S,
+) -> impl Stream<Item = global::DataReply> + Send + 'static + Unpin
+where
+    S: Stream<Item = global::DataReply> + Send + 'static + Unpin,
+{
+    GroupScalars::<MAX_PAYLOAD, S>::new(s)
 }
 
-impl<const MAX_PAYLOAD: usize> Stream for GroupScalars<MAX_PAYLOAD> {
+impl<const MAX_PAYLOAD: usize, S> Stream for GroupScalars<MAX_PAYLOAD, S>
+where
+    S: Stream<Item = global::DataReply> + Send + 'static + Unpin,
+{
     type Item = global::DataReply;
 
     fn poll_next(

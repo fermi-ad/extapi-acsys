@@ -505,7 +505,8 @@ impl<'ctx> ACSysSubscriptions {
     #[instrument(name = "EPICS_ARCH", skip(device, start_time, end_time))]
     async fn epics_archived_data(
         device: &str, start_time: f64, end_time: f64,
-    ) -> Result<DataStream> {
+    ) -> Result<impl Stream<Item = global::DataReply> + Send + 'static + Unpin>
+    {
         const BASE_URL: &str =
             "http://archiverdev.fnal.gov:17668/retrieval/data/getData.json";
 
@@ -529,9 +530,7 @@ impl<'ctx> ACSysSubscriptions {
             let data: Vec<_> =
                 json_data.data.iter().map(transform_event).collect();
 
-            Ok(Box::pin(datastream::group_scalars::<500>(Box::pin(
-                stream::iter(data),
-            ))) as DataStream)
+            Ok(datastream::group_scalars::<500, _>(stream::iter(data)))
         } else {
             Err(Error::new("archiver didn't return only one PV's history"))
         }
@@ -970,8 +969,8 @@ live data."]
                 );
 
                 let actual = match strms {
-                    (Ok(epics), _) => epics,
-                    (_, Ok(acnet)) => acnet,
+                    (Ok(epics), _) => Either::Left(epics),
+                    (_, Ok(acnet)) => Either::Right(acnet),
                     (_, err @ Err(_)) => return err,
                 };
 

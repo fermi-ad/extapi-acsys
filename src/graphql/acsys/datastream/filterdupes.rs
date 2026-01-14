@@ -7,7 +7,9 @@ use std::{collections::HashMap, pin::Pin, task::Poll};
 // decreasing timestamp (i.e. data duplicated in archive and live data
 // streams.
 
-struct FilterDupes<S: Stream<Item = global::DataReply> + Send + 'static + Unpin>
+struct FilterDupes<S>
+where
+    S: Stream<Item = global::DataReply> + Send + 'static + Unpin,
 {
     s: S,
     latest: HashMap<i32, f64>,
