@@ -49,10 +49,10 @@ impl<const MAX_PAYLOAD: usize> Stream for GroupScalars<MAX_PAYLOAD> {
                     // The stream type hasn't been determined. Look at
                     // the first element in the data array to
                     // determine the stream type.
-                    StreamState::Unknown => match payload.data.as_slice() {
+                    StreamState::Unknown => match *payload.data.as_slice() {
                         // If the stream has scalar data, set the type
                         // to "scalar".
-                        &[global::DataInfo {
+                        [global::DataInfo {
                             result: global::DataType::Scalar(_),
                             ..
                         }, ..] => {
@@ -74,7 +74,7 @@ impl<const MAX_PAYLOAD: usize> Stream for GroupScalars<MAX_PAYLOAD> {
                         // If the stream has waveform data, set the
                         // type of the stream to "waveform" for future
                         // data.
-                        &[global::DataInfo {
+                        [global::DataInfo {
                             result: global::DataType::ScalarArray(_),
                             ..
                         }, ..] => {
