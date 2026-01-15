@@ -8,7 +8,6 @@ tonic-prost-build = "0.14"
 protoc-bin-vendored = "3.2"
 
 [dependencies]
-async-stream = "0.3"
 futures = "0.3.27"
 futures-util = { version = "0.3", features = ["tokio-io"] }
 tokio = { version = "1", features = [
@@ -20,7 +19,6 @@ tokio-stream = { version = "0.1", features = ["sync"] }
 
 tracing = { version = "0.1", features = ["log"] }
 tracing-subscriber = "0.3"
-tracing-futures = "0.2"
 
 async-graphql = { version = "7", features = ["chrono"] }
 async-graphql-axum = "7"

@@ -11,10 +11,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	.emit_rerun_if_changed(true)
         .compile_protos(
             &[
-                "src/g_rpc/protos/proto/controls/service/DAQ/v1/DAQ.proto",
-                "src/g_rpc/protos/proto/controls/service/ACLK/v1/ACLK.proto",
-		"src/g_rpc/protos/proto/controls/service/TlgPlacement/v1/TlgPlacement.proto",
                 "src/g_rpc/protos/proto/controls/common/v1/status.proto",
+                "src/g_rpc/protos/proto/controls/service/ACLK/v1/ACLK.proto",
+                "src/g_rpc/protos/proto/controls/service/DAQ/v1/DAQ.proto",
+                "src/g_rpc/protos/proto/controls/service/grpc-alarms-db/v1/alarm-groups.proto",
+                "src/g_rpc/protos/proto/controls/service/grpc-alarms-db/v1/alarm-timers.proto",
+                "src/g_rpc/protos/proto/controls/service/grpc-alarms-db/v1/user-layouts.proto",
+		        "src/g_rpc/protos/proto/controls/service/TlgPlacement/v1/TlgPlacement.proto",
                 "src/g_rpc/protos/proto/controls/third-party/interval.proto",
             ],
             &["src/g_rpc/protos"],
