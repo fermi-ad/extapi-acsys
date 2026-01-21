@@ -88,6 +88,8 @@ impl MessageJob {
         loop {
             self.check_connection();
             if let Some(cons) = &mut self.consumer {
+                // sender.send() returns the number of receivers that got the message. We don't really care about that, but still want to
+                // capture any errors, so we use .map(|_| ()) to just drop the Ok path.
                 let result =
                     do_poll(cons, |msg| self.sender.send(msg).map(|_| ()));
                 if let Err(err) = result {
