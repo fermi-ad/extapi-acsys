@@ -53,6 +53,7 @@ prost-types = "0.14"
 clap = { version = "4.5", features = ["derive", "env"] }
 
 kafka = { version = "0.10.0", default-features = false }
+uuid = { version = "1.19.0", features = ["v4"] }
 
 [dev-dependencies]
 tower = "0.5"

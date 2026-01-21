@@ -1,4 +1,5 @@
 use crate::env_var;
+use async_graphql::SimpleObject;
 use kafka::{
     client::{FetchOffset, GroupOffsetStorage},
     consumer::Consumer,
@@ -10,9 +11,27 @@ use std::{
     thread,
     time::Duration,
 };
-use tokio::sync::broadcast::{self, Receiver, Sender};
+use tokio::sync::broadcast::{self, error::SendError, Receiver, Sender};
 use tokio_stream::wrappers::BroadcastStream;
 use tracing::error;
+use uuid::Uuid;
+
+/// A message from the pub-sub service.
+/// Contains a key (optional) and a value.
+///
+/// Instances may be created with the [`new`](Message::new) method (specifying both key and value)
+/// or the [`from_value`](Message::from_value) method (specifying only the value).
+#[derive(Clone, Debug, PartialEq, SimpleObject)]
+pub struct Message {
+    pub key: Option<String>,
+    pub value: String,
+}
+impl Message {
+    /// Creates a new [`Message`] with the provided key and value.
+    pub fn new(key: Option<String>, value: String) -> Self {
+        Self { key, value }
+    }
+}
 
 fn handle<E: Error>(result: Result<(), E>) {
     match result {
@@ -20,46 +39,68 @@ fn handle<E: Error>(result: Result<(), E>) {
         Err(err) => error!("{}", err),
     }
 }
-fn do_poll<R, E: Error>(
-    consumer: &mut Consumer, mut append_msg: impl FnMut(String) -> Result<R, E>,
-) -> Result<(), PubSubError> {
-    match consumer.poll() {
-        Ok(message_sets) => {
-            for set in message_sets.iter() {
-                for msg in set.messages() {
-                    match str::from_utf8(msg.value) {
-                        Ok(decoded) => match append_msg(decoded.to_owned()) {
-                            Ok(_) => (),
-                            Err(err) => {
-                                handle(Err(err));
-                                return Err(PubSubError::default());
-                            }
-                        },
-                        Err(err) => error!("{}", err),
-                    };
-                }
-                handle(consumer.consume_messageset(set));
-            }
-            handle(consumer.commit_consumed());
+fn do_poll<E: Error + 'static>(
+    consumer: &mut Consumer,
+    mut append_msg: impl FnMut(Message) -> Result<(), E>,
+) -> Result<(), Box<dyn Error>> {
+    let message_sets = consumer.poll()?;
+    for set in message_sets.iter() {
+        for msg in set.messages() {
+            let key = str::from_utf8(msg.key).ok().map(String::from);
+            let value = str::from_utf8(msg.value)?.to_string();
+            append_msg(Message::new(key, value))?;
         }
-        Err(err) => {
-            error!("{}", err);
-            let _ = append_msg(String::from("An error occurred while consuming messages. See server logs for details. Closing stream."));
-            return Err(PubSubError::default());
-        }
-    };
-    Ok(())
+        consumer.consume_messageset(set)?;
+    }
+    if consumer.group().is_empty() {
+        Ok(())
+    } else {
+        Ok(consumer.commit_consumed()?)
+    }
 }
 
 struct MessageJob {
-    consumer: Consumer,
-    sender: Arc<Sender<String>>,
+    consumer: Option<Consumer>,
+    sender: Arc<Sender<Message>>,
+    topic: String,
+    uuid: Uuid,
 }
 impl MessageJob {
-    pub fn run(&mut self) {
-        while do_poll(&mut self.consumer, |msg: String| self.sender.send(msg))
-            .is_ok()
-        {
+    fn from(topic: String, sender: Arc<Sender<Message>>) -> Self {
+        let uuid = Uuid::new_v4();
+        Self {
+            consumer: get_consumer(topic.clone(), Some(uuid.to_string())).ok(),
+            sender,
+            topic,
+            uuid,
+        }
+    }
+
+    fn check_connection(&mut self) {
+        if self.consumer.is_none() {
+            self.consumer =
+                get_consumer(self.topic.clone(), Some(self.uuid.to_string()))
+                    .ok();
+        }
+    }
+
+    fn run(&mut self) {
+        loop {
+            self.check_connection();
+            if let Some(cons) = &mut self.consumer {
+                let result =
+                    do_poll(cons, |msg| self.sender.send(msg).map(|_| ()));
+                if let Err(err) = result {
+                    if err.downcast_ref::<SendError<Message>>().is_some() {
+                        // The send stream is closed, so all receivers must have been dropped and there is no more need for this thread to run.
+                        break;
+                    } else {
+                        // Something else went wrong with the consumer. Drop the current instance so we can attempt to reconnect on the next pass.
+                        error!("{err}");
+                        self.consumer = None;
+                    }
+                }
+            }
             thread::sleep(Duration::from_millis(100));
         }
     }
@@ -69,12 +110,15 @@ const KAFKA_HOST: &str = "KAFKA_HOST";
 const DEFAULT_KAFKA_HOST: &str = "acsys-services.fnal.gov:9092";
 const KAFKA_CONN_SECS: &str = "KAFKA_CONNECTION_SECONDS";
 const DEFAULT_CONN_TIME: u64 = 1;
-fn get_consumer(topic: String) -> Result<Consumer, PubSubError> {
+fn get_consumer(
+    topic: String, group: Option<String>,
+) -> Result<Consumer, PubSubError> {
     let host = env_var::get(KAFKA_HOST).or(DEFAULT_KAFKA_HOST.to_owned());
     let (sender, receiver) = mpsc::channel();
     let _ = thread::spawn(move || {
         let consumer = Consumer::from_hosts(vec![host])
             .with_topic(topic)
+            .with_group(group.unwrap_or_default())
             .with_fallback_offset(FetchOffset::Earliest)
             .with_offset_storage(Some(GroupOffsetStorage::Kafka))
             .create()
@@ -86,26 +130,25 @@ fn get_consumer(topic: String) -> Result<Consumer, PubSubError> {
     });
     let connection_seconds =
         env_var::get(KAFKA_CONN_SECS).or(DEFAULT_CONN_TIME);
-    match receiver.recv_timeout(Duration::from_secs(connection_seconds)) {
-        Ok(result) => result,
-        Err(err) => {
+    receiver
+        .recv_timeout(Duration::from_secs(connection_seconds))
+        .map_err(|err| {
             error!("{}", err);
-            Err(PubSubError::default())
-        }
-    }
+            PubSubError::default()
+        })?
 }
 
 pub struct Snapshot {
-    pub data: Vec<String>,
+    pub data: Vec<Message>,
 }
 impl Snapshot {
     pub fn for_topic(topic: String) -> Result<Self, PubSubError> {
-        let mut consumer = get_consumer(topic)?;
-        let mut data: Vec<String> = Vec::new();
+        let mut consumer = get_consumer(topic, None)?;
+        let mut data: Vec<Message> = Vec::new();
 
         let mut cur_size: usize = 0;
         loop {
-            match do_poll(&mut consumer, |msg: String| {
+            match do_poll(&mut consumer, |msg| {
                 data.push(msg);
                 Result::<(), PubSubError>::Ok(())
             }) {
@@ -116,7 +159,10 @@ impl Snapshot {
                         break;
                     }
                 }
-                Err(err) => return Err(err),
+                Err(err) => {
+                    error!("{err}");
+                    return Err(PubSubError::default());
+                }
             }
         }
         Ok(Self { data })
@@ -127,18 +173,18 @@ impl Snapshot {
 #[derive(Debug)]
 pub struct Subscriber {
     /// Keeps the channel open while the subscriber waits for clients to ask for a stream.
-    _channel_lock: Receiver<String>,
-    sender: Arc<Sender<String>>,
+    _channel_lock: Receiver<Message>,
+    sender: Arc<Sender<Message>>,
 }
 impl Subscriber {
-    fn from(consumer: Consumer) -> Self {
-        let (sender, _channel_lock) = broadcast::channel::<String>(20);
+    /// Generates a new subscriber for the provided topic.
+    /// A new thread will be started and run in the background to poll for
+    /// messages. The thread will terminate when this subscriber is dropped.
+    pub fn for_topic(topic: String) -> Self {
+        let (sender, _channel_lock) = broadcast::channel::<Message>(20);
         let thread_sender = Arc::new(sender);
         let instance_sender = Arc::clone(&thread_sender);
-        let mut message_job = MessageJob {
-            consumer,
-            sender: thread_sender,
-        };
+        let mut message_job = MessageJob::from(topic, thread_sender);
         let _task_handle = thread::spawn(move || {
             message_job.run();
         });
@@ -149,16 +195,8 @@ impl Subscriber {
         }
     }
 
-    /// Generates a new subscriber for the provided topic.
-    /// A new thread will be started and run in the background to poll for
-    /// messages. The thread will terminate when this subscriber is dropped.
-    pub fn for_topic(topic: String) -> Result<Self, PubSubError> {
-        let consumer = get_consumer(topic)?;
-        Ok(Self::from(consumer))
-    }
-
     /// Streams messages that appear on the subscribed topic.
-    pub fn get_stream(&self) -> BroadcastStream<String> {
+    pub fn get_stream(&self) -> BroadcastStream<Message> {
         BroadcastStream::new(self.sender.subscribe())
     }
 }
@@ -195,10 +233,13 @@ mod tests {
 
     #[test]
     fn error_on_bad_subscriber_host() {
-        let result = Subscriber::for_topic(String::from("my_topic"));
-        let err = result
-            .expect_err("Expected the connection to fail, but it succeeded");
-        assert_eq!(CANNED_ERR_MESSAGE, format!("{}", err));
+        let mut result = Subscriber::for_topic(String::from("my_topic"));
+        let num_rec = result
+            .sender
+            .send(Message::new(None, "testing".to_string()))
+            .unwrap();
+        assert_eq!(num_rec, 1);
+        assert_eq!(result._channel_lock.try_recv().unwrap().value, "testing");
     }
 
     #[test]
