@@ -13,15 +13,21 @@ pub mod proto {
     }
 
     pub mod services {
-        pub mod daq {
-            include!("generated/services.daq.rs");
-        }
         pub mod aclk {
             include!("generated/services.clock_event.rs");
+        }
+        pub mod alarms {
+            include!("generated/services.alarm_groups.rs");
+            include!("generated/services.alarm_timers.rs");
+            include!("generated/services.alarm_user_layouts.rs");
+        }
+        pub mod daq {
+            include!("generated/services.daq.rs");
         }
     }
 }
 
+pub mod alarms_db;
 pub mod clock;
 pub mod devdb;
 pub mod dpm;

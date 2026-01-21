@@ -113,7 +113,7 @@ fn create_alarms_router() -> Router {
 
     let schema = Schema::build(
         alarms::AlarmsQueries,
-        EmptyMutation,
+        alarms::AlarmsMutations,
         alarms::AlarmsSubscriptions,
     )
     .data(alarms::get_alarms_subscriber())
