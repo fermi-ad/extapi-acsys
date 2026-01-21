@@ -88,16 +88,19 @@ impl MessageJob {
         loop {
             self.check_connection();
             if let Some(cons) = &mut self.consumer {
-                // sender.send() returns the number of receivers that got the message. We don't really care about that, but still want to
-                // capture any errors, so we use .map(|_| ()) to just drop the Ok path.
+                // sender.send() returns Result<usize, SendError<T>>, where the Ok path is the number of receivers
+                // that got the message. We don't really care about that, but still want to capture any errors, so
+                // we use .map(drop) to just drop the Ok path.
                 let result =
-                    do_poll(cons, |msg| self.sender.send(msg).map(|_| ()));
+                    do_poll(cons, |msg| self.sender.send(msg).map(drop));
                 if let Err(err) = result {
                     if err.downcast_ref::<SendError<Message>>().is_some() {
-                        // The send stream is closed, so all receivers must have been dropped and there is no more need for this thread to run.
+                        // The send stream is closed, so all receivers must have been dropped and there is no
+                        // more need for this thread to run.
                         break;
                     } else {
-                        // Something else went wrong with the consumer. Drop the current instance so we can attempt to reconnect on the next pass.
+                        // Something else went wrong with the consumer. Drop the current instance so we can
+                        // attempt to reconnect on the next pass.
                         error!("{err}");
                         self.consumer = None;
                     }
