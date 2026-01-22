@@ -1,6 +1,6 @@
 use crate::env_var;
 use async_graphql::SimpleObject;
-use kafka::{
+use kafkang::{
     client::{FetchOffset, GroupOffsetStorage},
     consumer::Consumer,
 };
@@ -50,7 +50,7 @@ fn do_poll<E: Error + 'static>(
             let value = str::from_utf8(msg.value)?.to_string();
             append_msg(Message::new(key, value))?;
         }
-        consumer.consume_messageset(set)?;
+        consumer.consume_messageset(&set)?;
     }
     if consumer.group().is_empty() {
         Ok(())
