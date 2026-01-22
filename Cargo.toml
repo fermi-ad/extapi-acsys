@@ -8,6 +8,7 @@ tonic-prost-build = "0.14"
 protoc-bin-vendored = "3.2"
 
 [dependencies]
+async-stream = "0.3"
 futures = "0.3.27"
 futures-util = { version = "0.3", features = ["tokio-io"] }
 tokio = { version = "1", features = [
