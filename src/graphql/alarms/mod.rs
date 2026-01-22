@@ -6,7 +6,7 @@ use crate::env_var;
 
 use crate::g_rpc::{alarms_db, proto::services::alarms};
 
-use crate::pubsub::{Snapshot, Subscriber};
+use crate::pubsub::{Message, Snapshot, Subscriber};
 
 use tokio_stream::wrappers::BroadcastStream;
 use tonic::{Code, Request, Status};
@@ -16,8 +16,8 @@ use types::{AlarmGroup, AlarmGroupMetadatum, AlarmTimer, UserLayout};
 
 mod utils;
 
-pub fn get_alarms_subscriber() -> Option<Subscriber> {
-    Subscriber::for_topic(get_topic()).ok()
+pub fn get_alarms_subscriber() -> Subscriber {
+    Subscriber::for_topic(get_topic())
 }
 
 #[derive(Default)]
@@ -134,7 +134,7 @@ impl AlarmsQueries {
         }
     }
 
-    async fn alarms_snapshot(&self) -> Result<Vec<String>, Error> {
+    async fn alarms_snapshot(&self) -> Result<Vec<Message>, Error> {
         match Snapshot::for_topic(get_topic()) {
             Ok(snapshot) => Ok(snapshot.data),
             Err(err) => Err(Error::new(format!("{err}"))),
@@ -170,12 +170,9 @@ pub struct AlarmsSubscriptions;
 impl<'ctx> AlarmsSubscriptions {
     async fn alarms(
         &self, ctxt: &Context<'ctx>,
-    ) -> Result<BroadcastStream<String>, Error> {
-        let subscriber = ctxt.data::<Option<Subscriber>>()?;
-        match subscriber {
-            Some(sub) => Ok(sub.get_stream()),
-            None => Err(Error::new("No alarms Subscriber available")),
-        }
+    ) -> Result<BroadcastStream<Message>, Error> {
+        ctxt.data::<Subscriber>()
+            .map(|subscriber| subscriber.get_stream())
     }
 }
 
@@ -216,6 +213,13 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn get_alarms_subscriber_returns_instance() {
+        let instance = get_alarms_subscriber();
+        let result = instance.get_stream().take(0).collect::<Vec<_>>().await;
+        assert_eq!(0, result.len());
+    }
+
+    #[tokio::test]
     async fn alarms_sub_returns_err_response_when_no_subscriber_provided() {
         let schema =
             Schema::build(AlarmsQueries, AlarmsMutations, AlarmsSubscriptions)
@@ -223,37 +227,22 @@ mod tests {
         let result = schema.execute_stream(
             r#"
             subscription Alarms {
-                alarms
+                alarms {
+                  key,
+                  value
+                }
             }
         "#,
         );
         let collection = result.collect::<Vec<Response>>().await;
         assert_eq!(collection.len(), 1);
-        let output_errors = &collection.first().unwrap().errors;
-        assert_eq!(output_errors.len(), 1);
-        let error_msg = &output_errors.first().unwrap().message;
-        assert_eq!(error_msg, "Data `core::option::Option<extapi_dpm::pubsub::Subscriber>` does not exist.");
-    }
-
-    #[tokio::test]
-    async fn alarms_sub_returns_none_when_no_subscriber_provided() {
-        let schema =
-            Schema::build(AlarmsQueries, AlarmsMutations, AlarmsSubscriptions)
-                .data::<Option<Subscriber>>(None)
-                .finish();
-        let result = schema.execute_stream(
-            r#"
-            subscription Alarms {
-                alarms
-            }
-        "#,
+        let output = collection.first().unwrap();
+        assert_eq!(output.errors.len(), 1);
+        let err = output.errors.first().unwrap();
+        assert_eq!(
+            err.message.as_str(),
+            "Data `extapi_dpm::pubsub::Subscriber` does not exist."
         );
-        let collection = result.collect::<Vec<Response>>().await;
-        assert_eq!(collection.len(), 1);
-        let output_errors = &collection.first().unwrap().errors;
-        assert_eq!(output_errors.len(), 1);
-        let error_msg = &output_errors.first().unwrap().message;
-        assert_eq!(error_msg, "No alarms Subscriber available");
     }
 
     #[tokio::test]
@@ -293,17 +282,15 @@ mod tests {
         test_query_returns_err(
             r#"
             query Alarms {
-                alarmsSnapshot
+                alarmsSnapshot {
+                  key,
+                  value
+                }
             }
         "#,
             &format!("{}", PubSubError::default()),
         )
         .await;
-    }
-
-    #[test]
-    fn get_alarms_subscriber_returns_none_when_bad_address() {
-        assert!(get_alarms_subscriber().is_none());
     }
 
     #[test]
