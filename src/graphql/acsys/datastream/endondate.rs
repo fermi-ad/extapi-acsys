@@ -130,34 +130,100 @@ mod test {
                 ref_id: 1,
                 data: vec![data_info(110.0), data_info(120.0)],
             },
-        ];
-        let mut s =
-            super::end_stream_at(stream::iter(input.clone()), 2, Some(115.0));
-
-        assert_eq!(
-            s.next().await.unwrap(),
             global::DataReply {
                 ref_id: 0,
-                data: vec![data_info(100.0), data_info(110.0)]
-            }
-        );
-
-        assert_eq!(
-            s.next().await.unwrap(),
-            global::DataReply {
-                ref_id: 1,
-                data: vec![data_info(100.0)]
+                data: vec![data_info(130.0)],
             },
-        );
+        ];
 
-        assert_eq!(
-            s.next().await.unwrap(),
-            global::DataReply {
-                ref_id: 1,
-                data: vec![data_info(110.0)]
-            },
-        );
+        {
+            let mut s = super::end_stream_at(
+                stream::iter(input.clone()),
+                2,
+                Some(115.0),
+            );
 
-        assert!(s.next().await.is_none());
+            assert_eq!(
+                s.next().await.unwrap(),
+                global::DataReply {
+                    ref_id: 0,
+                    data: vec![data_info(100.0), data_info(110.0)]
+                }
+            );
+
+            assert_eq!(
+                s.next().await.unwrap(),
+                global::DataReply {
+                    ref_id: 1,
+                    data: vec![data_info(100.0)]
+                },
+            );
+
+            assert_eq!(
+                s.next().await.unwrap(),
+                global::DataReply {
+                    ref_id: 1,
+                    data: vec![data_info(110.0)]
+                },
+            );
+
+            assert!(s.next().await.is_none());
+        }
+        {
+            let mut s =
+                super::end_stream_at(stream::iter(input.clone()), 2, None);
+
+            assert_eq!(
+                s.next().await.unwrap(),
+                global::DataReply {
+                    ref_id: 0,
+                    data: vec![data_info(100.0), data_info(110.0)]
+                }
+            );
+
+            assert_eq!(
+                s.next().await.unwrap(),
+                global::DataReply {
+                    ref_id: 0,
+                    data: vec![data_info(120.0)]
+                },
+            );
+
+            assert_eq!(
+                s.next().await.unwrap(),
+                global::DataReply {
+                    ref_id: 1,
+                    data: vec![data_info(100.0)]
+                },
+            );
+
+            assert_eq!(
+                s.next().await.unwrap(),
+                global::DataReply {
+                    ref_id: 1,
+                    data: vec![data_info(110.0), data_info(120.0)]
+                },
+            );
+
+            assert_eq!(
+                s.next().await.unwrap(),
+                global::DataReply {
+                    ref_id: 0,
+                    data: vec![data_info(130.0)]
+                },
+            );
+
+            assert!(s.next().await.is_none());
+        }
+    }
+
+    #[test]
+    fn test_pending() {
+        use futures::stream::{self, StreamExt};
+        use futures::FutureExt;
+
+        let mut s = super::end_stream_at(stream::pending(), 2, Some(115.0));
+
+        assert!(s.next().now_or_never().is_none());
     }
 }
