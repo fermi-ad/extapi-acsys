@@ -72,14 +72,12 @@ where
                     // Remove any readings that have already been sent.
 
                     v.data.drain(..start_index);
-                    if v.data.is_empty() {
-                        continue;
+                    if !v.data.is_empty() {
+                        return Poll::Ready(Some(v));
                     }
-
-                    break Poll::Ready(Some(v));
                 }
-                v @ Poll::Ready(None) => break v,
-                v @ Poll::Pending => break v,
+                v @ Poll::Ready(None) => return v,
+                v @ Poll::Pending => return v,
             }
         }
     }
@@ -108,6 +106,10 @@ mod test {
             global::DataReply {
                 ref_id: 0,
                 data: vec![data_info(100.0), data_info(110.0)],
+            },
+            global::DataReply {
+                ref_id: 0,
+                data: vec![],
             },
             // Another data point for device 0. This has the same timestamp
             // as the previous so it shouldn't appear in the output.
@@ -149,5 +151,15 @@ mod test {
                 data: vec![data_info(115.0),]
             },
         );
+    }
+
+    #[test]
+    fn test_pending() {
+        use futures::stream::{self, StreamExt};
+        use futures::FutureExt;
+
+        let mut s = super::filter_dupes(stream::pending());
+
+        assert!(s.next().now_or_never().is_none());
     }
 }
