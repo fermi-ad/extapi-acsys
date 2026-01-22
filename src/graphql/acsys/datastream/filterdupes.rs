@@ -151,6 +151,7 @@ mod test {
                 data: vec![data_info(115.0),]
             },
         );
+	assert!(s.next().await.is_none());
     }
 
     #[test]
