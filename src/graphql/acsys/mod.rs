@@ -8,6 +8,8 @@ use futures::future::{self, Either};
 use futures_util::{stream, Stream, StreamExt};
 use serde::Deserialize;
 use std::{collections::HashSet, pin::Pin, sync::Arc};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
+use tokio_util::io::StreamReader;
 use tonic::Status;
 use tracing::{error, info, instrument, warn};
 
@@ -502,6 +504,92 @@ impl<'ctx> ACSysSubscriptions {
         }
     }
 
+    // Reads a chunked HTTP response until it finds the "data" key.
+    // Once that's found, it advances the stream up to, and including,
+    // the first '[' so that it's pointing to the first object in the
+    // array.
+
+    async fn seek_to_data_array<R: tokio::io::AsyncBufRead + Unpin>(
+        r: &mut R,
+    ) -> std::io::Result<()> {
+        const KEY: &[u8] = b"\"data\"";
+
+        // First find the key.
+
+        loop {
+            let buf = r.fill_buf().await?;
+
+            if buf.is_empty() {
+                return Err(std::io::ErrorKind::UnexpectedEof.into());
+            }
+
+            if let Some(pos) = buf.windows(KEY.len()).position(|w| w == KEY) {
+                r.consume(pos + KEY.len());
+                break;
+            }
+
+            let len = buf.len();
+
+            r.consume(len.saturating_sub(KEY.len()));
+        }
+
+        // Now find the next '[' character.
+
+        loop {
+            if r.read_u8().await? == b'[' {
+                break;
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn extract_next_object<R: tokio::io::AsyncBufRead + Unpin>(
+        r: &mut R,
+    ) -> std::io::Result<Option<Vec<u8>>> {
+        let mut obj_bytes = Vec::new();
+        let mut brace_count = 0;
+        let mut in_object = false;
+
+        loop {
+            let buf = r.fill_buf().await?;
+
+            if buf.is_empty() {
+                return Ok(None);
+            }
+
+            for (i, &b) in buf.iter().enumerate() {
+                if !in_object {
+                    if b == b'{' {
+                        in_object = true;
+                        brace_count = 1;
+                        obj_bytes.push(b);
+                    } else if b == b']' {
+                        return Ok(None); // End of the data array
+                    }
+                    // Skip commas/whitespace
+                    continue;
+                }
+
+                obj_bytes.push(b);
+
+                if b == b'{' {
+                    brace_count += 1;
+                } else if b == b'}' {
+                    brace_count -= 1;
+                    if brace_count == 0 {
+                        r.consume(i + 1);
+                        return Ok(Some(obj_bytes));
+                    }
+                }
+            }
+
+            let len = buf.len();
+
+            r.consume(len);
+        }
+    }
+
     #[instrument(name = "EPICS_ARCH", skip(device, start_time, end_time))]
     async fn epics_archived_data(
         device: &str, start_time: f64, end_time: f64,
@@ -520,20 +608,42 @@ impl<'ctx> ACSysSubscriptions {
 
         info!("URL : {}", &request_url);
 
-        let response = reqwest::Client::new()
-            .get(&request_url)
-            .send()
-            .await?
-            .error_for_status()?;
+        let response = reqwest::get(request_url).await?.error_for_status()?;
 
-        if let [json_data] = &response.json::<ArchiverResponse>().await?[..] {
-            let data: Vec<_> =
-                json_data.data.iter().map(transform_event).collect();
+        let byte_stream = response.bytes_stream().map(|res| {
+            res.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+        });
 
-            Ok(datastream::group_scalars::<500, _>(stream::iter(data)))
-        } else {
-            Err(Error::new("archiver didn't return only one PV's history"))
-        }
+        let reader = BufReader::new(StreamReader::new(byte_stream));
+
+        let strm =
+            stream::unfold((reader, false), |(mut r, ready)| async move {
+                // SEEK PHASE: Only runs once
+
+                if !ready {
+                    if let Err(_) = Self::seek_to_data_array(&mut r).await {
+                        return None;
+                    }
+                }
+
+                // PARSE PHASE: Extract one object from the array
+
+                match Self::extract_next_object(&mut r).await {
+                    Ok(Some(bytes)) => {
+                        if let Ok(item) =
+                            serde_json::from_slice::<ArchiverEvent>(&bytes)
+                        {
+                            Some((transform_event(&item), (r, true)))
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                }
+            })
+            .boxed();
+
+        Ok(datastream::group_scalars::<500, _>(strm))
     }
 
     // Returns a stream containing archived data for a device.

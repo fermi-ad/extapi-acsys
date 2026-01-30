@@ -14,6 +14,7 @@ enum StreamState {
     Unknown,
     Scalar(global::DataReply),
     Waveform,
+    Done,
 }
 
 pub struct GroupScalars<const MAX_PAYLOAD: usize, S>
@@ -55,11 +56,22 @@ where
         mut self: Pin<&mut Self>, ctxt: &mut std::task::Context<'_>,
     ) -> Poll<Option<Self::Item>> {
         loop {
+            // If we're done, don't try to poll the stream. We go in
+            // the "Done" state when the stream tells us it's done.
+            // Some streams panic if you try to poll them after they
+            // return Ready(None).
+
+            if let StreamState::Done = self.state {
+                return Poll::Ready(None);
+            }
+
             match self.archived.poll_next_unpin(ctxt) {
                 // The stream returned data. Handle the packet
                 // appropriately, based upon the determined stream
                 // type.
                 Poll::Ready(Some(mut payload)) => match &mut self.state {
+                    StreamState::Done => unreachable!(),
+
                     // The stream type hasn't been determined. Look at
                     // the first element in the data array to
                     // determine the stream type.
@@ -156,6 +168,7 @@ where
                             };
 
                             std::mem::swap(pending, &mut tmp);
+                            self.state = StreamState::Done;
                             break Poll::Ready(Some(tmp));
                         }
                     }
