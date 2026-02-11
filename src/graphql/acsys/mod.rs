@@ -398,15 +398,6 @@ struct ArchiverEvent {
     pub val: serde_json::Value,
 }
 
-// Represents the data structure for a single PV in the response array
-#[derive(Debug, Deserialize)]
-struct PvData {
-    pub data: Vec<ArchiverEvent>,
-}
-
-// The root response is an array of PvData objects
-type ArchiverResponse = Vec<PvData>;
-
 #[derive(Default)]
 pub struct ACSysSubscriptions;
 
@@ -610,9 +601,9 @@ impl<'ctx> ACSysSubscriptions {
 
         let response = reqwest::get(request_url).await?.error_for_status()?;
 
-        let byte_stream = response.bytes_stream().map(|res| {
-            res.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
-        });
+        let byte_stream = response
+            .bytes_stream()
+            .map(|res| res.map_err(std::io::Error::other));
 
         let reader = BufReader::new(StreamReader::new(byte_stream));
 
@@ -620,10 +611,9 @@ impl<'ctx> ACSysSubscriptions {
             stream::unfold((reader, false), |(mut r, ready)| async move {
                 // SEEK PHASE: Only runs once
 
-                if !ready {
-                    if let Err(_) = Self::seek_to_data_array(&mut r).await {
-                        return None;
-                    }
+                if !ready && Self::seek_to_data_array(&mut r).await.is_err() {
+                    info!("no data found!");
+                    return None;
                 }
 
                 // PARSE PHASE: Extract one object from the array
