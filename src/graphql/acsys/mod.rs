@@ -179,11 +179,11 @@ return an array result -- it's just that specifying an ID will return \
 an array with 0 or 1 element."]
     #[instrument(skip(self, ctxt))]
     async fn plot_configuration(
-        &self, ctxt: &Context<'_>, configuration_id: Option<usize>,
-    ) -> Vec<Arc<types::PlotConfigurationSnapshot>> {
-        ctxt.data_unchecked::<plotconfigdb::T>()
-            .find(configuration_id)
-            .await
+        &self, ctxt: &Context<'_>, id: Option<usize>,
+    ) -> Vec<types::PlotConfig> {
+        info!("returning plot configuration(s)");
+
+        ctxt.data_unchecked::<plotconfigdb::T>().find(id).await
     }
 
     #[doc = "Obtain the user's last configuration.
@@ -200,7 +200,7 @@ the username and this parameter will be removed."]
     #[instrument(skip(self, ctxt))]
     async fn users_last_configuration(
         &self, ctxt: &Context<'_>, user: Option<String>,
-    ) -> Option<Arc<types::PlotConfigurationSnapshot>> {
+    ) -> Option<Arc<str>> {
         if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
             // TEMPORARY: If there isn't a JWT, use the account
             // specified by the caller.
@@ -279,11 +279,12 @@ want to set."]
 
     #[instrument(skip(self, ctxt))]
     async fn update_plot_configuration(
-        &self, ctxt: &Context<'_>, config: types::PlotConfigurationSnapshot,
+        &self, ctxt: &Context<'_>, id: Option<usize>, name: String,
+        config: Arc<str>,
     ) -> Option<usize> {
         info!("updating config");
         ctxt.data_unchecked::<plotconfigdb::T>()
-            .update(config)
+            .update(id, name, config)
             .await
     }
 
@@ -312,14 +313,13 @@ new authentication method, we'll be able to look-up the username \
 and this parameter will be removed."]
     #[instrument(skip(self, ctxt, config))]
     async fn users_configuration(
-        &self, ctxt: &Context<'_>, user: Option<String>,
-        config: types::PlotConfigurationSnapshot,
+        &self, ctxt: &Context<'_>, config: Arc<str>,
     ) -> Result<global::StatusReply> {
         if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
             // TEMPORARY: If there isn't a JWT, use the username
             // specified by the caller.
 
-            if let Some(account) = auth.unsafe_account().or(user) {
+            if let Some(account) = auth.unsafe_account() {
                 info!("using account: {:?}", &account);
 
                 ctxt.data_unchecked::<plotconfigdb::T>()

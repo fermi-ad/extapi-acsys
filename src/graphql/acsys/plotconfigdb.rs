@@ -4,8 +4,11 @@ use tokio::sync::Mutex;
 
 use super::types;
 
-type GenMap = HashMap<usize, Arc<types::PlotConfigurationSnapshot>>;
-type UserMap = HashMap<String, Arc<types::PlotConfigurationSnapshot>>;
+type Config = Arc<str>;
+type NamedConfig = (Arc<str>, Arc<str>);
+
+type GenMap = HashMap<usize, NamedConfig>;
+type UserMap = HashMap<String, Arc<str>>;
 
 struct Inner(GenMap, UserMap);
 
@@ -21,24 +24,35 @@ impl Inner {
     // entries. If no ID is given, than all non-user-account
     // configurations are returned.
 
-    pub fn find(
-        &self, id: Option<usize>,
-    ) -> Vec<Arc<types::PlotConfigurationSnapshot>> {
+    pub fn find(&self, id: Option<usize>) -> Vec<types::PlotConfig> {
         // If there's an ID specified, we're searching for one record.
 
         if let Some(id) = id {
             // If the record exists and it's not a user configuration,
             // return it. Otherwise return an empty list.
 
-            self.0.get(&id).iter().map(|v| (*v).clone()).collect()
+            self.0
+                .get(&id)
+                .iter()
+                .map(|v| types::PlotConfig {
+                    id,
+                    name: v.0.clone(),
+                    config: v.1.clone(),
+                })
+                .collect()
         } else {
-            self.0.values().cloned().collect()
+            self.0
+                .iter()
+                .map(|(k, v)| types::PlotConfig {
+                    id: *k,
+                    name: v.0.clone(),
+                    config: v.1.clone(),
+                })
+                .collect()
         }
     }
 
-    pub fn find_user(
-        &self, user: &str,
-    ) -> Option<Arc<types::PlotConfigurationSnapshot>> {
+    pub fn find_user(&self, user: &str) -> Option<Config> {
         self.1.get(user).cloned()
     }
 
@@ -50,14 +64,14 @@ impl Inner {
     // that the configuration names in the database are all unique.
 
     pub fn update(
-        &mut self, mut cfg: types::PlotConfigurationSnapshot,
+        &mut self, id: Option<usize>, name: String, cfg: Arc<str>,
     ) -> Option<usize> {
-        if let Some(id) = cfg.configuration_id {
+        if let Some(id) = id {
             // If an ID is specified, we need to make sure the name
             // isn't associated with another ID.
 
             for (k, v) in self.0.iter() {
-                if *k != id && v.configuration_name == cfg.configuration_name {
+                if *k != id && &*v.0 == name {
                     return None;
                 }
             }
@@ -65,16 +79,15 @@ impl Inner {
             // Save the ID and then insert the (possibly updated) record in
             // the DB.
 
-            let result = cfg.configuration_id;
-            let _ = self.0.insert(id, cfg.into());
+            let _ = self.0.insert(id, (name.into(), cfg.into()));
 
-            result
+            Some(id)
         } else {
             // This is to be a new entry. Make sure the name isn't
             // already used.
 
             for v in self.0.values() {
-                if v.configuration_name == cfg.configuration_name {
+                if &*v.0 == name {
                     return None;
                 }
             }
@@ -83,24 +96,16 @@ impl Inner {
             // with the new ID and then insert it in the map.
 
             let id = self.0.keys().reduce(std::cmp::max).unwrap_or(&0usize) + 1;
-
-            cfg.configuration_id = Some(id);
-
-            let _ = self.0.insert(id, cfg.into());
+            let _ = self.0.insert(id, (name.into(), cfg.into()));
 
             Some(id)
         }
     }
 
-    pub fn update_user(
-        &mut self, user: &str, mut cfg: types::PlotConfigurationSnapshot,
-    ) {
+    pub fn update_user(&mut self, user: &str, cfg: Arc<str>) {
         let key: String = user.into();
 
-        cfg.configuration_id = None;
-        cfg.configuration_name = "".into();
-
-        self.1.insert(key, cfg.into());
+        self.1.insert(key, cfg);
     }
 }
 
@@ -115,27 +120,21 @@ impl T {
         T(Arc::new(Mutex::new(Inner::new())))
     }
 
-    pub async fn find(
-        &self, id: Option<usize>,
-    ) -> Vec<Arc<types::PlotConfigurationSnapshot>> {
+    pub async fn find(&self, id: Option<usize>) -> Vec<types::PlotConfig> {
         self.0.lock().await.find(id)
     }
 
-    pub async fn find_user(
-        &self, user: &str,
-    ) -> Option<Arc<types::PlotConfigurationSnapshot>> {
+    pub async fn find_user(&self, user: &str) -> Option<Config> {
         self.0.lock().await.find_user(user)
     }
 
     pub async fn update(
-        &self, cfg: types::PlotConfigurationSnapshot,
+        &self, id: Option<usize>, name: String, cfg: Config,
     ) -> Option<usize> {
-        self.0.lock().await.update(cfg)
+        self.0.lock().await.update(id, name, cfg)
     }
 
-    pub async fn update_user(
-        &self, user: &str, cfg: types::PlotConfigurationSnapshot,
-    ) {
+    pub async fn update_user(&self, user: &str, cfg: Config) {
         self.0.lock().await.update_user(user, cfg)
     }
 
@@ -150,18 +149,15 @@ mod tests {
 
     #[test]
     fn test_isolation() {
+	let cfg: Arc<str> = "{\"xAxis\": \"Time\"}".into();
+
         {
             let mut ctxt = Inner::new();
 
             assert!(ctxt.0.is_empty());
             assert!(ctxt.1.is_empty());
 
-            let cfg = types::PlotConfigurationSnapshot {
-                configuration_name: "test".into(),
-                ..types::PlotConfigurationSnapshot::default()
-            };
-
-            ctxt.update(cfg);
+            ctxt.update(None, "Simple".into(), cfg.clone());
 
             assert!(ctxt.0.len() == 1);
             assert!(ctxt.1.is_empty());
@@ -173,12 +169,7 @@ mod tests {
             assert!(ctxt.0.is_empty());
             assert!(ctxt.1.is_empty());
 
-            let cfg = types::PlotConfigurationSnapshot {
-                configuration_name: "test".into(),
-                ..types::PlotConfigurationSnapshot::default()
-            };
-
-            ctxt.update_user("test", cfg);
+            ctxt.update_user("rich", cfg.clone());
 
             assert!(ctxt.0.is_empty());
             assert!(ctxt.1.len() == 1);
