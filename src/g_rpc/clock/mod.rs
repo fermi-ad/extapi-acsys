@@ -1,9 +1,9 @@
-use tokio::time::Duration;
-use tonic::transport::Endpoint;
+use crate::env_var;
 use crate::g_rpc::proto::services::aclk::{
     clock_event_client::ClockEventClient, EventInfo, SubscribeReq,
 };
-use crate::env_var;
+use tokio::time::Duration;
+use tonic::transport::Endpoint;
 
 const CLOCK_HOST: &str = "CLOCK_GRPC_HOST";
 const DEFAULT_CLOCK_HOST: &str = "http://clx76.fnal.gov:6803";
@@ -11,8 +11,8 @@ const DEFAULT_CLOCK_HOST: &str = "http://clx76.fnal.gov:6803";
 pub async fn subscribe(
     events: &[i32],
 ) -> Result<tonic::Response<tonic::Streaming<EventInfo>>, tonic::Status> {
-    let host = env_var::get(CLOCK_HOST)
-        .or_else(|| DEFAULT_CLOCK_HOST.to_owned());
+    let host =
+        env_var::get(CLOCK_HOST).or_else(|| DEFAULT_CLOCK_HOST.to_owned());
     let endpoint = Endpoint::from_shared(host)
         .map_err(|e| {
             tonic::Status::invalid_argument(format!("Invalid host URI: {}", e))

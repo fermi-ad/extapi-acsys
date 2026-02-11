@@ -115,6 +115,7 @@ const KAFKA_HOST: &str = "KAFKA_HOST";
 const DEFAULT_KAFKA_HOST: &str = "acsys-services.fnal.gov:9092";
 const KAFKA_CONN_SECS: &str = "KAFKA_CONNECTION_SECONDS";
 const DEFAULT_CONN_TIME: u64 = 1;
+
 fn get_consumer(
     topic: String, group: Option<String>,
 ) -> Result<Consumer, PubSubError> {

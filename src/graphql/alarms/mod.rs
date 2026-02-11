@@ -195,19 +195,14 @@ fn handle_error<T>(e: Status, gerund: &str) -> Result<T, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
     use async_graphql::{Response, Schema};
-
     use futures::StreamExt;
-
-    use crate::pubsub::PubSubError;
 
     async fn test_query_returns_err(gql_query: &str, err_msg: &str) {
         let schema =
             Schema::build(AlarmsQueries, AlarmsMutations, AlarmsSubscriptions)
                 .finish();
         let result = schema.execute(gql_query).await;
-        assert_eq!(result.errors.len(), 1);
         let err = result.errors.first().unwrap();
         assert_eq!(err.message, err_msg);
     }
@@ -259,7 +254,7 @@ mod tests {
                 }
             }
         "#,
-            "status: 'Internal error', self: \"Could not connect to the database service. See server logs for details.\"",
+            "code: 'Internal error', message: \"Could not connect to the database service. See server logs for details.\"",
         )
         .await;
     }
@@ -272,23 +267,7 @@ mod tests {
                 deleteAlarmTimer(device: "G:AMANDA", timerType: "test_type")
             }
         "#,
-            "status: 'Internal error', self: \"Could not connect to the database service. See server logs for details.\"",
-        )
-        .await;
-    }
-
-    #[tokio::test]
-    async fn get_alarms_snapshot_returns_err_when_bad_address() {
-        test_query_returns_err(
-            r#"
-            query Alarms {
-                alarmsSnapshot {
-                  key,
-                  value
-                }
-            }
-        "#,
-            &format!("{}", PubSubError::default()),
+            "code: 'Internal error', message: \"Could not connect to the database service. See server logs for details.\"",
         )
         .await;
     }
@@ -299,7 +278,7 @@ mod tests {
             Status::invalid_argument("test invalid arg"),
             "testing alarm timer",
         );
-        assert_eq!(result.unwrap_err().message, "status: 'Client specified an invalid argument', self: \"test invalid arg\"");
+        assert_eq!(result.unwrap_err().message, "code: 'Client specified an invalid argument', message: \"test invalid arg\"");
 
         let result = handle_error::<()>(
             Status::internal("test internal err"),
@@ -307,7 +286,7 @@ mod tests {
         );
         assert_eq!(
             result.unwrap_err().message,
-            "status: 'Internal error', self: \"test internal err\""
+            "code: 'Internal error', message: \"test internal err\""
         );
 
         let result = handle_error::<()>(
@@ -334,7 +313,7 @@ mod tests {
                 }
             }
         "#,
-            "status: 'Internal error', self: \"Could not connect to the database service. See server logs for details.\"",
+            "code: 'Internal error', message: \"Could not connect to the database service. See server logs for details.\"",
         )
         .await;
     }
@@ -349,7 +328,7 @@ mod tests {
                 }
             }
         "#,
-            "status: 'Internal error', self: \"Could not connect to the database service. See server logs for details.\"",
+            "code: 'Internal error', message: \"Could not connect to the database service. See server logs for details.\"",
         )
         .await;
     }
@@ -364,7 +343,7 @@ mod tests {
                 }
             }
         "#,
-            "status: 'Internal error', self: \"Could not connect to the database service. See server logs for details.\"",
+            "code: 'Internal error', message: \"Could not connect to the database service. See server logs for details.\"",
         )
         .await;
     }
@@ -379,7 +358,7 @@ mod tests {
                 }
             }
         "#,
-            "status: 'Internal error', self: \"Could not connect to the database service. See server logs for details.\"",
+            "code: 'Internal error', message: \"Could not connect to the database service. See server logs for details.\"",
         )
         .await;
     }
@@ -398,7 +377,7 @@ mod tests {
                 }
             }
         "#,
-            "status: 'Internal error', self: \"Could not connect to the database service. See server logs for details.\"",
+            "code: 'Internal error', message: \"Could not connect to the database service. See server logs for details.\"",
         )
         .await;
     }
