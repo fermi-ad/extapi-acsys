@@ -195,6 +195,7 @@ fn handle_error<T>(e: Status, gerund: &str) -> Result<T, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pubsub::PubSubError;
     use async_graphql::{Response, Schema};
     use futures::StreamExt;
 
@@ -270,6 +271,22 @@ mod tests {
             "code: 'Internal error', message: \"Could not connect to the database service. See server logs for details.\"",
         )
         .await;
+    }
+
+    #[tokio::test]
+    async fn get_alarms_snapshot_returns_err_when_bad_address() {
+        test_query_returns_err(
+            r#"
+            query Alarms {
+                alarmsSnapshot {
+                  key,
+                  value
+                }
+            }
+        "#,
+            &format!("{}", PubSubError::default()),
+        )
+        .await
     }
 
     #[test]
