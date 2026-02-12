@@ -1,0 +1,15 @@
+[env]
+# Test vars (will not be used when the compiled binary is copied into the production container)
+ALARMS_KAFKA_HOST = "test host"
+ALARMS_KAFKA_TOPIC = "test topic"
+CLOCK_GRPC_HOST = "test host"
+DEVDB_GRPC_HOST = "test host"
+DPM_GRPC_HOST = "test host"
+GRAPHQL_PORT = "42"
+GRPC_ALARMS_DB_HOST = "test host"
+KAFKA_CONNECTION_SECONDS = "1"
+SCANNER_GRPC_HOST = "test host"
+TLG_GRPC_HOST = "test host"
+
+[net]
+git-fetch-with-cli = true

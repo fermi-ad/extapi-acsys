@@ -10,11 +10,9 @@ pub mod layouts;
 pub mod timers;
 
 const GRPC_ALARMS_DB_HOST: &str = "GRPC_ALARMS_DB_HOST";
-const DEFAULT_GRPC_ALARMS_DB_HOST: &str = "ad-services.fnal.gov";
 
 fn get_alarms_db_host() -> String {
-    env_var::get(GRPC_ALARMS_DB_HOST)
-        .or_else(|| DEFAULT_GRPC_ALARMS_DB_HOST.to_string())
+    env_var::expect(GRPC_ALARMS_DB_HOST)
 }
 
 async fn establish_connection<Producer, ClientFut, Client>(
@@ -58,9 +56,11 @@ mod tests {
 
     #[tokio::test]
     async fn execute_with_client_returns_result() {
+        let expected_host = get_alarms_db_host();
+        let host_ref = &expected_host;
         let result = execute_with_client(
             |input| async move {
-                assert_eq!(input, DEFAULT_GRPC_ALARMS_DB_HOST);
+                assert_eq!(&input, host_ref);
                 Ok(true)
             },
             |val| async move { Ok(Response::new(val)) },
