@@ -1,23 +1,19 @@
+use crate::{
+    env_var,
+    g_rpc::{alarms_db, proto::services::alarms},
+    pubsub::{Message, Snapshot, Subscriber},
+};
 use async_graphql::{Context, Error, Object, Subscription};
-
 use chrono::{DateTime, Utc};
-
-use crate::env_var;
-
-use crate::g_rpc::{alarms_db, proto::services::alarms};
-
-use crate::pubsub::{Message, Snapshot, Subscriber};
-
 use tokio_stream::wrappers::BroadcastStream;
 use tonic::{Code, Request, Status};
 use tracing::error;
 mod types;
 use types::{AlarmGroup, AlarmGroupMetadatum, AlarmTimer, UserLayout};
-
 mod utils;
 
 pub fn get_alarms_subscriber() -> Subscriber {
-    Subscriber::for_topic(get_topic())
+    Subscriber::for_topic(get_host(), get_topic())
 }
 
 #[derive(Default)]
@@ -135,7 +131,7 @@ impl AlarmsQueries {
     }
 
     async fn alarms_snapshot(&self) -> Result<Vec<Message>, Error> {
-        match Snapshot::for_topic(get_topic()) {
+        match Snapshot::for_topic(get_host(), get_topic()) {
             Ok(snapshot) => Ok(snapshot.data),
             Err(err) => Err(Error::new(format!("{err}"))),
         }
@@ -176,10 +172,14 @@ impl<'ctx> AlarmsSubscriptions {
     }
 }
 
+const ALARMS_KAFKA_HOST: &str = "ALARMS_KAFKA_HOST";
+fn get_host() -> String {
+    env_var::expect(ALARMS_KAFKA_HOST)
+}
+
 const ALARMS_KAFKA_TOPIC: &str = "ALARMS_KAFKA_TOPIC";
-const DEFAULT_ALARMS_TOPIC: &str = "ACsys";
 fn get_topic() -> String {
-    env_var::get(ALARMS_KAFKA_TOPIC).or(DEFAULT_ALARMS_TOPIC.to_owned())
+    env_var::expect(ALARMS_KAFKA_TOPIC)
 }
 
 fn handle_error<T>(e: Status, gerund: &str) -> Result<T, Error> {

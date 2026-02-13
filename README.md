@@ -15,6 +15,7 @@ The middle layer of the control system uses gRPCs for communications. The GraphQ
 
 ### Environment variables
 The following variables exist for configuring the service at runtime:
+- `ALARMS_KAFKA_HOST` -> Hostname for the Kafka instance that supports the alarms service
 - `ALARMS_KAFKA_TOPIC` -> Topic name for alarms in Kafka
 - `CLOCK_GRPC_HOST` -> Hostname for the clock gRPC service
 - `DEVDB_GRPC_HOST` -> Hostname for the DevDB gRPC service
@@ -22,7 +23,6 @@ The following variables exist for configuring the service at runtime:
 - `GRAPHQL_PORT` -> Port for clients to connect via GraphQL to this service
 - `GRPC_ALARMS_DB_HOST` -> Hostname for the Alarms DB Access gRPC service
 - `KAFKA_CONNECTION_SECONDS` -> The number of seconds to wait for a connection to Kafka before timing out
-- `KAFKA_HOST` -> Hostname for the Controls Kafka instance
 - `SCANNER_GRPC_HOST` -> Hostname for the wire scanner gRPC service
 - `TLG_GRPC_HOST` -> Hostname for the TLG gRPC service
 

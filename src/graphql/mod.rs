@@ -1,5 +1,7 @@
 use crate::g_rpc::dpm::build_connection;
-use async_graphql::*;
+use async_graphql::{
+    EmptyMutation, EmptySubscription, ObjectType, Schema, SubscriptionType,
+};
 use async_graphql_axum::{
     GraphQLRequest, GraphQLResponse, GraphQLSubscription,
 };
@@ -10,9 +12,10 @@ use axum::{
     routing::get,
     Router,
 };
-use std::net::IpAddr;
+use http::{header, Method};
+use std::net::{IpAddr, Ipv6Addr, SocketAddr};
+use tower_http::cors::{Any, CorsLayer};
 use tracing::{info, instrument};
-
 mod acsys;
 mod alarms;
 mod bbm;
@@ -21,6 +24,7 @@ mod faas;
 mod scanner;
 mod tlg;
 mod types;
+use types::AuthInfo;
 
 // Generic function which adds `AuthInfo` to the context. This
 // function can be used for all the GraphQL schemas.
@@ -36,15 +40,13 @@ where
     M: ObjectType + Send + Sync + 'static,
     S: SubscriptionType + Send + Sync + 'static,
 {
-    let mut req = req.into_inner();
-
-    req = req.data(types::AuthInfo::new(
-        &headers
+    let request = req.into_inner().data(AuthInfo::new(
+        headers
             .get(AUTHORIZATION)
             .map(|v| v.to_str().unwrap().to_string()),
     ));
 
-    schema.execute(req).await.into()
+    schema.execute(request).await.into()
 }
 
 // Returns an HTML document that has links to the various GraphQL APIs.
@@ -253,11 +255,7 @@ fn create_wscan_router() -> Router {
 }
 
 // Creates the web site for the various GraphQL APIs.
-
 async fn create_site() -> Router {
-    use ::http::{header, Method};
-    use tower_http::cors::{Any, CorsLayer};
-
     Router::new()
         .route("/", get(base_page))
         .merge(create_acsys_router().await)
@@ -285,10 +283,10 @@ async fn create_site() -> Router {
 // configuration information from the submodules. All accesses are
 // wrapped with CORS support from the `warp` crate.
 
-pub async fn start_service(address: IpAddr, port: u16) {
-    use std::net::SocketAddr;
-
-    let bind_addr: SocketAddr = SocketAddr::new(address, port);
+const SERVICE_PORT: u16 = 8000;
+pub async fn start_service() {
+    let bind_addr =
+        SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), SERVICE_PORT);
 
     // Load TLS certificate information. If there's an error, we panic.
 
@@ -317,11 +315,15 @@ pub async fn start_service(address: IpAddr, port: u16) {
 
 #[cfg(test)]
 mod tests {
-    use super::{graphql_handler, types::AuthInfo};
-    use async_graphql::{
-        Context, EmptyMutation, EmptySubscription, Object, Schema,
+    use super::*;
+    use async_graphql::{Context, Object};
+    use axum::{
+        body::{to_bytes, Body},
+        http::{Request, StatusCode},
+        routing::post,
     };
-    use axum::{routing::post, Router};
+    use http::header::AUTHORIZATION;
+    use tower::Service;
 
     // Create a simple GraphQL site. This site is more for testing the
     // meta information than testing GraphQL (we assume the authors of
@@ -361,13 +363,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_authentication() {
-        use axum::{
-            body::{to_bytes, Body},
-            http::{Request, StatusCode},
-        };
-        use http::header::AUTHORIZATION;
-        use tower::Service;
-
         let mut site = Router::new().merge(mk_test_site());
         let query = r#"{ "query" : "{ authenticated }" }"#;
 

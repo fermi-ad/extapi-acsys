@@ -15,13 +15,11 @@ pub mod proto {
 use crate::env_var;
 
 const WIRE_SCANNER_HOST: &str = "SCANNER_GRPC_HOST";
-const DEFAULT_WIRE_SCANNER_HOST: &str = "http://unknown.fnal.gov:50051";
 
 // Local helper function to get a connection to the gRPC service.
 
 async fn get_client() -> Result<ScannerClient<transport::Channel>, Status> {
-    let host = env_var::get(WIRE_SCANNER_HOST)
-        .or(DEFAULT_WIRE_SCANNER_HOST.to_owned());
+    let host: String = env_var::expect(WIRE_SCANNER_HOST);
     ScannerClient::connect(host)
         .await
         .map_err(|_| Status::unavailable("wire-scanner service unavailable"))

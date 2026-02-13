@@ -1,38 +1,41 @@
-use async_graphql::*;
-use chrono::*;
+use crate::g_rpc::proto::common::device;
+use async_graphql::{ComplexObject, InputObject, SimpleObject, Union};
+use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine};
+use chrono::{DateTime, Duration, Utc};
+use serde_json::{self, Value};
+use std::collections::HashMap;
 
 #[derive(Debug)]
-pub struct AuthInfo(Option<String>);
-
+pub struct AuthInfo {
+    bearer_token: Option<String>,
+}
 impl AuthInfo {
-    pub fn new(info: &Option<String>) -> Self {
-        AuthInfo(info.as_ref().and_then(|v| {
-            if let ["Bearer", token] = v.split(' ').collect::<Vec<&str>>()[..] {
-                Some(token.to_string())
-            } else {
-                None
-            }
-        }))
+    pub fn new(info: Option<String>) -> Self {
+        AuthInfo {
+            bearer_token: info.and_then(|v| {
+                if let ["Bearer", token] =
+                    v.split(' ').collect::<Vec<&str>>()[..]
+                {
+                    Some(token.to_string())
+                } else {
+                    None
+                }
+            }),
+        }
     }
 
     #[cfg(test)]
     pub fn has_token(&self) -> bool {
-        self.0.is_some()
+        self.bearer_token.is_some()
     }
 
     pub fn token(&self) -> Option<String> {
-        self.0.clone()
+        self.bearer_token.clone()
     }
 
     pub fn unsafe_account(&self) -> Option<String> {
-        self.0.as_ref().and_then(|token| {
+        self.bearer_token.as_ref().and_then(|token| {
             if let [_, body, _] = token.split('.').collect::<Vec<&str>>()[..] {
-                use base64::{
-                    engine::general_purpose::STANDARD_NO_PAD, Engine as _,
-                };
-                use serde_json::{self, Value};
-                use std::collections::HashMap;
-
                 if let Ok(json) = STANDARD_NO_PAD.decode(body) {
                     let result: Result<
                         HashMap<String, Value>,
@@ -196,8 +199,6 @@ pub struct DevValue {
 
 // --------------------------------------------------------------------------
 // This section defines some useful traits for types in this module.
-
-use crate::g_rpc::proto::common::device;
 
 // Defining this trait allows us to convert a `DevValue` into a
 // `proto::Data` type.

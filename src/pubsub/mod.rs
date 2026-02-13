@@ -61,15 +61,22 @@ fn do_poll<E: Error + 'static>(
 
 struct MessageJob {
     consumer: Option<Consumer>,
+    host: String,
     sender: Arc<Sender<Message>>,
     topic: String,
     uuid: Uuid,
 }
 impl MessageJob {
-    fn from(topic: String, sender: Arc<Sender<Message>>) -> Self {
+    fn from(host: String, topic: String, sender: Arc<Sender<Message>>) -> Self {
         let uuid = Uuid::new_v4();
         Self {
-            consumer: get_consumer(topic.clone(), Some(uuid.to_string())).ok(),
+            consumer: get_consumer(
+                host.clone(),
+                topic.clone(),
+                Some(uuid.to_string()),
+            )
+            .ok(),
+            host,
             sender,
             topic,
             uuid,
@@ -78,9 +85,12 @@ impl MessageJob {
 
     fn check_connection(&mut self) {
         if self.consumer.is_none() {
-            self.consumer =
-                get_consumer(self.topic.clone(), Some(self.uuid.to_string()))
-                    .ok();
+            self.consumer = get_consumer(
+                self.host.clone(),
+                self.topic.clone(),
+                Some(self.uuid.to_string()),
+            )
+            .ok();
         }
     }
 
@@ -111,15 +121,10 @@ impl MessageJob {
     }
 }
 
-const KAFKA_HOST: &str = "KAFKA_HOST";
-const DEFAULT_KAFKA_HOST: &str = "acsys-services.fnal.gov:9092";
 const KAFKA_CONN_SECS: &str = "KAFKA_CONNECTION_SECONDS";
-const DEFAULT_CONN_TIME: u64 = 1;
-
 fn get_consumer(
-    topic: String, group: Option<String>,
+    host: String, topic: String, group: Option<String>,
 ) -> Result<Consumer, PubSubError> {
-    let host = env_var::get(KAFKA_HOST).or(DEFAULT_KAFKA_HOST.to_owned());
     let (sender, receiver) = mpsc::channel();
     let _ = thread::spawn(move || {
         let consumer = Consumer::from_hosts(vec![host])
@@ -127,6 +132,8 @@ fn get_consumer(
             .with_group(group.unwrap_or_default())
             .with_fallback_offset(FetchOffset::Earliest)
             .with_offset_storage(Some(GroupOffsetStorage::Kafka))
+            .with_fetch_min_bytes(1)
+            .with_fetch_max_wait_time(Duration::from_millis(500))
             .create()
             .map_err(|err| {
                 error!("{}", err);
@@ -134,8 +141,7 @@ fn get_consumer(
             });
         handle(sender.send(consumer));
     });
-    let connection_seconds =
-        env_var::get(KAFKA_CONN_SECS).or(DEFAULT_CONN_TIME);
+    let connection_seconds: u64 = env_var::expect(KAFKA_CONN_SECS);
     receiver
         .recv_timeout(Duration::from_secs(connection_seconds))
         .map_err(|err| {
@@ -148,8 +154,8 @@ pub struct Snapshot {
     pub data: Vec<Message>,
 }
 impl Snapshot {
-    pub fn for_topic(topic: String) -> Result<Self, PubSubError> {
-        let mut consumer = get_consumer(topic, None)?;
+    pub fn for_topic(host: String, topic: String) -> Result<Self, PubSubError> {
+        let mut consumer = get_consumer(host, topic, None)?;
         let mut data: Vec<Message> = Vec::new();
 
         let mut cur_size: usize = 0;
@@ -186,11 +192,11 @@ impl Subscriber {
     /// Generates a new subscriber for the provided topic.
     /// A new thread will be started and run in the background to poll for
     /// messages. The thread will terminate when this subscriber is dropped.
-    pub fn for_topic(topic: String) -> Self {
+    pub fn for_topic(host: String, topic: String) -> Self {
         let (sender, _channel_lock) = broadcast::channel::<Message>(20);
         let thread_sender = Arc::new(sender);
         let instance_sender = Arc::clone(&thread_sender);
-        let mut message_job = MessageJob::from(topic, thread_sender);
+        let mut message_job = MessageJob::from(host, topic, thread_sender);
         let _task_handle = thread::spawn(move || {
             message_job.run();
         });
@@ -239,7 +245,10 @@ mod tests {
 
     #[test]
     fn error_on_bad_subscriber_host() {
-        let mut result = Subscriber::for_topic(String::from("my_topic"));
+        let mut result = Subscriber::for_topic(
+            String::from("my_host"),
+            String::from("my_topic"),
+        );
         let num_rec = result
             .sender
             .send(Message::new(None, "testing".to_string()))

@@ -15,13 +15,12 @@ pub mod proto {
 }
 
 const TLG_HOST: &str = "TLG_GRPC_HOST";
-const DEFAULT_TLG_HOST: &str = "http://10.200.24.116:9090";
 
 // Local helper function to get a connection to the gRPC service.
 
 async fn get_service_client(
 ) -> Result<TlgPlacementServiceClient<transport::Channel>, Status> {
-    let host = env_var::get(TLG_HOST).or(DEFAULT_TLG_HOST.to_owned());
+    let host: String = env_var::expect(TLG_HOST);
     TlgPlacementServiceClient::connect(host)
         .await
         .map_err(|_| Status::unavailable("TLG service unavailable"))
@@ -29,7 +28,7 @@ async fn get_service_client(
 
 async fn get_mutation_service_client(
 ) -> Result<TlgPlacementMutationServiceClient<transport::Channel>, Status> {
-    let host = env_var::get(TLG_HOST).or(DEFAULT_TLG_HOST.to_owned());
+    let host: String = env_var::expect(TLG_HOST);
     TlgPlacementMutationServiceClient::connect(host)
         .await
         .map_err(|_| Status::unavailable("TLG service unavailable"))
