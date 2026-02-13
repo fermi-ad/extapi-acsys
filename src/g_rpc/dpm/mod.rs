@@ -1,12 +1,12 @@
 use super::proto::{
     common::device,
     services::daq::{
-        daq_client::DaqClient, ReadingList, ReadingReply, Setting, SettingList,
-        SettingReply,
+        ReadingList, ReadingReply, Setting, SettingList, SettingReply,
+        daq_client::DaqClient,
     },
 };
 use crate::env_var;
-use tokio::time::{timeout, Duration};
+use tokio::time::{Duration, timeout};
 use tonic::transport::{Channel, Error};
 use tracing::{error, info, instrument, warn};
 
@@ -68,11 +68,11 @@ pub async fn acquire_devices(
 // This function wraps the logic needed to make the `ApplySettings()`
 // gRPC transaction.
 
-pub async fn _set_device(
+pub async fn set_device(
     conn: &Connection, session_id: Option<String>, device: String,
     value: device::Value,
 ) -> TonicQueryResult<Vec<i32>> {
-    use tonic::{metadata::MetadataValue, IntoRequest};
+    use tonic::{IntoRequest, metadata::MetadataValue};
 
     info!("setting to {:?}", &value);
 

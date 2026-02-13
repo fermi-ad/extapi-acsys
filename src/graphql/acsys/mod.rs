@@ -1,30 +1,29 @@
 use crate::g_rpc::{
-    dpm,
-    proto::services::daq::{self, reading_reply},
+    clock,
+    dpm::{self, Connection},
+    proto::services::daq::{ReadingReply, reading_reply},
 };
-
-use async_graphql::*;
+use async_graphql::{
+    Context, Error, Object, Result, Subscription, async_stream::stream,
+};
 use futures::future;
 use futures_util::{Stream, StreamExt};
 use std::{collections::HashSet, pin::Pin, sync::Arc};
 use tonic::Status;
 use tracing::{error, info, instrument, warn};
-
-// Pull in global types.
-
-use super::types as global;
-
-// Pull in our local types.
-
 mod datastream;
 mod plotconfigdb;
+// Pull in our local types.
 pub mod types;
+use types::{PlotChannelData, PlotConfigurationSnapshot, PlotReplyData};
+// Pull in global types.
+use super::types::{
+    AuthInfo, DataInfo, DataReply, DataType, DevValue, StatusReply,
+};
 
-pub fn new_context() -> plotconfigdb::T {
-    plotconfigdb::T::new()
+pub fn new_context() -> plotconfigdb::InMemoryPlotConfigDb {
+    plotconfigdb::InMemoryPlotConfigDb::new()
 }
-
-use crate::g_rpc::dpm::Connection;
 
 // Useful function to return the current time as a floating point
 // number.
@@ -33,21 +32,20 @@ fn now() -> f64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
-        .as_micros() as f64
-        / 1_000_000.0
+        .as_secs() as f64
 }
 
 // Converts a gRPC proto::ReadingReply structure into a GraphQL
-// global::DataReply object.
+// DataReply object.
 
-fn reading_to_reply(rdg: &daq::ReadingReply) -> global::DataReply {
+fn reading_to_reply(rdg: &ReadingReply) -> DataReply {
     match &rdg.value {
-        Some(reading_reply::Value::Readings(rdgs)) => global::DataReply {
+        Some(reading_reply::Value::Readings(rdgs)) => DataReply {
             ref_id: rdg.index as i32,
             data: rdgs
                 .reading
                 .iter()
-                .map(|v| global::DataInfo {
+                .map(|v| DataInfo {
                     timestamp: v
                         .timestamp
                         .map(|v| {
@@ -63,11 +61,11 @@ fn reading_to_reply(rdg: &daq::ReadingReply) -> global::DataReply {
                 })
                 .collect(),
         },
-        Some(reading_reply::Value::Status(status)) => global::DataReply {
+        Some(reading_reply::Value::Status(status)) => DataReply {
             ref_id: rdg.index as i32,
-            data: vec![global::DataInfo {
+            data: vec![DataInfo {
                 timestamp: now(),
-                result: global::DataType::StatusReply(global::StatusReply {
+                result: DataType::StatusReply(StatusReply {
                     status: (status.facility_code + status.status_code * 256)
                         as i16,
                 }),
@@ -77,18 +75,16 @@ fn reading_to_reply(rdg: &daq::ReadingReply) -> global::DataReply {
     }
 }
 
-fn xlat_reply(e: Result<daq::ReadingReply, Status>) -> global::DataReply {
+fn translate(e: Result<ReadingReply, Status>) -> DataReply {
     match e {
         Ok(e) => reading_to_reply(&e),
         Err(e) => {
             warn!("channel error: {}", &e);
-            global::DataReply {
+            DataReply {
                 ref_id: -1,
-                data: vec![global::DataInfo {
+                data: vec![DataInfo {
                     timestamp: now(),
-                    result: global::DataType::StatusReply(
-                        global::StatusReply { status: -1 },
-                    ),
+                    result: DataType::StatusReply(StatusReply { status: -1 }),
                 }],
             }
         }
@@ -118,7 +114,7 @@ immediately or after a delay."]
 		    in the same order as specified in this array."
         )]
         device_list: Vec<String>,
-    ) -> Result<Vec<global::DataReply>> {
+    ) -> Result<Vec<DataReply>> {
         // Strip any event designation and append the once-immediate.
 
         let drfs: Vec<_> = device_list
@@ -134,14 +130,14 @@ immediately or after a delay."]
 
         // Allocate storage for the reply.
 
-        let mut results: Vec<global::DataReply> =
-            vec![global::DataReply::default(); drfs.len()];
+        let mut results: Vec<DataReply> =
+            vec![DataReply::default(); drfs.len()];
 
         let mut s = dpm::acquire_devices(
             ctxt.data::<Connection>().unwrap(),
-            ctxt.data::<global::AuthInfo>()
+            ctxt.data::<AuthInfo>()
                 .ok()
-                .and_then(global::AuthInfo::token)
+                .and_then(AuthInfo::token)
                 .as_ref(),
             drfs.clone(),
         )
@@ -176,10 +172,10 @@ an array with 0 or 1 element."]
     #[instrument(skip(self, ctxt))]
     async fn plot_configuration(
         &self, ctxt: &Context<'_>, configuration_id: Option<usize>,
-    ) -> Vec<Arc<types::PlotConfigurationSnapshot>> {
+    ) -> Vec<Arc<PlotConfigurationSnapshot>> {
         info!("returning plot configuration(s)");
 
-        ctxt.data_unchecked::<plotconfigdb::T>()
+        ctxt.data_unchecked::<plotconfigdb::InMemoryPlotConfigDb>()
             .find(configuration_id)
             .await
     }
@@ -198,8 +194,8 @@ the username and this parameter will be removed."]
     #[instrument(skip(self, ctxt))]
     async fn users_last_configuration(
         &self, ctxt: &Context<'_>, user: Option<String>,
-    ) -> Option<Arc<types::PlotConfigurationSnapshot>> {
-        if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
+    ) -> Option<Arc<PlotConfigurationSnapshot>> {
+        if let Ok(auth) = ctxt.data::<AuthInfo>() {
             // TEMPORARY: If there isn't a JWT, use the account specified
             // by the caller.
 
@@ -207,7 +203,7 @@ the username and this parameter will be removed."]
                 info!("using account: {:?}", &account);
 
                 return ctxt
-                    .data_unchecked::<plotconfigdb::T>()
+                    .data_unchecked::<plotconfigdb::InMemoryPlotConfigDb>()
                     .find_user(&account)
                     .await;
             }
@@ -227,9 +223,9 @@ impl ACSysMutations {
 Not all devices can be set -- most are read-only. To be able to set a \
 device, your SSO account must be associated with every device you may \
 want to set."]
-    #[instrument(skip(self, _ctxt, _value))]
+    #[instrument(skip(self, ctxt, value))]
     async fn _set_device(
-        &self, _ctxt: &Context<'_>,
+        &self, ctxt: &Context<'_>,
         #[graphql(
             desc = "The device to be set. This parameter should be expressed \
 		    as a DRF entity. For instance, for ACNET devices, the \
@@ -237,11 +233,11 @@ want to set."]
 		    `.CONTROL`."
         )]
         device: String,
-        #[graphql(desc = "The value of the setting.")] _value: global::DevValue,
-    ) -> Result<global::StatusReply> {
+        #[graphql(desc = "The value of the setting.")] value: DevValue,
+    ) -> Result<StatusReply> {
         #[cfg(debug_assertions)]
         {
-            if let Ok(auth) = _ctxt.data::<global::AuthInfo>() {
+            if let Ok(auth) = ctxt.data::<AuthInfo>() {
                 // TEMPORARY: If there isn't a JWT, use the account
                 // specified by the caller.
 
@@ -252,35 +248,35 @@ want to set."]
 
             let now = tokio::time::Instant::now();
 
-            let result = dpm::_set_device(
-                _ctxt.data::<Connection>().unwrap(),
-                _ctxt.data::<global::AuthInfo>().unwrap().token(),
+            let result = dpm::set_device(
+                ctxt.data::<Connection>().unwrap(),
+                ctxt.data::<AuthInfo>().unwrap().token(),
                 device.clone(),
-                _value.into(),
+                value.into(),
             )
             .await;
 
             info!("done in {} μs", now.elapsed().as_micros());
 
             match result {
-                Ok(status) => Ok(global::StatusReply {
+                Ok(status) => Ok(StatusReply {
                     status: status[0] as i16,
                 }),
                 Err(e) => Err(Error::new(format!("{}", e).as_str())),
             }
         }
         #[cfg(not(debug_assertions))]
-        Ok(global::StatusReply {
-            status: 17 - 17 * 256,
+        Ok(StatusReply {
+            status: -(17 * 255),
         })
     }
 
     #[instrument(skip(self, ctxt))]
     async fn update_plot_configuration(
-        &self, ctxt: &Context<'_>, config: types::PlotConfigurationSnapshot,
+        &self, ctxt: &Context<'_>, config: PlotConfigurationSnapshot,
     ) -> Option<usize> {
         info!("updating config");
-        ctxt.data_unchecked::<plotconfigdb::T>()
+        ctxt.data_unchecked::<plotconfigdb::InMemoryPlotConfigDb>()
             .update(config)
             .await
     }
@@ -288,12 +284,12 @@ want to set."]
     #[instrument(skip(self, ctxt))]
     async fn delete_plot_configuration(
         &self, ctxt: &Context<'_>, configuration_id: usize,
-    ) -> global::StatusReply {
+    ) -> StatusReply {
         info!("deleting config");
-        ctxt.data_unchecked::<plotconfigdb::T>()
+        ctxt.data_unchecked::<plotconfigdb::InMemoryPlotConfigDb>()
             .remove(&configuration_id)
             .await;
-        global::StatusReply { status: 0 }
+        StatusReply { status: 0 }
     }
 
     #[doc = "Sets the user's default configuration.
@@ -311,20 +307,20 @@ and this parameter will be removed."]
     #[instrument(skip(self, ctxt, config))]
     async fn users_configuration(
         &self, ctxt: &Context<'_>, user: Option<String>,
-        config: types::PlotConfigurationSnapshot,
-    ) -> Result<global::StatusReply> {
+        config: PlotConfigurationSnapshot,
+    ) -> Result<StatusReply> {
         info!("new request");
-        if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
+        if let Ok(auth) = ctxt.data::<AuthInfo>() {
             // TEMPORARY: If there isn't a JWT, use the username
             // specified by the caller.
 
             if let Some(account) = auth.unsafe_account().or(user) {
                 info!("using account: {:?}", &account);
 
-                ctxt.data_unchecked::<plotconfigdb::T>()
+                ctxt.data_unchecked::<plotconfigdb::InMemoryPlotConfigDb>()
                     .update_user(&account, config)
                     .await;
-                Ok(global::StatusReply { status: 0 })
+                Ok(StatusReply { status: 0 })
             } else {
                 Err(Error::new("unable to verify user credentials"))
             }
@@ -378,8 +374,8 @@ fn add_event(
     move |device| format!("{device}@{}", event)
 }
 
-type DataStream = Pin<Box<dyn Stream<Item = global::DataReply> + Send>>;
-type PlotStream = Pin<Box<dyn Stream<Item = types::PlotReplyData> + Send>>;
+type DataStream = Pin<Box<dyn Stream<Item = DataReply> + Send>>;
+type PlotStream = Pin<Box<dyn Stream<Item = PlotReplyData> + Send>>;
 
 struct TimeBounds {
     pub end: Option<f64>,
@@ -398,8 +394,6 @@ impl<'ctx> ACSysSubscriptions {
     async fn live_data(
         ctxt: &Context<'ctx>, drfs: &[String], start_time: f64,
     ) -> Result<DataStream> {
-        use tokio_stream::StreamExt;
-
         // Strip any source designation and append the once-immediate.
 
         let processed_drfs: Vec<_> =
@@ -409,17 +403,18 @@ impl<'ctx> ACSysSubscriptions {
 
         match dpm::acquire_devices(
             ctxt.data::<Connection>().unwrap(),
-            ctxt.data::<global::AuthInfo>()
+            ctxt.data::<AuthInfo>()
                 .ok()
-                .and_then(global::AuthInfo::token)
+                .and_then(AuthInfo::token)
                 .as_ref(),
             processed_drfs,
         )
         .await
         {
-            Ok(s) => {
-                Ok(Box::pin(StreamExt::filter_map(s.into_inner(), move |v| {
-                    let mut reply = xlat_reply(v);
+            Ok(s) => Ok(Box::pin(tokio_stream::StreamExt::filter_map(
+                s.into_inner(),
+                move |v| {
+                    let mut reply = translate(v);
                     let idx = reply.data[..]
                         .partition_point(|info| info.timestamp < start_time);
 
@@ -429,8 +424,8 @@ impl<'ctx> ACSysSubscriptions {
                     } else {
                         Some(reply)
                     }
-                })) as DataStream)
-            }
+                },
+            )) as DataStream),
             Err(e) => Err(Error::new(format!("{}", e).as_str())),
         }
     }
@@ -440,8 +435,6 @@ impl<'ctx> ACSysSubscriptions {
     async fn archived_data(
         ctxt: &Context<'ctx>, device: &str, start_time: f64, end_time: f64,
     ) -> Result<DataStream> {
-        use tokio_stream::StreamExt;
-
         // If the device has a subscript, then the client wants archived
         // data for an array device. Due to quirks in the array data
         // logger, we can't specify the subscript or event.
@@ -465,16 +458,16 @@ impl<'ctx> ACSysSubscriptions {
 
         match dpm::acquire_devices(
             ctxt.data::<Connection>().unwrap(),
-            ctxt.data::<global::AuthInfo>()
+            ctxt.data::<AuthInfo>()
                 .ok()
-                .and_then(global::AuthInfo::token)
+                .and_then(AuthInfo::token)
                 .as_ref(),
             vec![drf],
         )
         .await
         {
             Ok(s) => Ok(datastream::as_archive_stream(
-                Box::pin(StreamExt::map(s.into_inner(), xlat_reply))
+                Box::pin(StreamExt::map(s.into_inner(), translate))
                     as DataStream,
             )),
             Err(e) => Err(Error::new(format!("{}", e).as_str())),
@@ -488,13 +481,13 @@ impl<'ctx> ACSysSubscriptions {
         time_bounds: TimeBounds,
     ) -> Result<PlotStream> {
         let now = now();
-        let mut reply = types::PlotReplyData {
+        let mut reply = PlotReplyData {
             plot_id: "demo".into(),
             timestamp: now,
             trigger_timestamp: None,
             data: drfs
                 .iter()
-                .map(|_| types::PlotChannelData {
+                .map(|_| PlotChannelData {
                     channel_rate: "Unknown".into(),
                     channel_units: "V".into(),
                     channel_status: 0,
@@ -513,14 +506,16 @@ impl<'ctx> ACSysSubscriptions {
             )
             .await?;
         let s =
-            strm.filter_map(move |mut e: global::DataReply| {
+            strm.filter_map(move |mut e: DataReply| {
                 // If the data consists of a single value that's a status,
                 // it gets moved to the packet level status field.
 
-                if let &mut [global::DataInfo {
-                    result: global::DataType::StatusReply(ref v),
-                    ..
-                }] = &mut e.data[..]
+                if let &mut [
+                    DataInfo {
+                        result: DataType::StatusReply(ref v),
+                        ..
+                    },
+                ] = &mut e.data[..]
                 {
                     reply.data[e.ref_id as usize].channel_status = v.status;
                 } else {
@@ -538,14 +533,14 @@ impl<'ctx> ACSysSubscriptions {
                 if reply.data.iter().all(|e| {
                     e.channel_status != 0 || !e.channel_data.is_empty()
                 }) {
-                    let mut temp = types::PlotReplyData {
+                    let mut temp = PlotReplyData {
                         plot_id: "demo".into(),
                         timestamp: now,
                         trigger_timestamp: None,
                         data: reply
                             .data
                             .iter()
-                            .map(|e| types::PlotChannelData {
+                            .map(|e| PlotChannelData {
                                 channel_rate: "Unknown".into(),
                                 channel_units: e.channel_units.clone(),
                                 channel_status: e.channel_status,
@@ -572,7 +567,7 @@ impl<'ctx> ACSysSubscriptions {
     // This is used when we get a known timestamp, but haven't seen the
     // event of interest yet.
 
-    fn flush(buf: &mut types::PlotReplyData, ts: f64) {
+    fn flush(buf: &mut PlotReplyData, ts: f64) {
         for chan in buf.data.iter_mut() {
             let idx = chan.channel_data.partition_point(|v| v.timestamp < ts);
 
@@ -582,8 +577,8 @@ impl<'ctx> ACSysSubscriptions {
     }
 
     fn prep_outgoing(
-        remaining: &mut types::PlotReplyData, out: &mut types::PlotReplyData,
-        ev_ts: f64, ts: f64,
+        remaining: &mut PlotReplyData, out: &mut PlotReplyData, ev_ts: f64,
+        ts: f64,
     ) {
         // "zip" together the vectors containing the devices' data. We want
         // to handle the two buffers together and this guarantees we're
@@ -614,19 +609,16 @@ impl<'ctx> ACSysSubscriptions {
         &self, ctxt: &Context<'ctx>, drfs: Vec<String>, trigger_event: u8,
         start_time: Option<f64>, end_time: Option<f64>,
     ) -> Result<PlotStream> {
-        use crate::g_rpc::clock;
-        use async_stream::stream;
-
         // This is an empty reply. It is the starting point that is used
         // to accumulate when the event fires.
 
-        let template = types::PlotReplyData {
+        let template = PlotReplyData {
             plot_id: "demo".into(),
             timestamp: now(),
             trigger_timestamp: None,
             data: drfs
                 .iter()
-                .map(|_| types::PlotChannelData {
+                .map(|_| PlotChannelData {
                     channel_rate: "Unknown".into(),
                     channel_units: "V".into(),
                     channel_status: 0,
@@ -659,94 +651,93 @@ impl<'ctx> ACSysSubscriptions {
             )
             .await?;
 
-        #[rustfmt::skip]
         let strm = stream! {
-	    let mut event_time: Option<f64> = None;
-	    let mut outgoing = template.clone();
-	    let mut divisor = 0;
+            let mut event_time: Option<f64> = None;
+            let mut outgoing = template.clone();
+            let mut divisor = 0;
 
-	    // Infinitely loop until one of the streams has an error or
-	    // the client cancels the subscription.
+            // Infinitely loop until one of the streams has an error or
+            // the client cancels the subscription.
 
-	    loop {
-		tokio::select! {
-		    opt_rdg = dev_data.next() => {
-			if let Some(mut rdg) = opt_rdg {
-			    outgoing.data[rdg.ref_id as usize].channel_data.append(&mut rdg.data)
-			} else {
-			    error!("data stream closed");
-			    break
-			}
-		    }
+            loop {
+            tokio::select! {
+                opt_rdg = dev_data.next() => {
+                if let Some(mut rdg) = opt_rdg {
+                    outgoing.data[rdg.ref_id as usize].channel_data.append(&mut rdg.data)
+                } else {
+                    error!("data stream closed");
+                    break
+                }
+                }
 
-		    // If we receive a tclk event, we need to process our
-		    // accumulated data.
+                // If we receive a tclk event, we need to process our
+                // accumulated data.
 
-		    opt_ev = tclk.next() => {
-			if let Some(Ok(ei)) = opt_ev {
-			    let triggered = ei.event == (trigger_event as i32);
-			    let ts = ei.stamp.unwrap();
-			    let ts = ts.seconds as f64 + ts.nanos as f64
-				/ 1_000_000_000.0;
+                opt_ev = tclk.next() => {
+                if let Some(Ok(ei)) = opt_ev {
+                    let triggered = ei.event == (trigger_event as i32);
+                    let ts = ei.stamp.unwrap();
+                    let ts = ts.seconds as f64 + ts.nanos as f64
+                    / 1_000_000_000.0;
 
-			    // If the event time is `None`, we haven't seen
-			    // a trigger yet. In this case, we throw away
-			    // all the data with a timestamp less than this
-			    // clock's.
+                    // If the event time is `None`, we haven't seen
+                    // a trigger yet. In this case, we throw away
+                    // all the data with a timestamp less than this
+                    // clock's.
 
-			    if let Some(ev_ts) = event_time {
-				if triggered || divisor == 0 {
-				    // Process the outgoing reply. Any data
-				    // with a timestamp later than `ts` is
-				    // saved in `remaining`.
+                    if let Some(ev_ts) = event_time {
+                    if triggered || divisor == 0 {
+                        // Process the outgoing reply. Any data
+                        // with a timestamp later than `ts` is
+                        // saved in `remaining`.
 
-				    let mut remaining = template.clone();
+                        let mut remaining = template.clone();
 
-				    Self::prep_outgoing(
-					&mut remaining,
-					&mut outgoing,
-					ev_ts,
-					ts
-				    );
+                        Self::prep_outgoing(
+                        &mut remaining,
+                        &mut outgoing,
+                        ev_ts,
+                        ts
+                        );
 
-				    // If there's any data ready to go out,
-				    // send it.
+                        // If there's any data ready to go out,
+                        // send it.
 
-				    if outgoing
-					.data
-					.iter()
-					.any(|v| !v.channel_data.is_empty()) {
-					yield outgoing;
-				    }
+                        if outgoing
+                        .data
+                        .iter()
+                        .any(|v| !v.channel_data.is_empty()) {
+                        yield outgoing;
+                        }
 
-				    // The remaining data becomes the new,
-				    // outgoing reply.
+                        // The remaining data becomes the new,
+                        // outgoing reply.
 
-				    outgoing = remaining;
-				}
-			    } else {
-				Self::flush(&mut outgoing, ts)
-			    }
+                        outgoing = remaining;
+                    }
+                    } else {
+                    Self::flush(&mut outgoing, ts)
+                    }
 
-			    // If it's our trigger event, update the time.
+                    // If it's our trigger event, update the time.
 
-			    if triggered {
-				event_time = Some(ts);
-			    }
+                    if triggered {
+                    event_time = Some(ts);
+                    }
 
-			    // If it's the 15 Hz event, update the divisor.
+                    // If it's the 15 Hz event, update the divisor.
 
-			    if ei.event == 0x0f {
-				divisor = (divisor + 1) % 5;
-			    }
-			} else {
-			    error!("clock stream failed : {:?}", opt_ev);
-			    break
-			}
-		    }
-		}
-	    }
-	};
+                    if ei.event == 0x0f {
+                    divisor = (divisor + 1) % 5;
+                    }
+                } else {
+                    error!("clock stream failed : {:?}", opt_ev);
+                    break
+                }
+                }
+            }
+            }
+        };
 
         Ok(Box::pin(strm) as PlotStream)
     }
@@ -964,12 +955,11 @@ correlated, all the devices are collected on the same event."]
 
 #[cfg(test)]
 mod test {
+    use super::super::types::Scalar;
     use super::*;
 
     #[test]
     fn test_removing_event() {
-        use super::strip_event;
-
         assert_eq!(strip_event("abc"), "abc");
         assert_eq!(strip_event("abc@e,23"), "abc");
         assert_eq!(strip_event("abc @e,23"), "abc");
@@ -981,8 +971,6 @@ mod test {
 
     #[test]
     fn test_removing_source() {
-        use super::strip_source;
-
         assert_eq!(strip_source("abc"), "abc");
         assert_eq!(strip_source("abc@e,23"), "abc@e,23");
         assert_eq!(strip_source("abc<-JUNK"), "abc");
@@ -999,8 +987,6 @@ mod test {
 
     #[test]
     fn test_getting_device_name() {
-        use super::device_name;
-
         assert_eq!(device_name("abc"), "abc");
         assert_eq!(device_name("abc[]"), "abc[]");
         assert_eq!(device_name("abc@e,2"), "abc");
@@ -1010,8 +996,6 @@ mod test {
 
     #[test]
     fn test_add_event_specification() {
-        use super::add_event;
-
         assert_eq!(add_event(None, None)("M:OUTTMP"), "M:OUTTMP@p,1000000u");
         assert_eq!(add_event(Some(1234), None)("M:OUTTMP"), "M:OUTTMP@p,1234u");
 
@@ -1032,44 +1016,34 @@ mod test {
 
     #[test]
     fn test_flush() {
-        const POINT_DATA: &[global::DataInfo] = &[
-            global::DataInfo {
+        const POINT_DATA: &[DataInfo] = &[
+            DataInfo {
                 timestamp: 1.0,
-                result: global::DataType::Scalar(global::Scalar {
-                    scalar_value: 10.0,
-                }),
+                result: DataType::Scalar(Scalar { scalar_value: 10.0 }),
             },
-            global::DataInfo {
+            DataInfo {
                 timestamp: 2.0,
-                result: global::DataType::Scalar(global::Scalar {
-                    scalar_value: 11.0,
-                }),
+                result: DataType::Scalar(Scalar { scalar_value: 11.0 }),
             },
-            global::DataInfo {
+            DataInfo {
                 timestamp: 3.0,
-                result: global::DataType::Scalar(global::Scalar {
-                    scalar_value: 12.0,
-                }),
+                result: DataType::Scalar(Scalar { scalar_value: 12.0 }),
             },
-            global::DataInfo {
+            DataInfo {
                 timestamp: 4.0,
-                result: global::DataType::Scalar(global::Scalar {
-                    scalar_value: 13.0,
-                }),
+                result: DataType::Scalar(Scalar { scalar_value: 13.0 }),
             },
-            global::DataInfo {
+            DataInfo {
                 timestamp: 5.0,
-                result: global::DataType::Scalar(global::Scalar {
-                    scalar_value: 14.0,
-                }),
+                result: DataType::Scalar(Scalar { scalar_value: 14.0 }),
             },
         ];
 
-        let mut buf = types::PlotReplyData {
+        let mut buf = PlotReplyData {
             plot_id: "test".to_owned(),
             timestamp: 0.0,
             trigger_timestamp: None,
-            data: vec![types::PlotChannelData {
+            data: vec![PlotChannelData {
                 channel_rate: "Unknown".into(),
                 channel_units: "V".to_owned(),
                 channel_status: 0,
@@ -1095,44 +1069,34 @@ mod test {
 
     #[test]
     fn test_partitioning() {
-        const POINT_DATA: &[global::DataInfo] = &[
-            global::DataInfo {
+        const POINT_DATA: &[DataInfo] = &[
+            DataInfo {
                 timestamp: 1.0,
-                result: global::DataType::Scalar(global::Scalar {
-                    scalar_value: 10.0,
-                }),
+                result: DataType::Scalar(Scalar { scalar_value: 10.0 }),
             },
-            global::DataInfo {
+            DataInfo {
                 timestamp: 2.0,
-                result: global::DataType::Scalar(global::Scalar {
-                    scalar_value: 11.0,
-                }),
+                result: DataType::Scalar(Scalar { scalar_value: 11.0 }),
             },
-            global::DataInfo {
+            DataInfo {
                 timestamp: 3.0,
-                result: global::DataType::Scalar(global::Scalar {
-                    scalar_value: 12.0,
-                }),
+                result: DataType::Scalar(Scalar { scalar_value: 12.0 }),
             },
-            global::DataInfo {
+            DataInfo {
                 timestamp: 4.0,
-                result: global::DataType::Scalar(global::Scalar {
-                    scalar_value: 13.0,
-                }),
+                result: DataType::Scalar(Scalar { scalar_value: 13.0 }),
             },
-            global::DataInfo {
+            DataInfo {
                 timestamp: 5.0,
-                result: global::DataType::Scalar(global::Scalar {
-                    scalar_value: 14.0,
-                }),
+                result: DataType::Scalar(Scalar { scalar_value: 14.0 }),
             },
         ];
 
-        let mut buf = types::PlotReplyData {
+        let mut buf = PlotReplyData {
             plot_id: "test".to_owned(),
             timestamp: 0.0,
             trigger_timestamp: None,
-            data: vec![types::PlotChannelData {
+            data: vec![PlotChannelData {
                 channel_rate: "Unknown".into(),
                 channel_units: "V".to_owned(),
                 channel_status: 0,
@@ -1156,23 +1120,17 @@ mod test {
         assert_eq!(
             buf.data[0].channel_data,
             &[
-                global::DataInfo {
+                DataInfo {
                     timestamp: 0.5,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 10.0,
-                    }),
+                    result: DataType::Scalar(Scalar { scalar_value: 10.0 }),
                 },
-                global::DataInfo {
+                DataInfo {
                     timestamp: 1.5,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 11.0,
-                    }),
+                    result: DataType::Scalar(Scalar { scalar_value: 11.0 }),
                 },
-                global::DataInfo {
+                DataInfo {
                     timestamp: 2.5,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 12.0,
-                    }),
+                    result: DataType::Scalar(Scalar { scalar_value: 12.0 }),
                 }
             ],
         );
@@ -1186,17 +1144,13 @@ mod test {
         assert_eq!(
             buf.data[0].channel_data,
             &[
-                global::DataInfo {
+                DataInfo {
                     timestamp: 3.5,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 13.0,
-                    }),
+                    result: DataType::Scalar(Scalar { scalar_value: 13.0 }),
                 },
-                global::DataInfo {
+                DataInfo {
                     timestamp: 4.5,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 14.0,
-                    }),
+                    result: DataType::Scalar(Scalar { scalar_value: 14.0 }),
                 },
             ]
         );

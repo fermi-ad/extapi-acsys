@@ -7,11 +7,11 @@ use kafkang::{
 use std::{
     error::Error,
     fmt::{self, Debug},
-    sync::{mpsc, Arc},
+    sync::{Arc, mpsc},
     thread,
     time::Duration,
 };
-use tokio::sync::broadcast::{self, error::SendError, Receiver, Sender};
+use tokio::sync::broadcast::{self, Receiver, Sender, error::SendError};
 use tokio_stream::wrappers::BroadcastStream;
 use tracing::error;
 use uuid::Uuid;
@@ -132,8 +132,7 @@ fn get_consumer(
             .with_group(group.unwrap_or_default())
             .with_fallback_offset(FetchOffset::Earliest)
             .with_offset_storage(Some(GroupOffsetStorage::Kafka))
-            .with_fetch_min_bytes(1)
-            .with_fetch_max_wait_time(Duration::from_millis(500))
+            .with_fetch_max_bytes_per_partition(1048576)
             .create()
             .map_err(|err| {
                 error!("{}", err);

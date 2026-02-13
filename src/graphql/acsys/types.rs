@@ -1,5 +1,5 @@
-use super::global;
-use async_graphql::*;
+use super::super::types::DataInfo;
+use async_graphql::{ComplexObject, Enum, InputObject, SimpleObject};
 use chrono::{DateTime, Duration, Utc};
 
 #[derive(SimpleObject, Clone)]
@@ -17,7 +17,7 @@ pub struct PlotChannelData {
     pub channel_status: i16,
     #[doc = "A set of data points. If the return rate is slow (<= 1Hz), this \
 	     list will only have one element."]
-    pub channel_data: Vec<global::DataInfo>,
+    pub channel_data: Vec<DataInfo>,
 }
 
 #[doc = "Contains plot data for a given plot request."]
@@ -43,8 +43,7 @@ pub struct PlotReplyData {
 #[ComplexObject]
 impl PlotReplyData {
     pub async fn iso_timestamp(&self) -> DateTime<Utc> {
-        DateTime::<Utc>::UNIX_EPOCH
-            + Duration::microseconds((self.timestamp * 1_000_000.0) as i64)
+        DateTime::<Utc>::UNIX_EPOCH + Duration::seconds(self.timestamp as i64)
     }
 }
 

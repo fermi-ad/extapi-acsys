@@ -238,7 +238,7 @@ mod tests {
         let err = output.errors.first().unwrap();
         assert_eq!(
             err.message.as_str(),
-            "Data `extapi_dpm::pubsub::Subscriber` does not exist."
+            "Data `extapi_acsys::pubsub::Subscriber` does not exist."
         );
     }
 
@@ -296,7 +296,10 @@ mod tests {
             Status::invalid_argument("test invalid arg"),
             "testing alarm timer",
         );
-        assert_eq!(result.unwrap_err().message, "status: 'Client specified an invalid argument', self: \"test invalid arg\"");
+        assert_eq!(
+            result.unwrap_err().message,
+            "status: 'Client specified an invalid argument', self: \"test invalid arg\""
+        );
 
         let result = handle_error::<()>(
             Status::internal("test internal err"),

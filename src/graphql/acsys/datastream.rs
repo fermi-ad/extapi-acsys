@@ -1,4 +1,7 @@
-use super::{global, DataStream};
+use super::{
+    super::types::{DataInfo, DataReply, DataType, StatusReply},
+    DataStream,
+};
 use futures::Stream;
 use futures_util::StreamExt;
 use std::{
@@ -8,102 +11,35 @@ use std::{
 };
 use tracing::warn;
 
-// Implements the merge logic for a data channel. When the channel is
-// in buffering mode, it adds any new live data to its buffer. In feed
-// through mode, all live data is simply forwarded on.
-
-enum DataChannel {
-    Buffering(Vec<global::DataInfo>),
-    FeedThrough,
+/// Implements the merge logic for a data channel. When the channel is
+/// in buffering mode, it adds any new live data to its buffer. In feed
+/// through mode, all live data is simply forwarded on.
+#[derive(Debug, PartialEq)]
+struct DataChannel {
+    buffer: Option<Vec<DataInfo>>,
 }
-
 impl DataChannel {
-    // Creates a new data channel. Channels start in buffering mode with
-    // an empty buffer.
-
-    pub fn new() -> Self {
-        DataChannel::Buffering(vec![])
-    }
-
-    // Returns the buffered data, if any.
-
-    pub fn get_buffer(&mut self) -> Option<Vec<global::DataInfo>> {
-        match self {
-            Self::FeedThrough => None,
-            Self::Buffering(ref mut data) => {
-                if data.is_empty() {
-                    None
-                } else {
-                    let mut tmp = vec![];
-
-                    std::mem::swap(data, &mut tmp);
-                    Some(tmp)
-                }
-            }
+    /// Creates a new data channel. Channels start in buffering mode with
+    /// an empty buffer.
+    fn new() -> Self {
+        DataChannel {
+            buffer: Some(vec![]),
         }
     }
 
-    // Processes a chunk of live data.
-
-    pub fn process_live_data(
-        &mut self, mut live_data: Vec<global::DataInfo>, archive_done: bool,
-    ) -> Option<Vec<global::DataInfo>> {
-        match self {
-            // In feedthrough mode, we simply pass on the live data.
-            Self::FeedThrough => Some(live_data),
-
-            // If in buffering mode, we append the data and return
-            // `None` so the caller knows there's nothing to do.
-            Self::Buffering(ref mut data) => {
-                data.append(&mut live_data);
-                if archive_done {
-                    let mut tmp = vec![];
-
-                    std::mem::swap(data, &mut tmp);
-                    *self = Self::FeedThrough;
-                    Some(tmp)
-                } else {
-                    None
-                }
-            }
-        }
+    /// Returns the buffered data, if any.
+    fn get_buffer(&mut self) -> Option<Vec<DataInfo>> {
+        self.buffer.take()
     }
 
-    // Process a chunk of archive data.
-
-    pub fn process_archive_data(
-        &mut self, archive_data: Vec<global::DataInfo>,
-    ) -> Vec<global::DataInfo> {
-        match self {
-            // We shouldn't get archived data once we've entered
-            // feed-through mode. The producer made a mistake. Generate
-            // a log message and pass on the data; the timestamps will
-            // probably be earlier and will get filtered by a later stage.
-            Self::FeedThrough => {
-                warn!("received archived data after end was specified");
-                archive_data
-            }
-
-            // If we're in buffer mode, the contents of this archive
-            // packet determines what comes next.
-            Self::Buffering(data) => {
-                // If the archived data is empty, there won't be any more
-                // from the archiver. We switch to FeedThrough mode and
-                // return our buffered data.
-
-                if archive_data.is_empty() {
-                    let mut tmp = vec![];
-
-                    std::mem::swap(data, &mut tmp);
-                    *self = Self::FeedThrough;
-                    tmp
-                } else {
-                    // If there's archive data, pass it on.
-
-                    archive_data
-                }
-            }
-        }
+    /// Processes a chunk of live data.
+    fn process_live_data(&mut self, live_data: Vec<DataInfo>) {
+        self.buffer.get_or_insert_default().extend(live_data);
+    }
+}
+impl Default for DataChannel {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -121,7 +57,7 @@ struct ArchiveStream {
 }
 
 impl ArchiveStream {
-    pub fn new(archived: DataStream) -> Self {
+    fn new(archived: DataStream) -> Self {
         ArchiveStream {
             archived,
             done: false,
@@ -134,7 +70,7 @@ pub fn as_archive_stream(s: DataStream) -> DataStream {
 }
 
 impl Stream for ArchiveStream {
-    type Item = global::DataReply;
+    type Item = DataReply;
 
     fn poll_next(
         mut self: Pin<&mut Self>, ctxt: &mut std::task::Context<'_>,
@@ -191,7 +127,7 @@ impl DataMerge {
 }
 
 impl Stream for DataMerge {
-    type Item = global::DataReply;
+    type Item = DataReply;
 
     fn poll_next(
         mut self: Pin<&mut Self>, ctxt: &mut Context<'_>,
@@ -202,13 +138,7 @@ impl Stream for DataMerge {
 
             if !self.archived_done {
                 match self.archived.poll_next_unpin(ctxt) {
-                    Poll::Ready(Some(global::DataReply { ref_id, data })) => {
-                        let buf = self
-                            .pending
-                            .entry(ref_id)
-                            .or_insert_with(DataChannel::new);
-                        let data = buf.process_archive_data(data);
-
+                    Poll::Ready(Some(DataReply { ref_id, data })) => {
                         // If there's no data in this packet, then this
                         // channel's archive data is done. We don't forward
                         // empty data packets, so we need to loop and let
@@ -223,13 +153,9 @@ impl Stream for DataMerge {
                         // be in the final product!
 
                         for point in &data {
-                            if let global::DataInfo {
-                                result:
-                                    global::DataType::StatusReply(
-                                        global::StatusReply { status },
-                                    ),
-                                ..
-                            } = point
+                            if let DataType::StatusReply(StatusReply {
+                                status,
+                            }) = point.result
                             {
                                 warn!(
                                     "ref {} returned status [{} {}]",
@@ -243,10 +169,7 @@ impl Stream for DataMerge {
                         // Return the data (either archive data or buffered
                         // live data).
 
-                        return Poll::Ready(Some(global::DataReply {
-                            ref_id,
-                            data,
-                        }));
+                        return Poll::Ready(Some(DataReply { ref_id, data }));
                     }
                     Poll::Ready(None) => self.archived_done = true,
                     Poll::Pending => (),
@@ -260,25 +183,8 @@ impl Stream for DataMerge {
 
             if !self.live_done {
                 match self.live.poll_next_unpin(ctxt) {
-                    Poll::Ready(Some(global::DataReply { ref_id, data })) => {
-                        // Grab multiple references inside `Self`.
-
-                        let DataMerge {
-                            ref mut pending,
-                            ref archived_done,
-                            ..
-                        } = *self;
-
-                        // Look-up the data channel associated with the
-                        // `ref_id`. If it doesn't exist, insert a new one.
-
-                        let buf = pending
-                            .entry(ref_id)
-                            .or_insert_with(DataChannel::new);
-
-                        if let Some(data) =
-                            buf.process_live_data(data, *archived_done)
-                        {
+                    Poll::Ready(Some(DataReply { ref_id, data })) => {
+                        if self.archived_done {
                             if data.is_empty() {
                                 warn!("received empty data packet");
                             } else {
@@ -286,13 +192,9 @@ impl Stream for DataMerge {
                                 // be in the final product!
 
                                 for point in &data {
-                                    if let global::DataInfo {
-                                        result:
-                                            global::DataType::StatusReply(
-                                                global::StatusReply { status },
-                                            ),
-                                        ..
-                                    } = point
+                                    if let DataType::StatusReply(
+                                        StatusReply { status },
+                                    ) = point.result
                                     {
                                         warn!(
                                             "ref {} returned status [{} {}]",
@@ -303,11 +205,16 @@ impl Stream for DataMerge {
                                     }
                                 }
 
-                                return Poll::Ready(Some(global::DataReply {
+                                return Poll::Ready(Some(DataReply {
                                     ref_id,
                                     data,
                                 }));
                             }
+                        } else {
+                            // Look-up the data channel associated with the
+                            // `ref_id`. If it doesn't exist, insert a new one.
+                            let buf = self.pending.entry(ref_id).or_default();
+                            buf.process_live_data(data);
                         }
                         continue;
                     }
@@ -322,7 +229,7 @@ impl Stream for DataMerge {
 
                 for (ref_id, buf) in self.pending.iter_mut() {
                     if let Some(data) = buf.get_buffer() {
-                        return Poll::Ready(Some(global::DataReply {
+                        return Poll::Ready(Some(DataReply {
                             ref_id: *ref_id,
                             data,
                         }));
@@ -361,7 +268,7 @@ impl FilterDupes {
 }
 
 impl Stream for FilterDupes {
-    type Item = global::DataReply;
+    type Item = DataReply;
 
     fn poll_next(
         mut self: Pin<&mut Self>, ctxt: &mut std::task::Context<'_>,
@@ -434,7 +341,7 @@ pub fn end_stream_at(
 }
 
 impl Stream for EndOnDate {
-    type Item = global::DataReply;
+    type Item = DataReply;
 
     fn poll_next(
         mut self: Pin<&mut Self>, ctxt: &mut std::task::Context<'_>,
@@ -485,12 +392,14 @@ impl Stream for EndOnDate {
 
 #[cfg(test)]
 mod test {
-    use super::{global, DataChannel};
+    use super::super::super::types::Scalar;
+    use super::*;
+    use futures::stream;
 
-    fn data_info(ts: f64) -> global::DataInfo {
-        global::DataInfo {
+    fn data_info(ts: f64) -> DataInfo {
+        DataInfo {
             timestamp: ts,
-            result: global::DataType::Scalar(global::Scalar {
+            result: DataType::Scalar(Scalar {
                 scalar_value: ts / 2.0,
             }),
         }
@@ -499,89 +408,75 @@ mod test {
     #[test]
     fn test_data_channel() {
         let mut chan = DataChannel::new();
+        // Add some live data to the channel. The resulting channel should now just contain the new data.
+        let live_data = vec![data_info(200.0), data_info(210.0)];
+        chan.process_live_data(live_data.clone());
 
-        // Assert a new channel is in buffer mode.
+        let expected = DataChannel {
+            buffer: Some(live_data.clone()),
+        };
+        assert_eq!(chan, expected);
 
-        assert!(matches!(chan, DataChannel::Buffering(_)));
+        // Add some more archived data. The buffer should have the new data appended.
+        let new_data = vec![data_info(110.0), data_info(120.0)];
 
-        // Run an archive packet through. The channel should return
-        // it, as is.
-
+        chan.process_live_data(new_data.clone());
         assert_eq!(
-            chan.process_archive_data(vec![data_info(100.0)]),
-            vec![data_info(100.0)]
+            chan,
+            DataChannel {
+                buffer: Some(
+                    [live_data.as_slice(), new_data.as_slice()].concat()
+                )
+            }
         );
 
-        // Add some live data to the channel. Since we're in buffer
-        // mode, live data is saved and `None` should be returned.
-
+        // See what happens when empty data is passed, for completeness
+        chan.process_live_data(vec![]);
         assert_eq!(
-            chan.process_live_data(
-                vec![data_info(200.0), data_info(210.0),],
-                false
-            ),
-            None
+            chan,
+            DataChannel {
+                buffer: Some(
+                    [live_data.as_slice(), new_data.as_slice()].concat()
+                )
+            }
         );
 
-        // Add some more archived data. The array should still be
-        // returned.
-
+        // Now get the buffer
+        let result = chan.get_buffer();
         assert_eq!(
-            chan.process_archive_data(
-                vec![data_info(110.0), data_info(120.0),]
-            ),
-            vec![data_info(110.0), data_info(120.0),]
+            result,
+            Some([live_data.as_slice(), new_data.as_slice()].concat())
         );
-
-        // Send an empty archive packet. This signifies no more archive
-        // data will be received. The channel should return the buffered
-        // data and switch to feed-through mode.
-
-        assert_eq!(
-            chan.process_archive_data(vec![]),
-            vec![data_info(200.0), data_info(210.0)]
-        );
-
-        // Now add live data. It should get passed through.
-
-        assert_eq!(
-            chan.process_live_data(
-                vec![data_info(220.0), data_info(230.0)],
-                false
-            ),
-            Some(vec![data_info(220.0), data_info(230.0)])
-        );
+        assert_eq!(chan.get_buffer(), None);
     }
 
     #[tokio::test]
     async fn test_merge_with_only_live() {
-        use futures::stream::{self, StreamExt};
-
         let live_input = &[
-            global::DataReply {
+            DataReply {
                 ref_id: 0,
                 data: vec![data_info(120.0)],
             },
-            global::DataReply {
+            DataReply {
                 ref_id: 0,
                 data: vec![data_info(130.0)],
             },
         ];
-        let mut s = super::merge(
-            Box::pin(stream::empty()) as super::DataStream,
-            Box::pin(stream::iter(live_input.clone())) as super::DataStream,
+        let mut s = merge(
+            Box::pin(stream::empty()) as DataStream,
+            Box::pin(stream::iter(live_input.clone())) as DataStream,
         );
 
         assert_eq!(
             s.next().await.unwrap(),
-            global::DataReply {
+            DataReply {
                 ref_id: 0,
                 data: vec![data_info(120.0)],
             },
         );
         assert_eq!(
             s.next().await.unwrap(),
-            global::DataReply {
+            DataReply {
                 ref_id: 0,
                 data: vec![data_info(130.0)],
             },
@@ -591,50 +486,48 @@ mod test {
 
     #[tokio::test]
     async fn test_merge_archive_with_live() {
-        use futures::stream::{self, StreamExt};
-
         let archive_input = &[
-            global::DataReply {
+            DataReply {
                 ref_id: 0,
                 data: vec![data_info(100.0), data_info(110.0)],
             },
-            global::DataReply {
+            DataReply {
                 ref_id: 0,
                 data: vec![],
             },
         ];
         let live_input = &[
-            global::DataReply {
+            DataReply {
                 ref_id: 0,
                 data: vec![data_info(120.0)],
             },
-            global::DataReply {
+            DataReply {
                 ref_id: 0,
                 data: vec![data_info(130.0)],
             },
         ];
-        let mut s = super::merge(
-            Box::pin(stream::iter(archive_input.clone())) as super::DataStream,
-            Box::pin(stream::iter(live_input.clone())) as super::DataStream,
+        let mut s = merge(
+            Box::pin(stream::iter(archive_input.clone())) as DataStream,
+            Box::pin(stream::iter(live_input.clone())) as DataStream,
         );
 
         assert_eq!(
             s.next().await.unwrap(),
-            global::DataReply {
+            DataReply {
                 ref_id: 0,
                 data: vec![data_info(100.0), data_info(110.0)],
             },
         );
         assert_eq!(
             s.next().await.unwrap(),
-            global::DataReply {
+            DataReply {
                 ref_id: 0,
                 data: vec![data_info(120.0)],
             },
         );
         assert_eq!(
             s.next().await.unwrap(),
-            global::DataReply {
+            DataReply {
                 ref_id: 0,
                 data: vec![data_info(130.0)],
             },
@@ -644,53 +537,50 @@ mod test {
 
     #[tokio::test]
     async fn test_dedupe() {
-        use futures::stream::{self, StreamExt};
-
         let input = &[
             // device channel 0 receives two data points. These should
             // go through.
-            global::DataReply {
+            DataReply {
                 ref_id: 0,
                 data: vec![data_info(100.0), data_info(110.0)],
             },
             // Another data point for device 0. This has the same timestamp
             // as the previous so it shouldn't appear in the output.
-            global::DataReply {
+            DataReply {
                 ref_id: 0,
                 data: vec![data_info(110.0)],
             },
             // A different device has a data point. It should go through.
-            global::DataReply {
+            DataReply {
                 ref_id: 1,
                 data: vec![data_info(100.0)],
             },
             // Shouldn't return the first element.
-            global::DataReply {
+            DataReply {
                 ref_id: 0,
                 data: vec![data_info(105.0), data_info(115.0)],
             },
         ];
-        let mut s = super::filter_dupes(
-            Box::pin(stream::iter(input.clone())) as super::DataStream
-        );
+        let mut s =
+            filter_dupes(Box::pin(stream::iter(input.clone())) as DataStream);
 
         assert_eq!(
             s.next().await.unwrap(),
-            global::DataReply {
+            DataReply {
                 ref_id: 0,
                 data: vec![data_info(100.0), data_info(110.0),]
             },
         );
         assert_eq!(
             s.next().await.unwrap(),
-            global::DataReply {
+            DataReply {
                 ref_id: 1,
                 data: vec![data_info(100.0),]
             },
         );
         assert_eq!(
             s.next().await.unwrap(),
-            global::DataReply {
+            DataReply {
                 ref_id: 0,
                 data: vec![data_info(115.0),]
             },
@@ -699,42 +589,40 @@ mod test {
 
     #[tokio::test]
     async fn test_end_time() {
-        use futures::stream::{self, StreamExt};
-
         let input = &[
             // device channel 0 receives two data points. These should
             // go through.
-            global::DataReply {
+            DataReply {
                 ref_id: 0,
                 data: vec![data_info(100.0), data_info(110.0)],
             },
             // Another data point for device 0. This timestamp exceeds the
             // end time so it shouldn't get sent.
-            global::DataReply {
+            DataReply {
                 ref_id: 0,
                 data: vec![data_info(120.0)],
             },
             // A different device has a data point. It should go through.
-            global::DataReply {
+            DataReply {
                 ref_id: 1,
                 data: vec![data_info(100.0)],
             },
             // Shouldn't return the second element. And the stream should
             // close after sending this data.
-            global::DataReply {
+            DataReply {
                 ref_id: 1,
                 data: vec![data_info(110.0), data_info(120.0)],
             },
         ];
-        let mut s = super::end_stream_at(
-            Box::pin(stream::iter(input.clone())) as super::DataStream,
+        let mut s = end_stream_at(
+            Box::pin(stream::iter(input.clone())) as DataStream,
             2,
             Some(115.0),
         );
 
         assert_eq!(
             s.next().await.unwrap(),
-            global::DataReply {
+            DataReply {
                 ref_id: 0,
                 data: vec![data_info(100.0), data_info(110.0)]
             }
@@ -742,7 +630,7 @@ mod test {
 
         assert_eq!(
             s.next().await.unwrap(),
-            global::DataReply {
+            DataReply {
                 ref_id: 1,
                 data: vec![data_info(100.0)]
             },
@@ -750,7 +638,7 @@ mod test {
 
         assert_eq!(
             s.next().await.unwrap(),
-            global::DataReply {
+            DataReply {
                 ref_id: 1,
                 data: vec![data_info(110.0)]
             },

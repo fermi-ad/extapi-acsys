@@ -1,7 +1,7 @@
 # ------------------------
 # BUILD
 # ------------------------
-FROM adregistry.fnal.gov/dev-containers/rust:1.90.0 AS builder
+FROM adregistry.fnal.gov/dev-containers/rust:1.93.0 AS builder
 
 COPY --chown=dev . /app/
 WORKDIR /app
@@ -12,6 +12,6 @@ RUN cargo build --release
 # ------------------------
 FROM gcr.io/distroless/cc-debian12
 
-COPY --from=builder /app/target/release/extapi-dpm /usr/local/bin/extapi-dpm
+COPY --from=builder /app/target/release/extapi-acsys /usr/local/bin/extapi-acsys
 EXPOSE 8000
-CMD ["extapi-dpm"]
+CMD ["extapi-acsys"]
