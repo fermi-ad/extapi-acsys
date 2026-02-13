@@ -180,8 +180,6 @@ an array with 0 or 1 element."]
     async fn plot_configuration(
         &self, ctxt: &Context<'_>, configuration_id: Option<usize>,
     ) -> Vec<Arc<types::PlotConfigurationSnapshot>> {
-        info!("returning plot configuration(s)");
-
         ctxt.data_unchecked::<plotconfigdb::T>()
             .find(configuration_id)
             .await
@@ -316,7 +314,6 @@ and this parameter will be removed."]
         &self, ctxt: &Context<'_>, user: Option<String>,
         config: types::PlotConfigurationSnapshot,
     ) -> Result<global::StatusReply> {
-        info!("new request");
         if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
             // TEMPORARY: If there isn't a JWT, use the username
             // specified by the caller.
@@ -596,9 +593,6 @@ impl<'ctx> ACSysSubscriptions {
             to_iso(start_time.min(end_time)),
             to_iso(end_time.max(start_time))
         );
-
-        info!("URL : {}", &request_url);
-
         let response = reqwest::get(request_url).await?.error_for_status()?;
 
         let byte_stream = response
@@ -612,7 +606,6 @@ impl<'ctx> ACSysSubscriptions {
                 // SEEK PHASE: Only runs once
 
                 if !ready && Self::seek_to_data_array(&mut r).await.is_err() {
-                    info!("no data found!");
                     return None;
                 }
 
