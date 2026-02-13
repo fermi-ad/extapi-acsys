@@ -2,11 +2,11 @@
 // protocol.
 
 use proto::{
-    scanner_client::ScannerClient, DetectorRequest, ScanProgress, ScanRequest,
-    ScanResult,
+    DetectorRequest, ScanProgress, ScanRequest, ScanResult,
+    scanner_client::ScannerClient,
 };
 use std::collections::HashMap;
-use tonic::{transport, Response, Status, Streaming};
+use tonic::{Response, Status, Streaming, transport};
 
 pub mod proto {
     tonic::include_proto!("scanner");

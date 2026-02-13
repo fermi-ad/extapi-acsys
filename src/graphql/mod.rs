@@ -6,13 +6,13 @@ use async_graphql_axum::{
     GraphQLRequest, GraphQLResponse, GraphQLSubscription,
 };
 use axum::{
+    Router,
     extract::State,
-    http::header::{HeaderMap, AUTHORIZATION},
+    http::header::{AUTHORIZATION, HeaderMap},
     response::Html,
     routing::get,
-    Router,
 };
-use http::{header, Method};
+use http::{Method, header};
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use tower_http::cors::{Any, CorsLayer};
 use tracing::{info, instrument};
@@ -318,7 +318,7 @@ mod tests {
     use super::*;
     use async_graphql::{Context, Object};
     use axum::{
-        body::{to_bytes, Body},
+        body::{Body, to_bytes},
         http::{Request, StatusCode},
         routing::post,
     };

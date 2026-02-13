@@ -1,6 +1,6 @@
 use crate::g_rpc::proto::services::alarms::{
-    alarm_group_service_client::AlarmGroupServiceClient, AlarmGroupMetadata,
-    AlarmGroups, GroupsRequest,
+    AlarmGroupMetadata, AlarmGroups, GroupsRequest,
+    alarm_group_service_client::AlarmGroupServiceClient,
 };
 
 use tonic::{Request, Status};

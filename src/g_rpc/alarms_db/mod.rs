@@ -2,7 +2,7 @@ use crate::env_var;
 
 use std::future::Future;
 
-use tonic::{transport::Error, Response, Status};
+use tonic::{Response, Status, transport::Error};
 use tracing::error;
 
 pub mod groups;

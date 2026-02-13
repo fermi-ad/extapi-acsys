@@ -1,5 +1,5 @@
 use crate::g_rpc::proto::services::aclk::{
-    clock_event_client::ClockEventClient, EventInfo, SubscribeReq,
+    EventInfo, SubscribeReq, clock_event_client::ClockEventClient,
 };
 
 use crate::env_var;

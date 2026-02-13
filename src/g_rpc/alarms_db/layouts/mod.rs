@@ -1,5 +1,5 @@
 use crate::g_rpc::proto::services::alarms::{
-    user_layouts_service_client::UserLayoutsServiceClient, UserLayouts,
+    UserLayouts, user_layouts_service_client::UserLayoutsServiceClient,
 };
 
 use tonic::{Request, Status};

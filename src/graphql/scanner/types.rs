@@ -1,5 +1,5 @@
 use crate::g_rpc::wscan::proto;
-use async_graphql::{types, SimpleObject, Union};
+use async_graphql::{SimpleObject, Union, types};
 
 #[derive(SimpleObject)]
 pub struct ScanConfiguration {

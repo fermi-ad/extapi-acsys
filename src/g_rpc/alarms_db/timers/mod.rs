@@ -1,6 +1,6 @@
 use crate::g_rpc::proto::services::alarms::{
-    alarm_timer_service_client::AlarmTimerServiceClient, AlarmTimer,
-    AlarmTimers, DeleteRequest, ReadRequest,
+    AlarmTimer, AlarmTimers, DeleteRequest, ReadRequest,
+    alarm_timer_service_client::AlarmTimerServiceClient,
 };
 
 use tonic::{Request, Status};

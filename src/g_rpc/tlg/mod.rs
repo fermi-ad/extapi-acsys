@@ -1,10 +1,10 @@
 use crate::env_var;
 use proto::services::tlg_placement::{
+    TlgDevices, TlgPlacementResponse,
     tlg_placement_mutation_service_client::TlgPlacementMutationServiceClient,
-    tlg_placement_service_client::TlgPlacementServiceClient, TlgDevices,
-    TlgPlacementResponse,
+    tlg_placement_service_client::TlgPlacementServiceClient,
 };
-use tonic::{transport, Status};
+use tonic::{Status, transport};
 
 pub mod proto {
     pub mod services {
@@ -18,16 +18,16 @@ const TLG_HOST: &str = "TLG_GRPC_HOST";
 
 // Local helper function to get a connection to the gRPC service.
 
-async fn get_service_client(
-) -> Result<TlgPlacementServiceClient<transport::Channel>, Status> {
+async fn get_service_client()
+-> Result<TlgPlacementServiceClient<transport::Channel>, Status> {
     let host: String = env_var::expect(TLG_HOST);
     TlgPlacementServiceClient::connect(host)
         .await
         .map_err(|_| Status::unavailable("TLG service unavailable"))
 }
 
-async fn get_mutation_service_client(
-) -> Result<TlgPlacementMutationServiceClient<transport::Channel>, Status> {
+async fn get_mutation_service_client()
+-> Result<TlgPlacementMutationServiceClient<transport::Channel>, Status> {
     let host: String = env_var::expect(TLG_HOST);
     TlgPlacementMutationServiceClient::connect(host)
         .await

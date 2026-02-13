@@ -1,4 +1,4 @@
-use tracing::{info, Level};
+use tracing::{Level, info};
 mod env_var;
 mod g_rpc;
 mod graphql;
