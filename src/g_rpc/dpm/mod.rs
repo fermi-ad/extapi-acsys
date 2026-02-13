@@ -17,13 +17,12 @@ type TonicStreamResult<T> =
 type TonicQueryResult<T> = Result<T, tonic::Status>;
 
 const DPM_HOST: &str = "DPM_GRPC_HOST";
-const DEFAULT_DPM_HOST: &str = "http://dce07.fnal.gov:50051";
 
 // Builds a sharable connection to the DPM pool. All instances will use the
 // same connection.
 
 pub async fn build_connection() -> Result<Connection, Error> {
-    let host = env_var::get(DPM_HOST).or(DEFAULT_DPM_HOST.to_owned());
+    let host: String = env_var::expect(DPM_HOST);
 
     Ok(Connection(DaqClient::connect(host).await?))
 }
