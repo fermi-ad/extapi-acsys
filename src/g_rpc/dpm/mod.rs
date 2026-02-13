@@ -6,25 +6,31 @@ use super::proto::{
     },
 };
 use crate::env_var;
+use std::str::FromStr;
 use tokio::time::{Duration, timeout};
-use tonic::transport::{Channel, Error};
+use tonic::{
+    IntoRequest, Request, Response, Status, Streaming,
+    metadata::MetadataValue,
+    transport::{Channel, Error},
+};
 use tracing::{error, info, instrument, warn};
 
-pub struct Connection(DaqClient<Channel>);
+type TonicStreamResult<T> = Result<Response<Streaming<T>>, Status>;
+type TonicQueryResult<T> = Result<T, Status>;
 
-type TonicStreamResult<T> =
-    Result<tonic::Response<tonic::Streaming<T>>, tonic::Status>;
-type TonicQueryResult<T> = Result<T, tonic::Status>;
+pub struct Connection {
+    daq_client: DaqClient<Channel>,
+}
 
 const DPM_HOST: &str = "DPM_GRPC_HOST";
-
-// Builds a sharable connection to the DPM pool. All instances will use the
-// same connection.
-
+/// Builds a sharable connection to the DPM pool. All instances will use the
+/// same connection.
 pub async fn build_connection() -> Result<Connection, Error> {
     let host: String = env_var::expect(DPM_HOST);
 
-    Ok(Connection(DaqClient::connect(host).await?))
+    Ok(Connection {
+        daq_client: DaqClient::connect(host).await?,
+    })
 }
 
 #[instrument(skip(conn, jwt, devices))]
@@ -33,12 +39,9 @@ pub async fn acquire_devices(
 ) -> TonicStreamResult<ReadingReply> {
     info!("requesting {:?}", &devices);
 
-    let mut req = tonic::Request::new(ReadingList { drf: devices });
+    let mut req = Request::new(ReadingList { drf: devices });
 
     if let Some(jwt) = jwt {
-        use std::str::FromStr;
-        use tonic::metadata::MetadataValue;
-
         match MetadataValue::from_str(&format!("Bearer {}", jwt)) {
             Ok(val) => {
                 req.metadata_mut().insert("authorization", val);
@@ -51,7 +54,9 @@ pub async fn acquire_devices(
     // GraphQL and gRPCs, we stretched this so that we're not competing
     // with DPM's timeouts.
 
-    match timeout(Duration::from_secs(10), conn.0.clone().read(req)).await {
+    match timeout(Duration::from_secs(10), conn.daq_client.clone().read(req))
+        .await
+    {
         Ok(response) => {
             if let Err(ref e) = response {
                 error!("error creating stream : {}", &e)
@@ -60,7 +65,7 @@ pub async fn acquire_devices(
         }
         Err(_) => {
             error!("connection to DPM timed-out");
-            Err(tonic::Status::cancelled("connection to DPM timed-out"))
+            Err(Status::cancelled("connection to DPM timed-out"))
         }
     }
 }
@@ -72,8 +77,6 @@ pub async fn set_device(
     conn: &Connection, session_id: Option<String>, device: String,
     value: device::Value,
 ) -> TonicQueryResult<Vec<i32>> {
-    use tonic::{IntoRequest, metadata::MetadataValue};
-
     info!("setting to {:?}", &value);
 
     // Build the setting request. This function only sets one device, so the
@@ -95,7 +98,7 @@ pub async fn set_device(
                 req.metadata_mut().insert("authorization", val);
 
                 let SettingReply { status } =
-                    conn.0.clone().set(req).await?.into_inner();
+                    conn.daq_client.clone().set(req).await?.into_inner();
 
                 Ok(status
                     .iter()
@@ -104,10 +107,10 @@ pub async fn set_device(
             }
             Err(err) => {
                 error!("unable to pass credentials : {}", &err);
-                Err(tonic::Status::internal("couldn't add credentials"))
+                Err(Status::internal("couldn't add credentials"))
             }
         }
     } else {
-        Err(tonic::Status::internal("not authorized"))
+        Err(Status::internal("not authorized"))
     }
 }

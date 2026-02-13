@@ -9,10 +9,12 @@ use async_graphql::{
 use futures::future;
 use futures_util::{Stream, StreamExt};
 use std::{collections::HashSet, pin::Pin, sync::Arc};
+use tokio::time::Instant;
 use tonic::Status;
 use tracing::{error, info, instrument, warn};
 mod datastream;
 mod plotconfigdb;
+use plotconfigdb::InMemoryPlotConfigDb;
 // Pull in our local types.
 pub mod types;
 use types::{PlotChannelData, PlotConfigurationSnapshot, PlotReplyData};
@@ -21,8 +23,8 @@ use super::types::{
     AuthInfo, DataInfo, DataReply, DataType, DevValue, StatusReply,
 };
 
-pub fn new_context() -> plotconfigdb::InMemoryPlotConfigDb {
-    plotconfigdb::InMemoryPlotConfigDb::new()
+pub fn new_context() -> InMemoryPlotConfigDb {
+    InMemoryPlotConfigDb::new()
 }
 
 // Useful function to return the current time as a floating point
@@ -32,7 +34,8 @@ fn now() -> f64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
-        .as_secs() as f64
+        .as_micros() as f64
+        / 1_000_000.0
 }
 
 // Converts a gRPC proto::ReadingReply structure into a GraphQL
@@ -175,7 +178,7 @@ an array with 0 or 1 element."]
     ) -> Vec<Arc<PlotConfigurationSnapshot>> {
         info!("returning plot configuration(s)");
 
-        ctxt.data_unchecked::<plotconfigdb::InMemoryPlotConfigDb>()
+        ctxt.data_unchecked::<InMemoryPlotConfigDb>()
             .find(configuration_id)
             .await
     }
@@ -203,7 +206,7 @@ the username and this parameter will be removed."]
                 info!("using account: {:?}", &account);
 
                 return ctxt
-                    .data_unchecked::<plotconfigdb::InMemoryPlotConfigDb>()
+                    .data_unchecked::<InMemoryPlotConfigDb>()
                     .find_user(&account)
                     .await;
             }
@@ -246,7 +249,7 @@ want to set."]
                 }
             }
 
-            let now = tokio::time::Instant::now();
+            let now = Instant::now();
 
             let result = dpm::set_device(
                 ctxt.data::<Connection>().unwrap(),
@@ -266,9 +269,7 @@ want to set."]
             }
         }
         #[cfg(not(debug_assertions))]
-        Ok(StatusReply {
-            status: -(17 * 255),
-        })
+        Ok(StatusReply { status: -4_335 })
     }
 
     #[instrument(skip(self, ctxt))]
@@ -276,7 +277,7 @@ want to set."]
         &self, ctxt: &Context<'_>, config: PlotConfigurationSnapshot,
     ) -> Option<usize> {
         info!("updating config");
-        ctxt.data_unchecked::<plotconfigdb::InMemoryPlotConfigDb>()
+        ctxt.data_unchecked::<InMemoryPlotConfigDb>()
             .update(config)
             .await
     }
@@ -286,7 +287,7 @@ want to set."]
         &self, ctxt: &Context<'_>, configuration_id: usize,
     ) -> StatusReply {
         info!("deleting config");
-        ctxt.data_unchecked::<plotconfigdb::InMemoryPlotConfigDb>()
+        ctxt.data_unchecked::<InMemoryPlotConfigDb>()
             .remove(&configuration_id)
             .await;
         StatusReply { status: 0 }
@@ -317,7 +318,7 @@ and this parameter will be removed."]
             if let Some(account) = auth.unsafe_account().or(user) {
                 info!("using account: {:?}", &account);
 
-                ctxt.data_unchecked::<plotconfigdb::InMemoryPlotConfigDb>()
+                ctxt.data_unchecked::<InMemoryPlotConfigDb>()
                     .update_user(&account, config)
                     .await;
                 Ok(StatusReply { status: 0 })
