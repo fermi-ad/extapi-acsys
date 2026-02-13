@@ -286,7 +286,7 @@ mod tests {
         "#,
             &format!("{}", PubSubError::default()),
         )
-        .await
+        .await;
     }
 
     #[test]
