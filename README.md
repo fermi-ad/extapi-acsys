@@ -23,6 +23,7 @@ The following variables exist for configuring the service at runtime:
 - `GRAPHQL_PORT` -> Port for clients to connect via GraphQL to this service
 - `GRPC_ALARMS_DB_HOST` -> Hostname for the Alarms DB Access gRPC service
 - `KAFKA_CONNECTION_SECONDS` -> The number of seconds to wait for a connection to Kafka before timing out
+- `LOG_LEVEL` -> The maximum level for reporting log events. Can be a textual value (e.g. "ERROR", "WARN", "INFO", etc.) or numeric from 1-5 (1 = "ERROR", 5 = "TRACE")
 - `SCANNER_GRPC_HOST` -> Hostname for the wire scanner gRPC service
 - `TLG_GRPC_HOST` -> Hostname for the TLG gRPC service
 

@@ -16,6 +16,9 @@ use tokio_stream::wrappers::BroadcastStream;
 use tracing::error;
 use uuid::Uuid;
 
+const CANNED_ERR_MESSAGE: &str = "An error occurred while attempting to connect to the message broker. See server logs for details.";
+const KAFKA_CONN_SECS: &str = "KAFKA_CONNECTION_SECONDS";
+
 /// A message from the pub-sub service.
 /// Contains a key (optional) and a value.
 ///
@@ -33,32 +36,6 @@ impl Message {
     }
 }
 
-fn handle<E: Error>(result: Result<(), E>) {
-    match result {
-        Ok(_) => (),
-        Err(err) => error!("{}", err),
-    }
-}
-fn do_poll<E: Error + 'static>(
-    consumer: &mut Consumer,
-    mut append_msg: impl FnMut(Message) -> Result<(), E>,
-) -> Result<(), Box<dyn Error>> {
-    let message_sets = consumer.poll()?;
-    for set in message_sets.iter() {
-        for msg in set.messages() {
-            let key = str::from_utf8(msg.key).ok().map(String::from);
-            let value = str::from_utf8(msg.value)?.to_string();
-            append_msg(Message::new(key, value))?;
-        }
-        consumer.consume_messageset(&set)?;
-    }
-    if consumer.group().is_empty() {
-        Ok(())
-    } else {
-        Ok(consumer.commit_consumed()?)
-    }
-}
-
 struct MessageJob {
     consumer: Option<Consumer>,
     host: String,
@@ -67,6 +44,17 @@ struct MessageJob {
     uuid: Uuid,
 }
 impl MessageJob {
+    fn check_connection(&mut self) {
+        if self.consumer.is_none() {
+            self.consumer = get_consumer(
+                self.host.clone(),
+                self.topic.clone(),
+                Some(self.uuid.to_string()),
+            )
+            .ok();
+        }
+    }
+
     fn from(host: String, topic: String, sender: Arc<Sender<Message>>) -> Self {
         let uuid = Uuid::new_v4();
         Self {
@@ -80,17 +68,6 @@ impl MessageJob {
             sender,
             topic,
             uuid,
-        }
-    }
-
-    fn check_connection(&mut self) {
-        if self.consumer.is_none() {
-            self.consumer = get_consumer(
-                self.host.clone(),
-                self.topic.clone(),
-                Some(self.uuid.to_string()),
-            )
-            .ok();
         }
     }
 
@@ -121,34 +98,23 @@ impl MessageJob {
     }
 }
 
-const KAFKA_CONN_SECS: &str = "KAFKA_CONNECTION_SECONDS";
-fn get_consumer(
-    host: String, topic: String, group: Option<String>,
-) -> Result<Consumer, PubSubError> {
-    let (sender, receiver) = mpsc::channel();
-    let _ = thread::spawn(move || {
-        let consumer = Consumer::from_hosts(vec![host])
-            .with_topic(topic)
-            .with_group(group.unwrap_or_default())
-            .with_fallback_offset(FetchOffset::Earliest)
-            .with_offset_storage(Some(GroupOffsetStorage::Kafka))
-            .with_fetch_min_bytes(1)
-            .with_fetch_max_wait_time(Duration::from_millis(500))
-            .create()
-            .map_err(|err| {
-                error!("{}", err);
-                PubSubError::default()
-            });
-        handle(sender.send(consumer));
-    });
-    let connection_seconds: u64 = env_var::expect(KAFKA_CONN_SECS);
-    receiver
-        .recv_timeout(Duration::from_secs(connection_seconds))
-        .map_err(|err| {
-            error!("{}", err);
-            PubSubError::default()
-        })?
+#[derive(Debug)]
+pub struct PubSubError {
+    message: &'static str,
 }
+impl Default for PubSubError {
+    fn default() -> Self {
+        Self {
+            message: CANNED_ERR_MESSAGE,
+        }
+    }
+}
+impl fmt::Display for PubSubError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+impl Error for PubSubError {}
 
 pub struct Snapshot {
     pub data: Vec<Message>,
@@ -213,25 +179,59 @@ impl Subscriber {
     }
 }
 
-const CANNED_ERR_MESSAGE: &str = "An error occurred while attempting to connect to the message broker. See server logs for details.";
-
-#[derive(Debug)]
-pub struct PubSubError {
-    message: &'static str,
-}
-impl Default for PubSubError {
-    fn default() -> Self {
-        Self {
-            message: CANNED_ERR_MESSAGE,
+fn do_poll<E: Error + 'static>(
+    consumer: &mut Consumer,
+    mut append_msg: impl FnMut(Message) -> Result<(), E>,
+) -> Result<(), Box<dyn Error>> {
+    let message_sets = consumer.poll()?;
+    for set in message_sets.iter() {
+        for msg in set.messages() {
+            let key = str::from_utf8(msg.key).ok().map(String::from);
+            let value = str::from_utf8(msg.value)?.to_string();
+            append_msg(Message::new(key, value))?;
         }
+        consumer.consume_messageset(&set)?;
+    }
+    if consumer.group().is_empty() {
+        Ok(())
+    } else {
+        Ok(consumer.commit_consumed()?)
     }
 }
-impl fmt::Display for PubSubError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.message)
+
+fn get_consumer(
+    host: String, topic: String, group: Option<String>,
+) -> Result<Consumer, PubSubError> {
+    let (sender, receiver) = mpsc::channel();
+    let _ = thread::spawn(move || {
+        let consumer = Consumer::from_hosts(vec![host])
+            .with_topic(topic)
+            .with_group(group.unwrap_or_default())
+            .with_fallback_offset(FetchOffset::Earliest)
+            .with_offset_storage(Some(GroupOffsetStorage::Kafka))
+            .with_fetch_max_bytes_per_partition(1048576)
+            .create()
+            .map_err(|err| {
+                error!("{}", err);
+                PubSubError::default()
+            });
+        handle(sender.send(consumer));
+    });
+    let connection_seconds: u64 = env_var::expect(KAFKA_CONN_SECS);
+    receiver
+        .recv_timeout(Duration::from_secs(connection_seconds))
+        .map_err(|err| {
+            error!("{}", err);
+            PubSubError::default()
+        })?
+}
+
+fn handle<E: Error>(result: Result<(), E>) {
+    match result {
+        Ok(_) => (),
+        Err(err) => error!("{}", err),
     }
 }
-impl std::error::Error for PubSubError {}
 
 #[cfg(test)]
 mod tests {

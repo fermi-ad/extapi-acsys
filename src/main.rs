@@ -6,9 +6,10 @@ mod pubsub;
 
 #[tokio::main]
 async fn main() {
+    let log_level: Level = env_var::expect("LOG_LEVEL");
     // Set up logging.
     let subscriber = tracing_subscriber::fmt()
-        .with_max_level(Level::INFO)
+        .with_max_level(log_level)
         .with_target(false)
         .with_file(true)
         .with_line_number(true)
