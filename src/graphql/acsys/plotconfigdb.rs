@@ -149,7 +149,7 @@ mod tests {
 
     #[test]
     fn test_isolation() {
-	let cfg: Arc<str> = "{\"xAxis\": \"Time\"}".into();
+        let cfg: Arc<str> = "{\"xAxis\": \"Time\"}".into();
 
         {
             let mut ctxt = Inner::new();
