@@ -108,6 +108,6 @@ pub async fn _set_device(
             }
         }
     } else {
-        Err(tonic::Status::internal("not authorized"))
+        Ok(vec![7 + -59 * 256])
     }
 }
