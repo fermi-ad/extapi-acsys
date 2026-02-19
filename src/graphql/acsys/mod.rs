@@ -1059,24 +1059,25 @@ live data."]
             // correct ref ID with the stream.
 
             for (ref_id, drf) in drfs.into_iter().enumerate() {
-                let strms = tokio::join!(
-                    ACSysSubscriptions::epics_archived_data(
-                        &drf,
-                        st,
-                        archived_end,
-                    ),
-                    ACSysSubscriptions::archived_data(
-                        ctxt,
-                        &drf,
-                        st,
-                        archived_end,
-                    )
-                );
+                let epics_result = ACSysSubscriptions::epics_archived_data(
+                    &drf,
+                    st,
+                    archived_end,
+                )
+                .await;
+                let actual = match epics_result {
+                    Ok(epics) => Either::Left(epics),
+                    Err(_) => {
+                        let acnet = ACSysSubscriptions::archived_data(
+                            ctxt,
+                            &drf,
+                            st,
+                            archived_end,
+                        )
+                        .await?;
 
-                let actual = match strms {
-                    (Ok(epics), _) => Either::Left(epics),
-                    (_, Ok(acnet)) => Either::Right(acnet),
-                    (_, err @ Err(_)) => return err,
+                        Either::Right(acnet)
+                    }
                 };
 
                 streams.insert(ref_id as i32, actual);
