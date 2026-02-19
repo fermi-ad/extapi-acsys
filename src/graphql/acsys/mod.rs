@@ -129,9 +129,10 @@ immediately or after a delay."]
             .map(|v| format!("{}@i", strip_event(v)))
             .collect();
 
-        // Build a set of integers representing the indices of the request.
-        // As replies arrive, the corresponding index will be removed from
-        // the set. When the set is empty, the stream will close.
+        // Build a set of integers representing the indices of the
+        // request. As replies arrive, the corresponding index will be
+        // removed from the set. When the set is empty, the stream
+        // will close.
 
         let mut remaining: HashSet<usize> = (0..drfs.len()).collect();
 
@@ -201,8 +202,8 @@ the username and this parameter will be removed."]
         &self, ctxt: &Context<'_>, user: Option<String>,
     ) -> Option<Arc<types::PlotConfigurationSnapshot>> {
         if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
-            // TEMPORARY: If there isn't a JWT, use the account specified
-            // by the caller.
+            // TEMPORARY: If there isn't a JWT, use the account
+            // specified by the caller.
 
             if let Some(account) = auth.unsafe_account().or(user) {
                 info!("using account: {:?}", &account);
@@ -348,17 +349,19 @@ fn strip_source(drf: &str) -> &str {
     drf[0..drf.find('<').unwrap_or(drf.len())].trim_end()
 }
 
-// Returns the device name but stripping off any trailing DRF fields. This is
-// a weak form of extracting; we should really have a DRF parser.
+// Returns the device name but stripping off any trailing DRF
+// fields. This is a weak form of extracting; we should really have a
+// DRF parser.
 
 fn device_name(drf: &str) -> &str {
     drf[0..drf.find(['@', '<']).unwrap_or(drf.len())].trim_end()
 }
 
-// Adds an event specification to a device name to create a DRF specification.
-// If the `event` parameter is `None`, the `delay` parameter represents the
-// periodic sample time, in microseconds. If an event is specified, the delay
-// represents the millisecond delay after the event to do the sample.
+// Adds an event specification to a device name to create a DRF
+// specification. If the `event` parameter is `None`, the `delay`
+// parameter represents the periodic sample time, in microseconds. If
+// an event is specified, the delay represents the millisecond delay
+// after the event to do the sample.
 
 fn add_event(
     delay: Option<usize>, event: Option<u8>,
@@ -371,9 +374,9 @@ fn add_event(
         (Some(d), Some(e)) => format!("e,{:X},e,{}", e, (d + 500) / 1_000),
     };
 
-    // If we're using the faked sources, we still need to reserve the slot
-    // in the array of devices. So we insert a DRF string that uses the
-    // "never" event.
+    // If we're using the faked sources, we still need to reserve the
+    // slot in the array of devices. So we insert a DRF string that
+    // uses the "never" event.
 
     move |device| format!("{device}@{}", event)
 }
@@ -450,8 +453,8 @@ fn transform_event(event: &ArchiverEvent) -> global::DataReply {
 // Private methods used by subscriptions.
 
 impl<'ctx> ACSysSubscriptions {
-    // Returns a stream of live data for a list of devices. If an end-time
-    // is specified, the stream will end once it is reached.
+    // Returns a stream of live data for a list of devices. If an
+    // end-time is specified, the stream will end once it is reached.
 
     async fn live_data(
         ctxt: &Context<'ctx>, drfs: &[String], start_time: f64,
@@ -637,9 +640,9 @@ impl<'ctx> ACSysSubscriptions {
     ) -> Result<DataStream> {
         use tokio_stream::StreamExt;
 
-        // If the device has a subscript, then the client wants archived
-        // data for an array device. Due to quirks in the array data
-        // logger, we can't specify the subscript or event.
+        // If the device has a subscript, then the client wants
+        // archived data for an array device. Due to quirks in the
+        // array data logger, we can't specify the subscript or event.
 
         let device = if device.find('[').is_some() {
             device_name(device)
@@ -677,6 +680,7 @@ impl<'ctx> ACSysSubscriptions {
     }
 
     // A helper method to handle plots that request continuous data.
+
     async fn handle_continuous(
         &self, ctxt: &Context<'ctx>, drfs: Vec<String>,
         _window_size: Option<usize>, n_acquisitions: Option<usize>,
@@ -709,8 +713,9 @@ impl<'ctx> ACSysSubscriptions {
             .await?;
         let s =
             strm.filter_map(move |mut e: global::DataReply| {
-                // If the data consists of a single value that's a status,
-                // it gets moved to the packet level status field.
+                // If the data consists of a single value that's a
+                // status, it gets moved to the packet level status
+                // field.
 
                 if let &mut [global::DataInfo {
                     result: global::DataType::StatusReply(ref v),
@@ -727,8 +732,8 @@ impl<'ctx> ACSysSubscriptions {
                         .append(&mut e.data);
                 }
 
-                // If we have data (or status) for every channel, we can
-                // determine what needs to be sent to the client.
+                // If we have data (or status) for every channel, we
+                // can determine what needs to be sent to the client.
 
                 if reply.data.iter().all(|e| {
                     e.channel_status != 0 || !e.channel_data.is_empty()
