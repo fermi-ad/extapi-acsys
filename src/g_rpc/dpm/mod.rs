@@ -14,7 +14,7 @@ pub struct Connection(DaqClient<Channel>);
 
 type TonicStreamResult<T> =
     Result<tonic::Response<tonic::Streaming<T>>, tonic::Status>;
-type TonicQueryResult<T> = Result<T, tonic::Status>;
+type _TonicQueryResult<T> = Result<T, tonic::Status>;
 
 const DPM_HOST: &str = "DPM_GRPC_HOST";
 
@@ -71,8 +71,8 @@ pub async fn acquire_devices(
 pub async fn _set_device(
     conn: &Connection, session_id: Option<String>, device: String,
     value: device::Value,
-) -> TonicQueryResult<Vec<i32>> {
-    use tonic::{IntoRequest, metadata::MetadataValue};
+) -> _TonicQueryResult<Vec<i32>> {
+    use tonic::{metadata::MetadataValue, IntoRequest};
 
     info!("setting to {:?}", &value);
 
