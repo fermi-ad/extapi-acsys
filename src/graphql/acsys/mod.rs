@@ -488,7 +488,7 @@ impl<'ctx> ACSysSubscriptions {
                     Some(reply)
                 }
             })),
-            Err(e) => Err(Error::new(format!("{}", e).as_str())),
+            Err(e) => Err(Error::new(format!("{}", e))),
         }
     }
 
