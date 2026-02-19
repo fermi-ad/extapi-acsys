@@ -613,12 +613,17 @@ impl<'ctx> ACSysSubscriptions {
 
                 match Self::extract_next_object(&mut r).await {
                     Ok(Some(bytes)) => {
-                        if let Ok(item) =
-                            serde_json::from_slice::<ArchiverEvent>(&bytes)
-                        {
-                            Some((transform_event(&item), (r, true)))
-                        } else {
-                            None
+                        match serde_json::from_slice::<ArchiverEvent>(&bytes) {
+                            Ok(item) => {
+                                Some((transform_event(&item), (r, true)))
+                            }
+                            Err(e) => {
+                                error!(
+				    "failed to deserialize archiver data: {e}, offending bytes: {}",
+				    String::from_utf8_lossy(&bytes)
+				);
+                                None
+                            }
                         }
                     }
                     _ => None,
