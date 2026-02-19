@@ -401,15 +401,14 @@ struct ArchiverEvent {
 #[derive(Default)]
 pub struct ACSysSubscriptions;
 
-// Converts an f64 representing time since the epoch into a an RFC
+// Converts an f64 representing time since the epoch into an RFC
 // 3339 string.
 
 fn to_iso(timestamp_f64: f64) -> String {
     use chrono::{TimeZone, Utc};
 
     let seconds = timestamp_f64.trunc() as i64;
-    let nanoseconds =
-        ((timestamp_f64.fract() * 1_000_000_000.0).round()) as u32;
+    let nanoseconds = (timestamp_f64.fract() * 1_000_000_000.0) as u32;
     let datetime_utc = Utc
         .timestamp_opt(seconds, nanoseconds)
         .earliest()
@@ -428,9 +427,7 @@ fn transform_event(event: &ArchiverEvent) -> global::DataReply {
                 scalar_array_value: arr
                     .iter()
                     .filter_map(|v| match v {
-                        serde_json::Value::Number(n) => {
-                            Some(n.as_f64().unwrap())
-                        }
+                        serde_json::Value::Number(n) => n.as_f64(),
                         _ => None,
                     })
                     .collect(),
@@ -438,7 +435,7 @@ fn transform_event(event: &ArchiverEvent) -> global::DataReply {
         }
         serde_json::Value::Number(n) => {
             global::DataType::Scalar(global::Scalar {
-                scalar_value: n.as_f64().unwrap(),
+                scalar_value: n.as_f64().unwrap_or(0.0),
             })
         }
         _ => global::DataType::Scalar(global::Scalar { scalar_value: 0.0 }),
