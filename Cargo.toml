@@ -8,6 +8,7 @@ tonic-prost-build = "0.14"
 protoc-bin-vendored = "3.2"
 
 [dependencies]
+async-stream = "0.3"
 futures = "0.3.27"
 futures-util = { version = "0.3", features = ["tokio-io"] }
 tokio = { version = "1", features = [
@@ -39,7 +40,7 @@ base64 = "0.22"
 
 reqwest.version = "0.12"
 reqwest.default-features = false
-reqwest.features = ["rustls-tls-webpki-roots", "json"]
+reqwest.features = ["stream", "rustls-tls", "rustls-tls-webpki-roots", "json"]
 
 rustls.version = "0.23"
 rustls.features = ["ring"]
@@ -51,6 +52,7 @@ prost-types = "0.14"
 
 kafkang = "0.2.0"
 uuid = { version = "1.19.0", features = ["v4"] }
+tokio-util = "0.7.18"
 
 [dev-dependencies]
 tower = "0.5"

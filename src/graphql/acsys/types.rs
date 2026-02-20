@@ -99,5 +99,5 @@ pub struct PlotConfigurationSnapshot {
     pub n_acquisitions: Option<usize>,
     pub tclk_event: Option<u8>,
     pub sample_on_event: Option<String>,
-    pub x_axis: Option<String>,
+    pub ch_x_axis: Option<String>,
 }

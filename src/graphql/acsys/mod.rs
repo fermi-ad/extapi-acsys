@@ -4,9 +4,12 @@ use crate::g_rpc::{
 };
 
 use async_graphql::*;
-use futures::future;
-use futures_util::{Stream, StreamExt};
+use futures::future::{self, Either};
+use futures_util::{stream, Stream, StreamExt};
+use serde::Deserialize;
 use std::{collections::HashSet, pin::Pin, sync::Arc};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
+use tokio_util::io::StreamReader;
 use tonic::Status;
 use tracing::{error, info, instrument, warn};
 
@@ -126,9 +129,10 @@ immediately or after a delay."]
             .map(|v| format!("{}@i", strip_event(v)))
             .collect();
 
-        // Build a set of integers representing the indices of the request.
-        // As replies arrive, the corresponding index will be removed from
-        // the set. When the set is empty, the stream will close.
+        // Build a set of integers representing the indices of the
+        // request. As replies arrive, the corresponding index will be
+        // removed from the set. When the set is empty, the stream
+        // will close.
 
         let mut remaining: HashSet<usize> = (0..drfs.len()).collect();
 
@@ -177,8 +181,6 @@ an array with 0 or 1 element."]
     async fn plot_configuration(
         &self, ctxt: &Context<'_>, configuration_id: Option<usize>,
     ) -> Vec<Arc<types::PlotConfigurationSnapshot>> {
-        info!("returning plot configuration(s)");
-
         ctxt.data_unchecked::<plotconfigdb::T>()
             .find(configuration_id)
             .await
@@ -200,8 +202,8 @@ the username and this parameter will be removed."]
         &self, ctxt: &Context<'_>, user: Option<String>,
     ) -> Option<Arc<types::PlotConfigurationSnapshot>> {
         if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
-            // TEMPORARY: If there isn't a JWT, use the account specified
-            // by the caller.
+            // TEMPORARY: If there isn't a JWT, use the account
+            // specified by the caller.
 
             if let Some(account) = auth.unsafe_account().or(user) {
                 info!("using account: {:?}", &account);
@@ -313,7 +315,6 @@ and this parameter will be removed."]
         &self, ctxt: &Context<'_>, user: Option<String>,
         config: types::PlotConfigurationSnapshot,
     ) -> Result<global::StatusReply> {
-        info!("new request");
         if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
             // TEMPORARY: If there isn't a JWT, use the username
             // specified by the caller.
@@ -348,17 +349,19 @@ fn strip_source(drf: &str) -> &str {
     drf[0..drf.find('<').unwrap_or(drf.len())].trim_end()
 }
 
-// Returns the device name but stripping off any trailing DRF fields. This is
-// a weak form of extracting; we should really have a DRF parser.
+// Returns the device name but stripping off any trailing DRF
+// fields. This is a weak form of extracting; we should really have a
+// DRF parser.
 
 fn device_name(drf: &str) -> &str {
     drf[0..drf.find(['@', '<']).unwrap_or(drf.len())].trim_end()
 }
 
-// Adds an event specification to a device name to create a DRF specification.
-// If the `event` parameter is `None`, the `delay` parameter represents the
-// periodic sample time, in microseconds. If an event is specified, the delay
-// represents the millisecond delay after the event to do the sample.
+// Adds an event specification to a device name to create a DRF
+// specification. If the `event` parameter is `None`, the `delay`
+// parameter represents the periodic sample time, in microseconds. If
+// an event is specified, the delay represents the millisecond delay
+// after the event to do the sample.
 
 fn add_event(
     delay: Option<usize>, event: Option<u8>,
@@ -371,9 +374,9 @@ fn add_event(
         (Some(d), Some(e)) => format!("e,{:X},e,{}", e, (d + 500) / 1_000),
     };
 
-    // If we're using the faked sources, we still need to reserve the slot
-    // in the array of devices. So we insert a DRF string that uses the
-    // "never" event.
+    // If we're using the faked sources, we still need to reserve the
+    // slot in the array of devices. So we insert a DRF string that
+    // uses the "never" event.
 
     move |device| format!("{device}@{}", event)
 }
@@ -386,18 +389,77 @@ struct TimeBounds {
     pub start: Option<f64>,
 }
 
+// Represents a single PV data point (event)
+
+#[derive(Debug, Deserialize)]
+struct ArchiverEvent {
+    pub secs: i64,
+    pub nanos: u32,
+    pub val: serde_json::Value,
+}
+
 #[derive(Default)]
 pub struct ACSysSubscriptions;
+
+// Converts an f64 representing time since the epoch into a an RFC
+// 3339 string.
+
+fn to_iso(timestamp_f64: f64) -> String {
+    use chrono::{TimeZone, Utc};
+
+    let seconds = timestamp_f64.trunc() as i64;
+    let nanoseconds =
+        ((timestamp_f64.fract() * 1_000_000_000.0).round()) as u32;
+    let datetime_utc = Utc
+        .timestamp_opt(seconds, nanoseconds)
+        .earliest()
+        .unwrap_or_else(|| {
+            Utc.timestamp_millis_opt(0).unwrap() // Default to epoch start
+        });
+
+    datetime_utc.format("%Y-%m-%dT%H:%M:%S.%fZ").to_string()
+}
+
+fn transform_event(event: &ArchiverEvent) -> global::DataReply {
+    let timestamp = event.secs as f64 + (event.nanos as f64 / 1_000_000_000.0);
+    let result = match &event.val {
+        serde_json::Value::Array(arr) => {
+            global::DataType::ScalarArray(global::ScalarArray {
+                scalar_array_value: arr
+                    .iter()
+                    .filter_map(|v| match v {
+                        serde_json::Value::Number(n) => {
+                            Some(n.as_f64().unwrap())
+                        }
+                        _ => None,
+                    })
+                    .collect(),
+            })
+        }
+        serde_json::Value::Number(n) => {
+            global::DataType::Scalar(global::Scalar {
+                scalar_value: n.as_f64().unwrap(),
+            })
+        }
+        _ => global::DataType::Scalar(global::Scalar { scalar_value: 0.0 }),
+    };
+
+    global::DataReply {
+        ref_id: 0,
+        data: vec![global::DataInfo { timestamp, result }],
+    }
+}
 
 // Private methods used by subscriptions.
 
 impl<'ctx> ACSysSubscriptions {
-    // Returns a stream of live data for a list of devices. If an end-time
-    // is specified, the stream will end once it is reached.
+    // Returns a stream of live data for a list of devices. If an
+    // end-time is specified, the stream will end once it is reached.
 
     async fn live_data(
         ctxt: &Context<'ctx>, drfs: &[String], start_time: f64,
-    ) -> Result<DataStream> {
+    ) -> Result<impl Stream<Item = global::DataReply> + Send + 'static + Unpin>
+    {
         use tokio_stream::StreamExt;
 
         // Strip any source designation and append the once-immediate.
@@ -417,34 +479,170 @@ impl<'ctx> ACSysSubscriptions {
         )
         .await
         {
-            Ok(s) => {
-                Ok(Box::pin(StreamExt::filter_map(s.into_inner(), move |v| {
-                    let mut reply = xlat_reply(v);
-                    let idx = reply.data[..]
-                        .partition_point(|info| info.timestamp < start_time);
+            Ok(s) => Ok(StreamExt::filter_map(s.into_inner(), move |v| {
+                let mut reply = xlat_reply(v);
+                let idx = reply.data[..]
+                    .partition_point(|info| info.timestamp < start_time);
 
-                    reply.data.drain(..idx);
-                    if reply.data.is_empty() {
-                        None
-                    } else {
-                        Some(reply)
-                    }
-                })) as DataStream)
-            }
+                reply.data.drain(..idx);
+                if reply.data.is_empty() {
+                    None
+                } else {
+                    Some(reply)
+                }
+            })),
             Err(e) => Err(Error::new(format!("{}", e).as_str())),
         }
     }
 
+    // Reads a chunked HTTP response until it finds the "data" key.
+    // Once that's found, it advances the stream up to, and including,
+    // the first '[' so that it's pointing to the first object in the
+    // array.
+
+    async fn seek_to_data_array<R: tokio::io::AsyncBufRead + Unpin>(
+        r: &mut R,
+    ) -> std::io::Result<()> {
+        const KEY: &[u8] = b"\"data\"";
+
+        // First find the key.
+
+        loop {
+            let buf = r.fill_buf().await?;
+
+            if buf.is_empty() {
+                return Err(std::io::ErrorKind::UnexpectedEof.into());
+            }
+
+            if let Some(pos) = buf.windows(KEY.len()).position(|w| w == KEY) {
+                r.consume(pos + KEY.len());
+                break;
+            }
+
+            let len = buf.len();
+
+            r.consume(len.saturating_sub(KEY.len()));
+        }
+
+        // Now find the next '[' character.
+
+        loop {
+            if r.read_u8().await? == b'[' {
+                break;
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn extract_next_object<R: tokio::io::AsyncBufRead + Unpin>(
+        r: &mut R,
+    ) -> std::io::Result<Option<Vec<u8>>> {
+        let mut obj_bytes = Vec::new();
+        let mut brace_count = 0;
+        let mut in_object = false;
+
+        loop {
+            let buf = r.fill_buf().await?;
+
+            if buf.is_empty() {
+                return Ok(None);
+            }
+
+            for (i, &b) in buf.iter().enumerate() {
+                if !in_object {
+                    if b == b'{' {
+                        in_object = true;
+                        brace_count = 1;
+                        obj_bytes.push(b);
+                    } else if b == b']' {
+                        return Ok(None); // End of the data array
+                    }
+                    // Skip commas/whitespace
+                    continue;
+                }
+
+                obj_bytes.push(b);
+
+                if b == b'{' {
+                    brace_count += 1;
+                } else if b == b'}' {
+                    brace_count -= 1;
+                    if brace_count == 0 {
+                        r.consume(i + 1);
+                        return Ok(Some(obj_bytes));
+                    }
+                }
+            }
+
+            let len = buf.len();
+
+            r.consume(len);
+        }
+    }
+
+    #[instrument(name = "EPICS_ARCH", skip(device, start_time, end_time))]
+    async fn epics_archived_data(
+        device: &str, start_time: f64, end_time: f64,
+    ) -> Result<impl Stream<Item = global::DataReply> + Send + 'static + Unpin>
+    {
+        const BASE_URL: &str =
+            "http://archiverdev.fnal.gov:17668/retrieval/data/getData.json";
+
+        let request_url = format!(
+            "{}?pv={}&from={}&to={}",
+            BASE_URL,
+            device_name(device),
+            to_iso(start_time.min(end_time)),
+            to_iso(end_time.max(start_time))
+        );
+        let response = reqwest::get(request_url).await?.error_for_status()?;
+
+        let byte_stream = response
+            .bytes_stream()
+            .map(|res| res.map_err(std::io::Error::other));
+
+        let reader = BufReader::new(StreamReader::new(byte_stream));
+
+        let strm =
+            stream::unfold((reader, false), |(mut r, ready)| async move {
+                // SEEK PHASE: Only runs once
+
+                if !ready && Self::seek_to_data_array(&mut r).await.is_err() {
+                    return None;
+                }
+
+                // PARSE PHASE: Extract one object from the array
+
+                match Self::extract_next_object(&mut r).await {
+                    Ok(Some(bytes)) => {
+                        if let Ok(item) =
+                            serde_json::from_slice::<ArchiverEvent>(&bytes)
+                        {
+                            Some((transform_event(&item), (r, true)))
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                }
+            })
+            .boxed();
+
+        Ok(datastream::group_scalars::<500, _>(strm))
+    }
+
     // Returns a stream containing archived data for a device.
 
+    #[instrument(name = "ACNET_ARCH", skip(ctxt, device, start_time, end_time))]
     async fn archived_data(
         ctxt: &Context<'ctx>, device: &str, start_time: f64, end_time: f64,
     ) -> Result<DataStream> {
         use tokio_stream::StreamExt;
 
-        // If the device has a subscript, then the client wants archived
-        // data for an array device. Due to quirks in the array data
-        // logger, we can't specify the subscript or event.
+        // If the device has a subscript, then the client wants
+        // archived data for an array device. Due to quirks in the
+        // array data logger, we can't specify the subscript or event.
 
         let device = if device.find('[').is_some() {
             device_name(device)
@@ -482,6 +680,7 @@ impl<'ctx> ACSysSubscriptions {
     }
 
     // A helper method to handle plots that request continuous data.
+
     async fn handle_continuous(
         &self, ctxt: &Context<'ctx>, drfs: Vec<String>,
         _window_size: Option<usize>, n_acquisitions: Option<usize>,
@@ -514,8 +713,9 @@ impl<'ctx> ACSysSubscriptions {
             .await?;
         let s =
             strm.filter_map(move |mut e: global::DataReply| {
-                // If the data consists of a single value that's a status,
-                // it gets moved to the packet level status field.
+                // If the data consists of a single value that's a
+                // status, it gets moved to the packet level status
+                // field.
 
                 if let &mut [global::DataInfo {
                     result: global::DataType::StatusReply(ref v),
@@ -532,8 +732,8 @@ impl<'ctx> ACSysSubscriptions {
                         .append(&mut e.data);
                 }
 
-                // If we have data (or status) for every channel, we can
-                // determine what needs to be sent to the client.
+                // If we have data (or status) for every channel, we
+                // can determine what needs to be sent to the client.
 
                 if reply.data.iter().all(|e| {
                     e.channel_status != 0 || !e.channel_data.is_empty()
@@ -835,9 +1035,11 @@ live data."]
         // time for the data to also be saved in a data logger.
 
         let s_live = if need_live {
-            ACSysSubscriptions::live_data(ctxt, &drfs, start_live).await?
+            Either::Left(
+                ACSysSubscriptions::live_data(ctxt, &drfs, start_live).await?,
+            )
         } else {
-            Box::pin(tokio_stream::empty()) as DataStream
+            Either::Right(tokio_stream::empty())
         };
 
         // Build up the set of streams that will return archived data.
@@ -850,32 +1052,44 @@ live data."]
             // correct ref ID with the stream.
 
             for (ref_id, drf) in drfs.into_iter().enumerate() {
-                let stream = ACSysSubscriptions::archived_data(
-                    ctxt,
-                    &drf,
-                    st,
-                    archived_end,
-                )
-                .await?;
+                let strms = tokio::join!(
+                    ACSysSubscriptions::epics_archived_data(
+                        &drf,
+                        st,
+                        archived_end,
+                    ),
+                    ACSysSubscriptions::archived_data(
+                        ctxt,
+                        &drf,
+                        st,
+                        archived_end,
+                    )
+                );
 
-                streams.insert(ref_id as i32, Box::pin(stream) as DataStream);
+                let actual = match strms {
+                    (Ok(epics), _) => Either::Left(epics),
+                    (_, Ok(acnet)) => Either::Right(acnet),
+                    (_, err @ Err(_)) => return err,
+                };
+
+                streams.insert(ref_id as i32, actual);
             }
 
             // Modify incoming DataReplies by updating their ref IDs.
 
-            Box::pin(tokio_stream::StreamExt::map(streams, |mut v| {
+            Either::Left(tokio_stream::StreamExt::map(streams, |mut v| {
                 v.1.ref_id = v.0;
                 v.1
-            })) as DataStream
+            }))
         } else {
-            Box::pin(tokio_stream::empty()) as DataStream
+            Either::Right(tokio_stream::empty())
         };
 
-        Ok(datastream::end_stream_at(
+        Ok(Box::pin(datastream::end_stream_at(
             datastream::filter_dupes(datastream::merge(s_archived, s_live)),
             total,
             end_time,
-        ))
+        )) as DataStream)
     }
 
     #[allow(clippy::too_many_arguments)]

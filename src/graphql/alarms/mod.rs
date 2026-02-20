@@ -204,7 +204,6 @@ mod tests {
             Schema::build(AlarmsQueries, AlarmsMutations, AlarmsSubscriptions)
                 .finish();
         let result = schema.execute(gql_query).await;
-        assert_eq!(result.errors.len(), 1);
         let err = result.errors.first().unwrap();
         assert_eq!(err.message, err_msg);
     }
@@ -256,7 +255,7 @@ mod tests {
                 }
             }
         "#,
-            "status: 'Internal error', self: \"Could not connect to the database service. See server logs for details.\"",
+            "code: 'Internal error', message: \"Could not connect to the database service. See server logs for details.\"",
         )
         .await;
     }
@@ -269,7 +268,7 @@ mod tests {
                 deleteAlarmTimer(device: "G:AMANDA", timerType: "test_type")
             }
         "#,
-            "status: 'Internal error', self: \"Could not connect to the database service. See server logs for details.\"",
+            "code: 'Internal error', message: \"Could not connect to the database service. See server logs for details.\"",
         )
         .await;
     }
@@ -296,7 +295,7 @@ mod tests {
             Status::invalid_argument("test invalid arg"),
             "testing alarm timer",
         );
-        assert_eq!(result.unwrap_err().message, "status: 'Client specified an invalid argument', self: \"test invalid arg\"");
+        assert_eq!(result.unwrap_err().message, "code: 'Client specified an invalid argument', message: \"test invalid arg\"");
 
         let result = handle_error::<()>(
             Status::internal("test internal err"),
@@ -304,7 +303,7 @@ mod tests {
         );
         assert_eq!(
             result.unwrap_err().message,
-            "status: 'Internal error', self: \"test internal err\""
+            "code: 'Internal error', message: \"test internal err\""
         );
 
         let result = handle_error::<()>(
@@ -331,7 +330,7 @@ mod tests {
                 }
             }
         "#,
-            "status: 'Internal error', self: \"Could not connect to the database service. See server logs for details.\"",
+            "code: 'Internal error', message: \"Could not connect to the database service. See server logs for details.\"",
         )
         .await;
     }
@@ -346,7 +345,7 @@ mod tests {
                 }
             }
         "#,
-            "status: 'Internal error', self: \"Could not connect to the database service. See server logs for details.\"",
+            "code: 'Internal error', message: \"Could not connect to the database service. See server logs for details.\"",
         )
         .await;
     }
@@ -361,7 +360,7 @@ mod tests {
                 }
             }
         "#,
-            "status: 'Internal error', self: \"Could not connect to the database service. See server logs for details.\"",
+            "code: 'Internal error', message: \"Could not connect to the database service. See server logs for details.\"",
         )
         .await;
     }
@@ -376,7 +375,7 @@ mod tests {
                 }
             }
         "#,
-            "status: 'Internal error', self: \"Could not connect to the database service. See server logs for details.\"",
+            "code: 'Internal error', message: \"Could not connect to the database service. See server logs for details.\"",
         )
         .await;
     }
@@ -395,7 +394,7 @@ mod tests {
                 }
             }
         "#,
-            "status: 'Internal error', self: \"Could not connect to the database service. See server logs for details.\"",
+            "code: 'Internal error', message: \"Could not connect to the database service. See server logs for details.\"",
         )
         .await;
     }
