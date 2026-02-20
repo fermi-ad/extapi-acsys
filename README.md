@@ -23,6 +23,7 @@ The following variables exist for configuring the service at runtime:
 - `GRAPHQL_PORT` -> Port for clients to connect via GraphQL to this service
 - `GRPC_ALARMS_DB_HOST` -> Hostname for the Alarms DB Access gRPC service
 - `KAFKA_CONNECTION_SECONDS` -> The number of seconds to wait for a connection to Kafka before timing out
+- `RUST_LOG` -> The default logging environment variable from Rust. Can be configured to log specific crates/modules at different levels from the global default.
 - `SCANNER_GRPC_HOST` -> Hostname for the wire scanner gRPC service
 - `TLG_GRPC_HOST` -> Hostname for the TLG gRPC service
 

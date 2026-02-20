@@ -19,7 +19,7 @@ tokio = { version = "1", features = [
 tokio-stream = { version = "0.1", features = ["sync"] }
 
 tracing = { version = "0.1", features = ["log"] }
-tracing-subscriber = "0.3"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 async-graphql = { version = "7", features = ["chrono"] }
 async-graphql-axum = "7"
