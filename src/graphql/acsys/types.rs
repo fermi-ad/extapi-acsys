@@ -11,6 +11,7 @@ pub struct PlotChannelData {
 	     front-end will negotiate down to an acheivable rate. This field \
 	     represents the actual sample rate of the data."]
     pub channel_rate: String,
+    pub status_string: Option<String>,
     #[doc = "The global status of the reading. This field will either be `0` \
 	     (successful reads) or a negative status, indicating a fatal error \
 	     occurred trying to get the device's data."]

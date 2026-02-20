@@ -696,6 +696,7 @@ impl<'ctx> ACSysSubscriptions {
                 .map(|_| types::PlotChannelData {
                     channel_rate: "Unknown".into(),
                     channel_units: "V".into(),
+                    status_string: None,
                     channel_status: 0,
                     channel_data: vec![],
                 })
@@ -748,6 +749,7 @@ impl<'ctx> ACSysSubscriptions {
                             .map(|e| types::PlotChannelData {
                                 channel_rate: "Unknown".into(),
                                 channel_units: e.channel_units.clone(),
+                                status_string: None,
                                 channel_status: e.channel_status,
                                 channel_data: vec![],
                             })
@@ -829,6 +831,7 @@ impl<'ctx> ACSysSubscriptions {
                 .map(|_| types::PlotChannelData {
                     channel_rate: "Unknown".into(),
                     channel_units: "V".into(),
+                    status_string: None,
                     channel_status: 0,
                     channel_data: vec![],
                 })
@@ -1286,6 +1289,7 @@ mod test {
             data: vec![types::PlotChannelData {
                 channel_rate: "Unknown".into(),
                 channel_units: "V".to_owned(),
+                status_string: None,
                 channel_status: 0,
                 channel_data: POINT_DATA.to_owned(),
             }],
@@ -1349,6 +1353,7 @@ mod test {
             data: vec![types::PlotChannelData {
                 channel_rate: "Unknown".into(),
                 channel_units: "V".to_owned(),
+                status_string: None,
                 channel_status: 0,
                 channel_data: POINT_DATA.to_owned(),
             }],
