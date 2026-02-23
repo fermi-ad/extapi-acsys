@@ -71,7 +71,7 @@ impl Inner {
             // isn't associated with another ID.
 
             for (k, v) in self.0.iter() {
-                if *k != id && &*v.0 == name {
+                if *k != id && *v.0 == name {
                     return None;
                 }
             }
@@ -79,7 +79,7 @@ impl Inner {
             // Save the ID and then insert the (possibly updated) record in
             // the DB.
 
-            let _ = self.0.insert(id, (name.into(), cfg.into()));
+            let _ = self.0.insert(id, (name.into(), cfg));
 
             Some(id)
         } else {
@@ -87,7 +87,7 @@ impl Inner {
             // already used.
 
             for v in self.0.values() {
-                if &*v.0 == name {
+                if *v.0 == name {
                     return None;
                 }
             }
@@ -96,7 +96,7 @@ impl Inner {
             // with the new ID and then insert it in the map.
 
             let id = self.0.keys().reduce(std::cmp::max).unwrap_or(&0usize) + 1;
-            let _ = self.0.insert(id, (name.into(), cfg.into()));
+            let _ = self.0.insert(id, (name.into(), cfg));
 
             Some(id)
         }
