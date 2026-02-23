@@ -288,7 +288,7 @@ async fn create_site() -> Router {
 // configuration information from the submodules. All accesses are
 // wrapped with CORS support from the `warp` crate.
 
-const SERVICE_PORT: u16 = 8000;
+const SERVICE_PORT: u16 = 8001;
 pub async fn start_service() {
     let bind_addr =
         SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), SERVICE_PORT);
