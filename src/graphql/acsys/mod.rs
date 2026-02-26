@@ -191,21 +191,16 @@ an array with 0 or 1 element."]
 If the application saved the user's last plot configuration, this query \
 will return it. If there is no configuration for the user, `null` is \
 returned. The user's account is retrieved from the authentication token \
-that is included in the request.
-
-TEMPORARY: The `user` parameter can be used to retrieve a user's last \
-configuration. The convention is to prepend an underscore to the account \
-name. Once we use the new authentication method, we'll be able to look-up \
-the username and this parameter will be removed."]
+that is included in the request."]
     #[instrument(skip(self, ctxt))]
     async fn users_last_configuration(
-        &self, ctxt: &Context<'_>, user: Option<String>,
+        &self, ctxt: &Context<'_>
     ) -> Option<Arc<str>> {
         if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
             // TEMPORARY: If there isn't a JWT, use the account
             // specified by the caller.
 
-            if let Some(account) = auth.unsafe_account().or(user) {
+            if let Some(account) = auth.unsafe_account() {
                 info!("using account: {:?}", &account);
 
                 return ctxt
@@ -304,21 +299,12 @@ want to set."]
 The content of the configuration are used to set the default \
 configuration for the user. All fields, except the ID and name \
 fields, are used. The user's account name is obtained from the \
-authentication token that accompanies the request.
-
-TEMPORARY: The `user` parameter can be used to specify the user \
-account with which to associate the configuration. The convention \
-is to prepend an underscore to the account name. Once we use the \
-new authentication method, we'll be able to look-up the username \
-and this parameter will be removed."]
+authentication token that accompanies the request."]
     #[instrument(skip(self, ctxt, config))]
     async fn users_configuration(
         &self, ctxt: &Context<'_>, config: Arc<str>,
     ) -> Result<global::StatusReply> {
         if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
-            // TEMPORARY: If there isn't a JWT, use the username
-            // specified by the caller.
-
             if let Some(account) = auth.unsafe_account() {
                 info!("using account: {:?}", &account);
 
