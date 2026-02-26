@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 #[derive(SimpleObject, Clone)]
 pub struct PlotConfig {
-    pub id: usize,
-    pub name: Arc<str>,
+    pub config_id: usize,
+    pub config_name: Arc<str>,
     pub config: Arc<str>,
 }
 

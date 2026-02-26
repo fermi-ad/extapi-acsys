@@ -35,8 +35,8 @@ impl Inner {
                 .get(&id)
                 .iter()
                 .map(|v| types::PlotConfig {
-                    id,
-                    name: v.0.clone(),
+                    config_id: id,
+                    config_name: v.0.clone(),
                     config: v.1.clone(),
                 })
                 .collect()
@@ -44,8 +44,8 @@ impl Inner {
             self.0
                 .iter()
                 .map(|(k, v)| types::PlotConfig {
-                    id: *k,
-                    name: v.0.clone(),
+                    config_id: *k,
+                    config_name: v.0.clone(),
                     config: v.1.clone(),
                 })
                 .collect()
