@@ -570,7 +570,7 @@ impl<'ctx> ACSysSubscriptions {
     ) -> Result<impl Stream<Item = global::DataReply> + Send + 'static + Unpin>
     {
         const BASE_URL: &str =
-            "http://archiverdev.fnal.gov:17668/retrieval/data/getData.json";
+            "http://archiver1.fnal.gov:17668/retrieval/data/getData.json";
 
         let request_url = format!(
             "{}?pv={}&from={}&to={}",
