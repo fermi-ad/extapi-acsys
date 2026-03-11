@@ -423,7 +423,7 @@ fn transform_event(event: &ArchiverEvent) -> global::DataReply {
                     .iter()
                     .filter_map(|v| match v {
                         serde_json::Value::Number(n) => {
-                            Some(n.as_f32().unwrap())
+                            Some(n.as_f64().unwrap() as f32)
                         }
                         _ => None,
                     })
@@ -432,7 +432,7 @@ fn transform_event(event: &ArchiverEvent) -> global::DataReply {
         }
         serde_json::Value::Number(n) => {
             global::DataType::Scalar(global::Scalar {
-                scalar_value: n.as_f32().unwrap(),
+                scalar_value: n.as_f64().unwrap() as f32,
             })
         }
         _ => global::DataType::Scalar(global::Scalar { scalar_value: 0.0 }),
