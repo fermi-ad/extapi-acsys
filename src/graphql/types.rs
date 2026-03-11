@@ -1,8 +1,8 @@
 use crate::g_rpc::proto::common::device;
-use async_graphql::{ComplexObject, InputObject, SimpleObject, Union};
+use async_graphql::{ComplexObject, SimpleObject, Union};
 use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine};
 use chrono::{DateTime, Duration, Utc};
-use serde::{Deserialize, Deserializer};
+use serde::{Serialize, Deserialize, Deserializer};
 use serde_json::{self, Value};
 use std::collections::HashMap;
 
@@ -200,7 +200,7 @@ where
     STANDARD_NO_PAD.decode(s).map_err(serde::de::Error::custom)
 }
 
-#[derive(Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(untagged)]
 pub enum DevValue {
     Integer(i32),

@@ -190,7 +190,7 @@ mod test {
         global::DataInfo {
             timestamp: ts,
             result: global::DataType::Scalar(global::Scalar {
-                scalar_value: ts / 2.0,
+                scalar_value: (ts / 2.0) as f32,
             }),
         }
     }
@@ -200,9 +200,9 @@ mod test {
             timestamp: ts,
             result: global::DataType::ScalarArray(global::ScalarArray {
                 scalar_array_value: vec![
-                    ts / 2.0,
-                    ts / 2.0 + 1.0,
-                    ts / 2.0 + 2.0,
+                    (ts / 2.0) as f32,
+                    (ts / 2.0 + 1.0) as f32,
+                    (ts / 2.0 + 2.0) as f32,
                 ],
             }),
         }

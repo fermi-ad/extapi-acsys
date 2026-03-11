@@ -8,7 +8,7 @@ use futures::future::{self, Either};
 use futures_util::{stream, Stream, StreamExt};
 use serde::Deserialize;
 use std::{collections::HashSet, pin::Pin, sync::Arc};
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio_util::io::StreamReader;
 use tonic::Status;
 use tracing::{error, info, instrument, warn};
@@ -524,7 +524,9 @@ impl<'ctx> ACSysSubscriptions {
                 r.consume(pos + 1);
                 break;
             }
+
             let len = buf.len();
+
             r.consume(len);
         }
 
@@ -579,7 +581,9 @@ impl<'ctx> ACSysSubscriptions {
                 if in_object {
                     obj_bytes.extend_from_slice(&buf[start_copy..]);
                 }
+
                 let len = buf.len();
+
                 r.consume(len);
             }
         }
