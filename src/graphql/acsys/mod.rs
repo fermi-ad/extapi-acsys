@@ -386,10 +386,17 @@ struct TimeBounds {
 // Represents a single PV data point (event)
 
 #[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum ArchiverValue {
+    Scalar(f32),
+    Array(Vec<f32>),
+}
+
+#[derive(Debug, Deserialize)]
 struct ArchiverEvent {
     pub secs: i64,
     pub nanos: u32,
-    pub val: serde_json::Value,
+    pub val: ArchiverValue,
 }
 
 #[derive(Default)]
@@ -414,28 +421,17 @@ fn to_iso(timestamp_f64: f64) -> String {
     datetime_utc.format("%Y-%m-%dT%H:%M:%S.%fZ").to_string()
 }
 
-fn transform_event(event: &ArchiverEvent) -> global::DataReply {
+fn transform_event(event: ArchiverEvent) -> global::DataReply {
     let timestamp = event.secs as f64 + (event.nanos as f64 / 1_000_000_000.0);
-    let result = match &event.val {
-        serde_json::Value::Array(arr) => {
+    let result = match event.val {
+        ArchiverValue::Array(arr) => {
             global::DataType::ScalarArray(global::ScalarArray {
-                scalar_array_value: arr
-                    .iter()
-                    .filter_map(|v| match v {
-                        serde_json::Value::Number(n) => {
-                            Some(n.as_f64().unwrap() as f32)
-                        }
-                        _ => None,
-                    })
-                    .collect(),
+                scalar_array_value: arr,
             })
         }
-        serde_json::Value::Number(n) => {
-            global::DataType::Scalar(global::Scalar {
-                scalar_value: n.as_f64().unwrap() as f32,
-            })
+        ArchiverValue::Scalar(n) => {
+            global::DataType::Scalar(global::Scalar { scalar_value: n })
         }
-        _ => global::DataType::Scalar(global::Scalar { scalar_value: 0.0 }),
     };
 
     global::DataReply {
@@ -612,7 +608,7 @@ impl<'ctx> ACSysSubscriptions {
                         if let Ok(item) =
                             serde_json::from_slice::<ArchiverEvent>(&bytes)
                         {
-                            Some((transform_event(&item), (r, true)))
+                            Some((transform_event(item), (r, true)))
                         } else {
                             None
                         }
