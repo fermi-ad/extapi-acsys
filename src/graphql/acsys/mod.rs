@@ -516,9 +516,14 @@ impl<'ctx> ACSysSubscriptions {
         // Now find the next '[' character.
 
         loop {
-            if r.read_u8().await? == b'[' {
+            let buf = r.fill_buf().await?;
+
+            if let Some(pos) = buf.iter().position(|&b| b == b'[') {
+                r.consume(pos + 1);
                 break;
             }
+            let len = buf.len();
+            r.consume(len);
         }
 
         Ok(())
@@ -538,35 +543,43 @@ impl<'ctx> ACSysSubscriptions {
                 return Ok(None);
             }
 
+            let mut start_copy = 0;
+            let mut loop_break_idx = None;
+
             for (i, &b) in buf.iter().enumerate() {
                 if !in_object {
                     if b == b'{' {
                         in_object = true;
                         brace_count = 1;
-                        obj_bytes.push(b);
+                        start_copy = i;
                     } else if b == b']' {
+                        r.consume(i + 1);
                         return Ok(None); // End of the data array
                     }
-                    // Skip commas/whitespace
-                    continue;
-                }
-
-                obj_bytes.push(b);
-
-                if b == b'{' {
-                    brace_count += 1;
-                } else if b == b'}' {
-                    brace_count -= 1;
-                    if brace_count == 0 {
-                        r.consume(i + 1);
-                        return Ok(Some(obj_bytes));
+                } else {
+                    if b == b'{' {
+                        brace_count += 1;
+                    } else if b == b'}' {
+                        brace_count -= 1;
+                        if brace_count == 0 {
+                            loop_break_idx = Some(i + 1);
+                            break;
+                        }
                     }
                 }
             }
 
-            let len = buf.len();
-
-            r.consume(len);
+            if let Some(end) = loop_break_idx {
+                obj_bytes.extend_from_slice(&buf[start_copy..end]);
+                r.consume(end);
+                return Ok(Some(obj_bytes));
+            } else {
+                if in_object {
+                    obj_bytes.extend_from_slice(&buf[start_copy..]);
+                }
+                let len = buf.len();
+                r.consume(len);
+            }
         }
     }
 
