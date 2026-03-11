@@ -33,6 +33,10 @@ impl AuthInfo {
         self.bearer_token.clone()
     }
 
+    pub fn token_ref(&self) -> Option<&String> {
+        self.bearer_token.as_ref()
+    }
+
     pub fn unsafe_account(&self) -> Option<String> {
         self.bearer_token.as_ref().and_then(|token| {
             if let [_, body, _] = token.split('.').collect::<Vec<&str>>()[..] {

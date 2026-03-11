@@ -140,9 +140,8 @@ immediately or after a delay."]
             ctxt.data::<Connection>().unwrap(),
             ctxt.data::<global::AuthInfo>()
                 .ok()
-                .and_then(global::AuthInfo::token)
-                .as_ref(),
-            drfs.clone(),
+                .and_then(global::AuthInfo::token_ref),
+            drfs,
         )
         .await
         .unwrap()
@@ -468,8 +467,7 @@ impl<'ctx> ACSysSubscriptions {
             ctxt.data::<Connection>().unwrap(),
             ctxt.data::<global::AuthInfo>()
                 .ok()
-                .and_then(global::AuthInfo::token)
-                .as_ref(),
+                .and_then(global::AuthInfo::token_ref),
             processed_drfs,
         )
         .await
@@ -660,8 +658,7 @@ impl<'ctx> ACSysSubscriptions {
             ctxt.data::<Connection>().unwrap(),
             ctxt.data::<global::AuthInfo>()
                 .ok()
-                .and_then(global::AuthInfo::token)
-                .as_ref(),
+                .and_then(global::AuthInfo::token_ref),
             vec![drf],
         )
         .await
@@ -701,7 +698,7 @@ impl<'ctx> ACSysSubscriptions {
         let strm = self
             .accelerator_data(
                 ctxt,
-                drfs.clone(),
+                drfs,
                 time_bounds.start,
                 time_bounds.end,
                 Some(false),
@@ -814,25 +811,6 @@ impl<'ctx> ACSysSubscriptions {
         use crate::g_rpc::clock;
         use async_stream::stream;
 
-        // This is an empty reply. It is the starting point that is used
-        // to accumulate when the event fires.
-
-        let template = types::PlotReplyData {
-            plot_id: "demo".into(),
-            timestamp: now(),
-            trigger_timestamp: None,
-            data: drfs
-                .iter()
-                .map(|_| types::PlotChannelData {
-                    channel_rate: "Unknown".into(),
-                    channel_units: "V".into(),
-                    status_string: None,
-                    channel_status: 0,
-                    channel_data: vec![],
-                })
-                .collect(),
-        };
-
         // Subscribe for clock events. Along with the trigger event, we
         // also subscribe to the $0F event. We do this because we don't
         // know when the next trigger event is going to occur. However,
@@ -847,15 +825,28 @@ impl<'ctx> ACSysSubscriptions {
             &[0x0f]
         };
         let mut tclk = clock::subscribe(clock_list).await?.into_inner();
+        let drfs_len = drfs.len();
         let mut dev_data = self
-            .accelerator_data(
-                ctxt,
-                drfs.clone(),
-                start_time,
-                end_time,
-                Some(false),
-            )
+            .accelerator_data(ctxt, drfs, start_time, end_time, Some(false))
             .await?;
+
+        // This is an empty reply. It is the starting point that is used
+        // to accumulate when the event fires.
+
+        let template = types::PlotReplyData {
+            plot_id: "demo".into(),
+            timestamp: now(),
+            trigger_timestamp: None,
+            data: (0..drfs_len)
+                .map(|_| types::PlotChannelData {
+                    channel_rate: "Unknown".into(),
+                    channel_units: "V".into(),
+                    status_string: None,
+                    channel_status: 0,
+                    channel_data: vec![],
+                })
+                .collect(),
+        };
 
         #[rustfmt::skip]
         let strm = stream! {
