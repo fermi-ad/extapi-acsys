@@ -78,13 +78,13 @@ pub struct StatusReply {
 #[doc = "Represents a simple, floating point value."]
 #[derive(SimpleObject, Clone, Debug, PartialEq)]
 pub struct Scalar {
-    pub scalar_value: f64,
+    pub scalar_value: f32,
 }
 
 #[doc = "Represents an array of floating point values."]
 #[derive(SimpleObject, Clone, Debug, PartialEq)]
 pub struct ScalarArray {
-    pub scalar_array_value: Vec<f64>,
+    pub scalar_array_value: Vec<f32>,
 }
 
 #[doc = "Contains the raw, unscaled data returned by a device."]
@@ -298,11 +298,17 @@ impl TryFrom<device::Value> for DataType {
     fn try_from(val: device::Value) -> Result<Self, Self::Error> {
         match val.value {
             Some(device::value::Value::Scalar(v)) => {
-                Ok(DataType::Scalar(Scalar { scalar_value: v }))
+                Ok(DataType::Scalar(Scalar {
+                    scalar_value: v as f32,
+                }))
             }
             Some(device::value::Value::ScalarArr(v)) => {
                 Ok(DataType::ScalarArray(ScalarArray {
-                    scalar_array_value: v.value,
+                    scalar_array_value: v
+                        .value
+                        .into_iter()
+                        .map(|v| v as f32)
+                        .collect(),
                 }))
             }
             Some(device::value::Value::Raw(v)) => Ok(DataType::Raw(Raw {
@@ -334,11 +340,17 @@ impl TryFrom<&device::Value> for DataType {
     fn try_from(val: &device::Value) -> Result<Self, Self::Error> {
         match &val.value {
             Some(device::value::Value::Scalar(v)) => {
-                Ok(DataType::Scalar(Scalar { scalar_value: *v }))
+                Ok(DataType::Scalar(Scalar {
+                    scalar_value: *v as f32,
+                }))
             }
             Some(device::value::Value::ScalarArr(v)) => {
                 Ok(DataType::ScalarArray(ScalarArray {
-                    scalar_array_value: v.value.clone(),
+                    scalar_array_value: v
+                        .value
+                        .iter()
+                        .map(|v| *v as f32)
+                        .collect(),
                 }))
             }
             Some(device::value::Value::Raw(v)) => Ok(DataType::Raw(Raw {
