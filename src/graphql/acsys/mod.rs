@@ -233,7 +233,9 @@ want to set."]
 		    `.CONTROL`."
         )]
         device: String,
-        #[graphql(desc = "The value of the setting.")] _value: global::DevValue,
+        #[graphql(desc = "The value of the setting.")] _value: Json<
+            global::DevValue,
+        >,
     ) -> Result<global::StatusReply> {
         #[cfg(debug_assertions)]
         {
@@ -252,7 +254,7 @@ want to set."]
                 _ctxt.data::<Connection>().unwrap(),
                 _ctxt.data::<global::AuthInfo>().unwrap().token(),
                 device.clone(),
-                _value.into(),
+                _value.0.into(),
             )
             .await;
 

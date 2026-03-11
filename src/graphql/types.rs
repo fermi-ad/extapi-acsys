@@ -2,6 +2,7 @@ use crate::g_rpc::proto::common::device;
 use async_graphql::{ComplexObject, InputObject, SimpleObject, Union};
 use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine};
 use chrono::{DateTime, Duration, Utc};
+use serde::{Deserialize, Deserializer};
 use serde_json::{self, Value};
 use std::collections::HashMap;
 
@@ -90,7 +91,7 @@ pub struct ScalarArray {
 #[doc = "Contains the raw, unscaled data returned by a device."]
 #[derive(SimpleObject, Clone, Debug, PartialEq)]
 pub struct Raw {
-    pub raw_value: Vec<u8>,
+    pub raw_value: String,
 }
 
 #[doc = "Contains a textual value returned by a device."]
@@ -191,14 +192,24 @@ pub struct DataReply {
     pub data: Vec<DataInfo>,
 }
 
-#[derive(InputObject)]
-pub struct DevValue {
-    pub int_val: Option<i32>,
-    pub scalar_val: Option<f64>,
-    pub scalar_array_val: Option<Vec<f64>>,
-    pub raw_val: Option<Vec<u8>>,
-    pub text_val: Option<String>,
-    pub text_array_val: Option<Vec<String>>,
+fn deserialize_base64<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    STANDARD_NO_PAD.decode(s).map_err(serde::de::Error::custom)
+}
+
+#[derive(Deserialize, Debug, Clone, PartialEq)]
+#[serde(untagged)]
+pub enum DevValue {
+    Integer(i32),
+    Scalar(f64),
+    ScalarArray(Vec<f64>),
+    #[serde(deserialize_with = "deserialize_base64")]
+    Raw(Vec<u8>),
+    Text(String),
+    TextArray(Vec<String>),
 }
 
 // --------------------------------------------------------------------------
@@ -210,80 +221,27 @@ pub struct DevValue {
 impl From<DevValue> for device::Value {
     fn from(val: DevValue) -> Self {
         match val {
-            // TODO: Need to make an integer a valid device type.
-            DevValue {
-                int_val: Some(v),
-                scalar_val: _,
-                scalar_array_val: _,
-                raw_val: _,
-                text_val: _,
-                text_array_val: _,
-            } => device::Value {
+            DevValue::Integer(v) => device::Value {
                 value: Some(device::value::Value::Scalar(v as f64)),
             },
-            DevValue {
-                int_val: None,
-                scalar_val: Some(v),
-                scalar_array_val: _,
-                raw_val: _,
-                text_val: _,
-                text_array_val: _,
-            } => device::Value {
+            DevValue::Scalar(v) => device::Value {
                 value: Some(device::value::Value::Scalar(v)),
             },
-            DevValue {
-                int_val: None,
-                scalar_val: None,
-                scalar_array_val: Some(v),
-                raw_val: _,
-                text_val: _,
-                text_array_val: _,
-            } => device::Value {
+            DevValue::ScalarArray(v) => device::Value {
                 value: Some(device::value::Value::ScalarArr(
                     device::value::ScalarArray { value: v },
                 )),
             },
-            DevValue {
-                int_val: None,
-                scalar_val: None,
-                scalar_array_val: None,
-                raw_val: Some(v),
-                text_val: _,
-                text_array_val: _,
-            } => device::Value {
+            DevValue::Raw(v) => device::Value {
                 value: Some(device::value::Value::Raw(v)),
             },
-            DevValue {
-                int_val: None,
-                scalar_val: None,
-                scalar_array_val: None,
-                raw_val: None,
-                text_val: Some(v),
-                text_array_val: _,
-            } => device::Value {
+            DevValue::Text(v) => device::Value {
                 value: Some(device::value::Value::Text(v)),
             },
-            DevValue {
-                int_val: None,
-                scalar_val: None,
-                scalar_array_val: None,
-                raw_val: None,
-                text_val: None,
-                text_array_val: Some(v),
-            } => device::Value {
+            DevValue::TextArray(v) => device::Value {
                 value: Some(device::value::Value::TextArr(
                     device::value::TextArray { value: v },
                 )),
-            },
-            DevValue {
-                int_val: None,
-                scalar_val: None,
-                scalar_array_val: None,
-                raw_val: None,
-                text_val: None,
-                text_array_val: None,
-            } => device::Value {
-                value: Some(device::value::Value::Raw(vec![])),
             },
         }
     }
@@ -312,7 +270,7 @@ impl TryFrom<device::Value> for DataType {
                 }))
             }
             Some(device::value::Value::Raw(v)) => Ok(DataType::Raw(Raw {
-                raw_value: v.clone(),
+                raw_value: STANDARD_NO_PAD.encode(v),
             })),
             Some(device::value::Value::Text(v)) => {
                 Ok(DataType::Text(Text { text_value: v }))
@@ -354,7 +312,7 @@ impl TryFrom<&device::Value> for DataType {
                 }))
             }
             Some(device::value::Value::Raw(v)) => Ok(DataType::Raw(Raw {
-                raw_value: v.clone(),
+                raw_value: STANDARD_NO_PAD.encode(v),
             })),
             Some(device::value::Value::Text(v)) => Ok(DataType::Text(Text {
                 text_value: v.clone(),
@@ -373,5 +331,141 @@ impl TryFrom<&device::Value> for DataType {
                 "received a device type that is not recognized",
             )),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::g_rpc::proto::common::device;
+
+    #[test]
+    fn test_dev_value_deserialization() {
+        // Test Integer
+        let json_int = "123";
+        let expected_int = DevValue::Integer(123);
+        let deserialized_int: DevValue =
+            serde_json::from_str(json_int).unwrap();
+        assert_eq!(deserialized_int, expected_int);
+
+        // Test Scalar
+        let json_scalar = "123.45";
+        let expected_scalar = DevValue::Scalar(123.45);
+        let deserialized_scalar: DevValue =
+            serde_json::from_str(json_scalar).unwrap();
+        assert_eq!(deserialized_scalar, expected_scalar);
+
+        // Test ScalarArray
+        let json_scalar_array = "[1.0, 2.5, -3.0]";
+        let expected_scalar_array = DevValue::ScalarArray(vec![1.0, 2.5, -3.0]);
+        let deserialized_scalar_array: DevValue =
+            serde_json::from_str(json_scalar_array).unwrap();
+        assert_eq!(deserialized_scalar_array, expected_scalar_array);
+
+        // Test Raw (Valid Base64)
+        let json_raw = "\"AQID\"";
+        let expected_raw = DevValue::Raw(vec![1, 2, 3]);
+        let deserialized_raw: DevValue =
+            serde_json::from_str(json_raw).unwrap();
+        assert_eq!(deserialized_raw, expected_raw);
+
+        // Test Text
+        let json_text = "\"hello world\"";
+        let expected_text = DevValue::Text("hello world".to_string());
+        let deserialized_text: DevValue =
+            serde_json::from_str(json_text).unwrap();
+        assert_eq!(deserialized_text, expected_text);
+
+        // Test TextArray
+        let json_text_array = "[\"hello\", \"world\"]";
+        let expected_text_array =
+            DevValue::TextArray(vec!["hello".to_string(), "world".to_string()]);
+        let deserialized_text_array: DevValue =
+            serde_json::from_str(json_text_array).unwrap();
+        assert_eq!(deserialized_text_array, expected_text_array);
+
+        // Test that a JSON array of integers deserializes to ScalarArray.
+        let json_int_array = "[1, 2, 3]";
+        let expected_as_scalar_array =
+            DevValue::ScalarArray(vec![1.0, 2.0, 3.0]);
+        let deserialized_int_array: DevValue =
+            serde_json::from_str(json_int_array).unwrap();
+        assert_eq!(deserialized_int_array, expected_as_scalar_array);
+    }
+
+    #[test]
+    fn test_auth_info() {
+        // Test no token
+        let auth_none = AuthInfo::new(None);
+        assert!(!auth_none.has_token());
+        assert_eq!(auth_none.unsafe_account(), None);
+
+        // Test non-bearer token
+        let auth_basic = AuthInfo::new(Some("Basic some_token".to_string()));
+        assert!(!auth_basic.has_token());
+        assert_eq!(auth_basic.unsafe_account(), None);
+
+        // Test valid bearer token but malformed JWT (not 3 parts)
+        let auth_jwt_malformed =
+            AuthInfo::new(Some("Bearer malformed.jwt".to_string()));
+        assert!(auth_jwt_malformed.has_token());
+        assert_eq!(auth_jwt_malformed.unsafe_account(), None);
+
+        // Test valid bearer token, valid JWT structure, but bad base64
+        let auth_bad_b64 =
+            AuthInfo::new(Some("Bearer header.bad-base64.sig".to_string()));
+        assert!(auth_bad_b64.has_token());
+        assert_eq!(auth_bad_b64.unsafe_account(), None);
+
+        // Test happy path
+        // `{"preferred_username": "testuser"}` -> b64 is `eyJwcmVmZXJyZWRfdXNlcm5hbWUiOiJ0ZXN0dXNlciJ9`
+        let jwt_body = "eyJwcmVmZXJyZWRfdXNlcm5hbWUiOiJ0ZXN0dXNlciJ9";
+        let token = format!("Bearer header.{}.sig", jwt_body);
+        let auth_ok = AuthInfo::new(Some(token));
+        assert!(auth_ok.has_token());
+        assert_eq!(auth_ok.unsafe_account(), Some("testuser".to_string()));
+    }
+
+    #[test]
+    fn test_datatype_conversion() {
+        // Test Scalar to f32
+        let dev_val_scalar = device::Value {
+            value: Some(device::value::Value::Scalar(123.456)),
+        };
+        let data_type: DataType = dev_val_scalar.try_into().unwrap();
+        assert_eq!(
+            data_type,
+            DataType::Scalar(Scalar {
+                scalar_value: 123.456_f32
+            })
+        );
+
+        // Test ScalarArray to Vec<f32>
+        let dev_val_scalar_arr = device::Value {
+            value: Some(device::value::Value::ScalarArr(
+                device::value::ScalarArray {
+                    value: vec![1.0, 2.0, 3.0],
+                },
+            )),
+        };
+        let data_type: DataType = dev_val_scalar_arr.try_into().unwrap();
+        assert_eq!(
+            data_type,
+            DataType::ScalarArray(ScalarArray {
+                scalar_array_value: vec![1.0_f32, 2.0_f32, 3.0_f32]
+            })
+        );
+
+        // Test Raw to base64 String
+        let dev_val_raw = device::Value {
+            value: Some(device::value::Value::Raw(vec![1, 2, 3, 255])),
+        };
+        let data_type: DataType = dev_val_raw.try_into().unwrap();
+        assert_eq!(
+            data_type,
+            DataType::Raw(Raw {
+                raw_value: "AQID/w".to_string()
+            })
+        );
     }
 }
