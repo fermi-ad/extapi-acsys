@@ -194,7 +194,7 @@ returned. The user's account is retrieved from the authentication token \
 that is included in the request."]
     #[instrument(skip(self, ctxt))]
     async fn users_last_configuration(
-        &self, ctxt: &Context<'_>
+        &self, ctxt: &Context<'_>,
     ) -> Option<Arc<str>> {
         if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
             // TEMPORARY: If there isn't a JWT, use the account
