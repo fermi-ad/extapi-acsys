@@ -3,24 +3,17 @@ use async_graphql::{ComplexObject, InputObject, SimpleObject, Union};
 use base64::{Engine, engine::general_purpose::STANDARD_NO_PAD};
 use chrono::{DateTime, Duration, Utc};
 use serde_json::{self, Value};
-use std::collections::HashMap;
 
 #[derive(Debug)]
 pub struct AuthInfo {
     bearer_token: Option<String>,
 }
+
 impl AuthInfo {
     pub fn new(info: Option<String>) -> Self {
         AuthInfo {
-            bearer_token: info.and_then(|v| {
-                if let ["Bearer", token] =
-                    v.split(' ').collect::<Vec<&str>>()[..]
-                {
-                    Some(token.to_string())
-                } else {
-                    None
-                }
-            }),
+            bearer_token: info
+                .and_then(|v| v.strip_prefix("Bearer ").map(String::from)),
         }
     }
 
@@ -34,18 +27,15 @@ impl AuthInfo {
     }
 
     pub fn unsafe_account(&self) -> Option<String> {
-        self.bearer_token.as_ref().and_then(|token| {
-            if let [_, body, _] = token.split('.').collect::<Vec<&str>>()[..]
-                && let Ok(json) = STANDARD_NO_PAD.decode(body)
-                && let Ok(result) =
-                    serde_json::from_slice::<HashMap<String, Value>>(&json)
-                && let Some(Value::String(user)) =
-                    result.get("preferred_username")
-            {
-                Some(user.clone())
-            } else {
-                None
-            }
+        self.bearer_token.as_deref().and_then(|token| {
+            let body = token.split('.').nth(1)?;
+            let json = STANDARD_NO_PAD.decode(body).ok()?;
+            let result: Value = serde_json::from_slice(&json).ok()?;
+
+            result
+                .get("preferred_username")
+                .and_then(Value::as_str)
+                .map(String::from)
         })
     }
 }
