@@ -1,4 +1,10 @@
-use crate::g_rpc::devdb;
+use crate::g_rpc::{
+    devdb,
+    proto::services::devdb::{
+        info_entry, DigitalControlItem, DigitalExtStatusItem,
+        DigitalStatusItem, InfoEntry,
+    },
+};
 
 use async_graphql::Object;
 use tokio::time::Instant;
@@ -15,9 +21,7 @@ pub mod types;
 // Converts a `DigitalControlItem`, from the gRPC API, into a
 // `DigControlEntry` struct, used in the GraphQL API.
 
-fn to_dig_ctrl(
-    item: &devdb::proto::DigitalControlItem,
-) -> types::DigControlEntry {
+fn to_dig_ctrl(item: &DigitalControlItem) -> types::DigControlEntry {
     types::DigControlEntry {
         value: item.value as i32,
         short_name: item.short_name.clone(),
@@ -28,9 +32,7 @@ fn to_dig_ctrl(
 // Converts a `DigitalStatusItem`, from the gRPC API, into a
 // `DigStatusEntry` struct used by the GraphQL API.
 
-fn to_dig_status(
-    item: &devdb::proto::DigitalStatusItem,
-) -> types::DigStatusEntry {
+fn to_dig_status(item: &DigitalStatusItem) -> types::DigStatusEntry {
     types::DigStatusEntry {
         mask_val: item.mask_val,
         match_val: item.match_val,
@@ -46,9 +48,7 @@ fn to_dig_status(
     }
 }
 
-fn to_ext_dig_status(
-    item: &devdb::proto::DigitalExtStatusItem,
-) -> types::DigExtStatusEntry {
+fn to_ext_dig_status(item: &DigitalExtStatusItem) -> types::DigExtStatusEntry {
     types::DigExtStatusEntry {
         bit_no: item.bit_no,
         color0: item.color0,
@@ -63,11 +63,11 @@ fn to_ext_dig_status(
 // `DeviceInfoResult` struct, used in the GraphQL API. This function
 // is intended to be used by an iterator's `.map()` method.
 
-fn to_info_result(item: &devdb::proto::InfoEntry) -> types::DeviceInfoResult {
+fn to_info_result(item: &InfoEntry) -> types::DeviceInfoResult {
     match &item.result {
         // If the `InfoEntry` contains device information, transfer
         // the information.
-        Some(devdb::proto::info_entry::Result::Device(di)) => {
+        Some(info_entry::Result::Device(di)) => {
             types::DeviceInfoResult::DeviceInfo(types::DeviceInfo {
                 description: di.description.clone(),
                 reading: di.reading.as_ref().map(|p| types::ReadingProp {
@@ -97,12 +97,12 @@ fn to_info_result(item: &devdb::proto::InfoEntry) -> types::DeviceInfoResult {
                     is_knobbable: p.is_knobbable,
                     is_step_motor: p.is_step_motor,
                 }),
-                dig_control: di.dig_control.as_ref().map(|p| {
+                dig_control: di.control.as_ref().map(|p| {
                     types::DigControl {
                         entries: p.cmds.iter().map(to_dig_ctrl).collect(),
                     }
                 }),
-                dig_status: di.dig_status.as_ref().map(|p| types::DigStatus {
+                dig_status: di.status.as_ref().map(|p| types::DigStatus {
                     entries: p.bits.iter().map(to_dig_status).collect(),
                     ext_entries: p
                         .ext_bits
@@ -115,7 +115,7 @@ fn to_info_result(item: &devdb::proto::InfoEntry) -> types::DeviceInfoResult {
 
         // If the `InfoEntry` contains an error status, translate it
         // into the GraphQL error status.
-        Some(devdb::proto::info_entry::Result::ErrMsg(msg)) => {
+        Some(info_entry::Result::ErrMsg(msg)) => {
             types::DeviceInfoResult::ErrorReply(global::ErrorReply {
                 message: msg.clone(),
             })

@@ -27,6 +27,9 @@ pub mod proto {
         pub mod daq {
             include!("generated/services.daq.rs");
         }
+        pub mod devdb {
+            include!("generated/services.devdb.rs");
+        }
     }
 }
 

@@ -1,21 +1,18 @@
-//! Device Database gRPC Module
-
-pub mod proto {
-    tonic::include_proto!("devdb");
-}
-
-use proto::dev_db_client::DevDbClient;
-use rust_env_var_lib::env_var;
+use super::proto::services::devdb::{
+    dev_db_client::DevDbClient, DeviceInfoReply, DeviceList,
+};
+use crate::env_var;
 
 const DEVDB_HOST: &str = "DEVDB_GRPC_HOST";
 
 pub async fn get_device_info(
     device: &[String],
-) -> Result<tonic::Response<proto::DeviceInfoReply>, tonic::Status> {
+) -> Result<tonic::Response<DeviceInfoReply>, tonic::Status> {
     let host: String = env_var::expect(DEVDB_HOST);
+
     match DevDbClient::connect(host).await {
         Ok(mut client) => {
-            let req = proto::DeviceList {
+            let req = DeviceList {
                 device: device.to_vec(),
             };
 
