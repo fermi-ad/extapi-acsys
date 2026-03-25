@@ -1,18 +1,17 @@
-// This module implements the client side of the wire scan gRPC
-// protocol.
-
-use proto::{
-    scanner_client::ScannerClient, DetectorRequest, ScanProgress, ScanRequest,
-    ScanResult,
-};
-use std::collections::HashMap;
-use tonic::{transport, Response, Status, Streaming};
+//! This module implements the client side of the wire scan gRPC
+//! protocol.
 
 pub mod proto {
     tonic::include_proto!("scanner");
 }
 
-use crate::env_var;
+use proto::{
+    DetectorRequest, ScanProgress, ScanRequest, ScanResult,
+    scanner_client::ScannerClient,
+};
+use rust_env_var_lib::env_var;
+use std::collections::HashMap;
+use tonic::{Response, Status, Streaming, transport};
 
 const WIRE_SCANNER_HOST: &str = "SCANNER_GRPC_HOST";
 

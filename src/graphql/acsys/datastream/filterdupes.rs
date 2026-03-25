@@ -156,8 +156,8 @@ mod test {
 
     #[test]
     fn test_pending() {
-        use futures::stream::{self, StreamExt};
         use futures::FutureExt;
+        use futures::stream::{self, StreamExt};
 
         let mut s = super::filter_dupes(stream::pending());
 

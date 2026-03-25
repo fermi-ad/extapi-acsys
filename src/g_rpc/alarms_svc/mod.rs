@@ -1,0 +1,86 @@
+//! Alarms Service gRPC Module
+//!
+//! Contains the logic for making calls to the grpc-alarms service
+
+use crate::g_rpc::{
+    connection_utils::{ConnectionAdapter, ConnectionPort},
+    proto::services::alarms::{
+        AcknowledgeAlarmRequest, BypassAlarmRequest, SnoozeAlarmRequest,
+        alarm_commands_client::AlarmCommandsClient,
+    },
+};
+use chrono::{DateTime, Timelike, Utc};
+use prost_types::Timestamp;
+use std::sync::LazyLock;
+use tonic::{
+    Status, async_trait,
+    transport::{Channel, Error},
+};
+
+/// The environment variable name to use when requesting the location of the alarms gRPC service.
+const GRPC_ALARMS_SERVICE_HOST: &str = "GRPC_ALARMS_SERVICE_HOST";
+
+/// A static instance of [`ConnectionPort`] wrapping [`AlarmsServiceConnectionAdapter`].
+/// Utilizes [`LazyLock`] to only instantiate upon the first reference to this field.
+static ALARMS_SERVICE_CLIENT: LazyLock<
+    ConnectionPort<AlarmsServiceConnectionAdapter>,
+> = LazyLock::new(|| ConnectionPort::new(GRPC_ALARMS_SERVICE_HOST));
+
+/// Makes a request to the alarms gRPC service to acknowledge the specified alarms.
+pub async fn acknowledge_alarms(
+    devices: Vec<String>, updated_by: String,
+) -> Result<(), Status> {
+    let request = AcknowledgeAlarmRequest {
+        devices,
+        user: updated_by,
+    };
+    let do_ack = |mut client: AlarmsServiceConnectionAdapter| async move {
+        client.conn.acknowledge_alarm(request).await
+    };
+    ALARMS_SERVICE_CLIENT.run_with_client(do_ack).await
+}
+
+/// Makes a request to the alarms gRPC service to bypass the specified alarms.
+pub async fn bypass_alarms(
+    devices: Vec<String>, updated_by: String,
+) -> Result<(), Status> {
+    let request = BypassAlarmRequest {
+        devices,
+        user: updated_by,
+    };
+    let do_bypass = |mut client: AlarmsServiceConnectionAdapter| async move {
+        client.conn.bypass_alarm(request).await
+    };
+    ALARMS_SERVICE_CLIENT.run_with_client(do_bypass).await
+}
+
+/// Makes a request to the alarms gRPC service to snooze the specified alarms until the provided wake time.
+pub async fn snooze_alarms(
+    devices: Vec<String>, updated_by: String, wake: DateTime<Utc>,
+) -> Result<(), Status> {
+    let request = SnoozeAlarmRequest {
+        devices,
+        user: updated_by,
+        wake: Some(Timestamp {
+            seconds: wake.timestamp(),
+            nanos: wake.nanosecond() as i32,
+        }),
+    };
+    let do_snooze = |mut client: AlarmsServiceConnectionAdapter| async move {
+        client.conn.snooze_alarm(request).await
+    };
+    ALARMS_SERVICE_CLIENT.run_with_client(do_snooze).await
+}
+
+/// An implementation of [`ConnectionAdapter`] to hold the [`AlarmCommandsClient`] reference.
+#[derive(Clone)]
+struct AlarmsServiceConnectionAdapter {
+    pub conn: AlarmCommandsClient<Channel>,
+}
+#[async_trait]
+impl ConnectionAdapter for AlarmsServiceConnectionAdapter {
+    async fn new(host: String) -> Result<Self, Error> {
+        let conn = AlarmCommandsClient::connect(host).await?;
+        Ok(Self { conn })
+    }
+}

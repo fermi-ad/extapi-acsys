@@ -1,71 +1,54 @@
-use crate::env_var;
-
-use std::future::Future;
-
-use tonic::{transport::Error, Response, Status};
-use tracing::error;
+//! Alarms DB Module
+//!
+//! Contains the logic for making calls to the Alarms Database gRPC Service.
 
 pub mod groups;
 pub mod layouts;
 pub mod timers;
 
+use crate::g_rpc::{
+    connection_utils::{ConnectionAdapter, ConnectionPort},
+    proto::services::alarms::{
+        alarm_group_service_client::AlarmGroupServiceClient,
+        alarm_timer_service_client::AlarmTimerServiceClient,
+        user_layouts_service_client::UserLayoutsServiceClient,
+    },
+};
+use std::sync::LazyLock;
+use tokio::try_join;
+use tonic::{
+    async_trait,
+    transport::{Channel, Error},
+};
+
+/// The environment variable name to use when requesting the location of the alarms DB service.
 const GRPC_ALARMS_DB_HOST: &str = "GRPC_ALARMS_DB_HOST";
 
-fn get_alarms_db_host() -> String {
-    env_var::expect(GRPC_ALARMS_DB_HOST)
-}
+/// A static instance of [`ConnectionPort`] wrapping [`AlarmsDbConnectionAdapter`] to share among the submodules.
+/// Utilizes [`LazyLock`] to only instantiate upon the first reference to this field.
+static ALARMS_DB_CLIENT: LazyLock<ConnectionPort<AlarmsDbConnectionAdapter>> =
+    LazyLock::new(|| ConnectionPort::new(GRPC_ALARMS_DB_HOST));
 
-async fn establish_connection<Producer, ClientFut, Client>(
-    produce_client: Producer,
-) -> Result<Client, Status>
-where
-    Producer: Fn(String) -> ClientFut,
-    ClientFut: Future<Output = Result<Client, Error>>,
-{
-    produce_client(get_alarms_db_host()).await
-        .map_err(|e| {
-            error!("Failed to connect to grpc-alarms-db: {e:?}");
-            Status::internal("Could not connect to the database service. See server logs for details.")
+/// Implementation of [`ConnectionAdapter`] to hold the clients that invoke the gRPC endpoints supplied by the Alarms DB.
+#[derive(Clone)]
+struct AlarmsDbConnectionAdapter {
+    pub groups_conn: AlarmGroupServiceClient<Channel>,
+    pub layouts_conn: UserLayoutsServiceClient<Channel>,
+    pub timers_conn: AlarmTimerServiceClient<Channel>,
+}
+#[async_trait]
+impl ConnectionAdapter for AlarmsDbConnectionAdapter {
+    async fn new(host: String) -> Result<Self, Error> {
+        let (groups_conn, layouts_conn, timers_conn) = try_join!(
+            AlarmGroupServiceClient::connect(host.clone()),
+            UserLayoutsServiceClient::connect(host.clone()),
+            AlarmTimerServiceClient::connect(host)
+        )?;
+
+        Ok(Self {
+            groups_conn,
+            layouts_conn,
+            timers_conn,
         })
-}
-
-async fn execute_with_client<
-    Producer,
-    ClientFut,
-    Client,
-    ClientFn,
-    ResponseFut,
-    R,
->(
-    produce_client: Producer, execute_with: ClientFn,
-) -> Result<R, Status>
-where
-    Producer: Fn(String) -> ClientFut,
-    ClientFut: Future<Output = Result<Client, Error>>,
-    ClientFn: FnOnce(Client) -> ResponseFut,
-    ResponseFut: Future<Output = Result<Response<R>, Status>>,
-{
-    let client = establish_connection(produce_client).await?;
-    let response = execute_with(client).await?;
-    Ok(response.into_inner())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn execute_with_client_returns_result() {
-        let expected_host = get_alarms_db_host();
-        let host_ref = &expected_host;
-        let result = execute_with_client(
-            |input| async move {
-                assert_eq!(&input, host_ref);
-                Ok(true)
-            },
-            |val| async move { Ok(Response::new(val)) },
-        )
-        .await;
-        assert!(result.unwrap());
     }
 }

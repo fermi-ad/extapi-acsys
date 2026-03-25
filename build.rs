@@ -1,5 +1,4 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let incl: [&str; 0] = [];
     unsafe {
         std::env::set_var("PROTOC", protoc_bin_vendored::protoc_bin_path()?);
     }
@@ -8,12 +7,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_client(true)
         .build_server(false)
         .out_dir("src/g_rpc/generated")
-	.emit_rerun_if_changed(true)
+	    .emit_rerun_if_changed(true)
         .compile_protos(
             &[
                 "src/g_rpc/protos/proto/controls/common/v1/status.proto",
                 "src/g_rpc/protos/proto/controls/service/ACLK/v1/ACLK.proto",
                 "src/g_rpc/protos/proto/controls/service/DAQ/v1/DAQ.proto",
+                "src/g_rpc/protos/proto/controls/service/grpc-alarm-commands/v1/alarm_commands.proto",
                 "src/g_rpc/protos/proto/controls/service/grpc-alarms-db/v1/alarm-groups.proto",
                 "src/g_rpc/protos/proto/controls/service/grpc-alarms-db/v1/alarm-timers.proto",
                 "src/g_rpc/protos/proto/controls/service/grpc-alarms-db/v1/user-layouts.proto",
@@ -27,7 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_client(true)
         .build_server(false)
         .emit_rerun_if_changed(true)
-        .compile_protos(&["src/g_rpc/wscan/WScan.proto"], &incl)?;
+        .compile_protos(&["src/g_rpc/wscan/WScan.proto"], &[])?;
 
     tonic_prost_build::configure()
         .build_client(true)
@@ -37,7 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".devdb.InfoEntry.result",
             "#[allow(clippy::large_enum_variant)]",
         )
-        .compile_protos(&["src/g_rpc/devdb/DevDB.proto"], &incl)?;
+        .compile_protos(&["src/g_rpc/devdb/DevDB.proto"], &[])?;
 
     Ok(())
 }

@@ -1,7 +1,9 @@
-use chrono::{DateTime, Timelike, Utc};
+//! GraphQL Alarms Utilities
+//!
+//! Provides various utility functions that are useful in the context of alarms.
 
 use crate::g_rpc::proto::services::alarms::TimerType;
-
+use chrono::{DateTime, Timelike, Utc};
 use prost_types::Timestamp;
 
 pub fn datetime_to_timestamp(

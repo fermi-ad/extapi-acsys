@@ -1,6 +1,6 @@
 use crate::g_rpc::proto::common::device;
 use async_graphql::{ComplexObject, InputObject, SimpleObject, Union};
-use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine};
+use base64::{Engine, engine::general_purpose::STANDARD_NO_PAD};
 use chrono::{DateTime, Duration, Utc};
 use serde_json::{self, Value};
 use std::collections::HashMap;
@@ -35,23 +35,17 @@ impl AuthInfo {
 
     pub fn unsafe_account(&self) -> Option<String> {
         self.bearer_token.as_ref().and_then(|token| {
-            if let [_, body, _] = token.split('.').collect::<Vec<&str>>()[..] {
-                if let Ok(json) = STANDARD_NO_PAD.decode(body) {
-                    let result: Result<
-                        HashMap<String, Value>,
-                        serde_json::Error,
-                    > = serde_json::from_slice(&json);
-
-                    if let Ok(result) = result {
-                        if let Some(Value::String(user)) =
-                            result.get("preferred_username")
-                        {
-                            return Some(user.clone());
-                        }
-                    }
-                }
+            if let [_, body, _] = token.split('.').collect::<Vec<&str>>()[..]
+                && let Ok(json) = STANDARD_NO_PAD.decode(body)
+                && let Ok(result) =
+                    serde_json::from_slice::<HashMap<String, Value>>(&json)
+                && let Some(Value::String(user)) =
+                    result.get("preferred_username")
+            {
+                Some(user.clone())
+            } else {
+                None
             }
-            None
         })
     }
 }

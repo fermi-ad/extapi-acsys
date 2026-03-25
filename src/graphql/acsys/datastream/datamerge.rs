@@ -1,4 +1,4 @@
-use super::{global, DataChannel};
+use super::{DataChannel, global};
 use futures::Stream;
 use futures_util::StreamExt;
 use std::{

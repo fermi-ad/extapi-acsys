@@ -1,6 +1,8 @@
-// This module holds all the gRPC protocols. They all get built and
-// added to this module so that messages common to several services
-// are only generated and compiled once.
+//! gRPC Module
+//!
+//! This module holds all the gRPC protocols. They all get built and
+//! added to this module so that messages common to several services
+//! are only generated and compiled once.
 
 pub mod proto {
     pub mod common {
@@ -17,6 +19,7 @@ pub mod proto {
             include!("generated/services.clock_event.rs");
         }
         pub mod alarms {
+            include!("generated/services.alarm_commands.v1.rs");
             include!("generated/services.alarm_groups.rs");
             include!("generated/services.alarm_timers.rs");
             include!("generated/services.alarm_user_layouts.rs");
@@ -28,8 +31,11 @@ pub mod proto {
 }
 
 pub mod alarms_db;
+pub mod alarms_svc;
 pub mod clock;
 pub mod devdb;
 pub mod dpm;
 pub mod tlg;
 pub mod wscan;
+
+mod connection_utils;

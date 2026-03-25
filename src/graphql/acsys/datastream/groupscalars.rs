@@ -78,10 +78,13 @@ where
                     StreamState::Unknown => match *payload.data.as_slice() {
                         // If the stream has scalar data, set the type
                         // to "scalar".
-                        [global::DataInfo {
-                            result: global::DataType::Scalar(_),
-                            ..
-                        }, ..] => {
+                        [
+                            global::DataInfo {
+                                result: global::DataType::Scalar(_),
+                                ..
+                            },
+                            ..,
+                        ] => {
                             if payload.data.len() >= MAX_PAYLOAD {
                                 let mut tmp = global::DataReply {
                                     ref_id: payload.ref_id,
@@ -100,17 +103,22 @@ where
                         // If the stream has waveform data, set the
                         // type of the stream to "waveform" for future
                         // data.
-                        [global::DataInfo {
-                            result: global::DataType::ScalarArray(_),
-                            ..
-                        }, ..] => {
+                        [
+                            global::DataInfo {
+                                result: global::DataType::ScalarArray(_),
+                                ..
+                            },
+                            ..,
+                        ] => {
                             self.state = StreamState::Waveform;
                             break Poll::Ready(Some(payload));
                         }
 
                         // We don't handle other types of data yet.
                         _ => {
-                            warn!("archive stream contained non-scalar / non-waveform data");
+                            warn!(
+                                "archive stream contained non-scalar / non-waveform data"
+                            );
                             break Poll::Ready(None);
                         }
                     },
@@ -125,7 +133,7 @@ where
                     // incoming data to the pending data until it
                     // reaches MAX_PAYLOAD. Once it fills, the
                     // accumulated data is returned.
-                    StreamState::Scalar(ref mut pending) => {
+                    StreamState::Scalar(pending) => {
                         let space =
                             MAX_PAYLOAD.saturating_sub(pending.data.len());
                         let amount_to_move =
@@ -158,19 +166,17 @@ where
                     // If the stream returns scalar data, return
                     // any pending data.
 
-                    if let StreamState::Scalar(ref mut pending) =
-                        &mut self.state
+                    if let StreamState::Scalar(pending) = &mut self.state
+                        && !pending.data.is_empty()
                     {
-                        if !pending.data.is_empty() {
-                            let mut tmp = global::DataReply {
-                                ref_id: pending.ref_id,
-                                data: vec![],
-                            };
+                        let mut tmp = global::DataReply {
+                            ref_id: pending.ref_id,
+                            data: vec![],
+                        };
 
-                            std::mem::swap(pending, &mut tmp);
-                            self.state = StreamState::Done;
-                            break Poll::Ready(Some(tmp));
-                        }
+                        std::mem::swap(pending, &mut tmp);
+                        self.state = StreamState::Done;
+                        break Poll::Ready(Some(tmp));
                     }
                     break Poll::Ready(None);
                 }

@@ -1,7 +1,7 @@
-use crate::env_var;
 use crate::g_rpc::proto::services::aclk::{
-    clock_event_client::ClockEventClient, EventInfo, SubscribeReq,
+    EventInfo, SubscribeReq, clock_event_client::ClockEventClient,
 };
+use rust_env_var_lib::env_var;
 use tokio::time::Duration;
 use tonic::transport::Endpoint;
 

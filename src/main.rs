@@ -1,8 +1,7 @@
 use tracing::{info, subscriber};
 use tracing_subscriber::{
-    filter::EnvFilter, fmt::layer, layer::SubscriberExt, Registry,
+    Registry, filter::EnvFilter, fmt::layer, layer::SubscriberExt,
 };
-mod env_var;
 mod g_rpc;
 mod graphql;
 mod pubsub;
