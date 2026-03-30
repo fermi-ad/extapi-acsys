@@ -16,10 +16,10 @@ use http::{Method, header};
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use tower_http::cors::{Any, CorsLayer};
 use tracing::{info, instrument};
-mod compression;
 mod acsys;
 mod alarms;
 mod bbm;
+mod compression;
 mod devdb;
 mod faas;
 mod scanner;
@@ -346,12 +346,8 @@ mod tests {
     fn mk_test_site() -> Router {
         const Q_ENDPOINT: &str = "/test";
 
-        let schema = Schema::build(
-            TestQuery::default(),
-            EmptyMutation,
-            EmptySubscription,
-        )
-        .finish();
+        let schema =
+            Schema::build(TestQuery, EmptyMutation, EmptySubscription).finish();
 
         Router::new()
             .route(Q_ENDPOINT, post(graphql_handler).with_state(schema))
