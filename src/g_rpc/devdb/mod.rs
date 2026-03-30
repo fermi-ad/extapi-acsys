@@ -1,10 +1,11 @@
-use proto::dev_db_client::DevDbClient;
+//! Device Database gRPC Module
 
 pub mod proto {
     tonic::include_proto!("devdb");
 }
 
-use crate::env_var;
+use proto::dev_db_client::DevDbClient;
+use rust_env_var_lib::env_var;
 
 const DEVDB_HOST: &str = "DEVDB_GRPC_HOST";
 

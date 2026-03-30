@@ -1,12 +1,17 @@
-use async_graphql::SimpleObject;
+//! Alarms Types Module
+//!
+//! Describes GraphQL-friendly types to be used in the GraphQL Alarms Module.
 
-use chrono::{DateTime, Utc};
-
-use crate::g_rpc::proto::services::alarms::{
-    AlarmGroup as ProtoAlarmGroup, AlarmGroupMetadatum as ProtoGroupMetadatum,
-    AlarmTimer as ProtoAlarmTimer, UserLayout as ProtoUserLayout,
+use crate::{
+    g_rpc::proto::services::alarms::{
+        AlarmGroup as ProtoAlarmGroup,
+        AlarmGroupMetadatum as ProtoGroupMetadatum,
+        AlarmTimer as ProtoAlarmTimer, UserLayout as ProtoUserLayout,
+    },
+    graphql::alarms::utils,
 };
-use crate::graphql::alarms::utils;
+use async_graphql::SimpleObject;
+use chrono::{DateTime, Utc};
 
 #[derive(Clone, Debug, PartialEq, SimpleObject)]
 pub struct AlarmGroup {
@@ -85,9 +90,7 @@ impl From<ProtoUserLayout> for UserLayout {
 #[cfg(test)]
 mod test {
     use super::*;
-
     use crate::g_rpc::proto::services::alarms::TimerType;
-
     use prost_types::Timestamp;
 
     #[test]

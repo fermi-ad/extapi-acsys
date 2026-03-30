@@ -5,7 +5,7 @@ use crate::g_rpc::{
 
 use async_graphql::*;
 use futures::future::{self, Either};
-use futures_util::{stream, Stream, StreamExt};
+use futures_util::{Stream, StreamExt, stream};
 use serde::Deserialize;
 use std::{collections::HashSet, pin::Pin, sync::Arc};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
@@ -718,10 +718,12 @@ impl<'ctx> ACSysSubscriptions {
                 // status, it gets moved to the packet level status
                 // field.
 
-                if let &mut [global::DataInfo {
-                    result: global::DataType::StatusReply(ref v),
-                    ..
-                }] = &mut e.data[..]
+                if let &mut [
+                    global::DataInfo {
+                        result: global::DataType::StatusReply(ref v),
+                        ..
+                    },
+                ] = &mut e.data[..]
                 {
                     reply.data[e.ref_id as usize].channel_status = v.status;
                 } else {

@@ -29,7 +29,7 @@ impl DataChannel {
     pub fn get_buffer(&mut self) -> Option<Vec<global::DataInfo>> {
         match self {
             Self::FeedThrough => None,
-            Self::Buffering(ref mut data) => {
+            Self::Buffering(data) => {
                 if data.is_empty() {
                     None
                 } else {
@@ -53,7 +53,7 @@ impl DataChannel {
 
             // If in buffering mode, we append the data and return
             // `None` so the caller knows there's nothing to do.
-            Self::Buffering(ref mut data) => {
+            Self::Buffering(data) => {
                 data.append(&mut live_data);
                 if archive_done {
                     let mut tmp = vec![];

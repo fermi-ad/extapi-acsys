@@ -1,25 +1,49 @@
+//! Alarms GraphQL Module
+//!
+//! Provides the query implementations for the Alarms GraphQL interface.
+
 use crate::{
-    env_var,
-    g_rpc::{alarms_db, proto::services::alarms},
+    g_rpc::{alarms_db, alarms_svc, proto::services::alarms},
     pubsub::{Message, Snapshot, Subscriber},
 };
 use async_graphql::{Context, Error, Object, Subscription};
 use chrono::{DateTime, Utc};
+use rust_env_var_lib::env_var;
 use tokio_stream::wrappers::BroadcastStream;
 use tonic::{Code, Request, Status};
 use tracing::error;
-mod types;
 use types::{AlarmGroup, AlarmGroupMetadatum, AlarmTimer, UserLayout};
+
+mod types;
 mod utils;
 
+/// Generates a [`Subscriber`] to the alarms host and topic.
 pub fn get_alarms_subscriber() -> Subscriber {
     Subscriber::for_topic(get_host(), get_topic())
 }
 
+/// Describes the mutations (data writes/updates) allowed by the GQL interface.
 #[derive(Default)]
 pub struct AlarmsMutations;
 #[Object]
 impl AlarmsMutations {
+    /// A request to acknowledge the specified alarms.
+    async fn acknowledge_alarms(
+        &self, devices: Vec<String>, updated_by: String,
+    ) -> Result<Vec<String>, Error> {
+        alarms_svc::acknowledge_alarms(devices.clone(), updated_by).await?;
+        Ok(devices)
+    }
+
+    /// A request to bypass the specified alarms.
+    async fn bypass_alarms(
+        &self, devices: Vec<String>, updated_by: String,
+    ) -> Result<Vec<String>, Error> {
+        alarms_svc::bypass_alarms(devices.clone(), updated_by).await?;
+        Ok(devices)
+    }
+
+    /// A request to create an alarms timer of the specified [`TimerType`](crate::g_rpc::proto::services::alarms::TimerType).
     async fn create_alarm_timer(
         &self, device: String, end_time: Option<DateTime<Utc>>,
         timer_type: String, updated_by: String,
@@ -40,6 +64,7 @@ impl AlarmsMutations {
         }
     }
 
+    /// A request to delete an alarms timer of the specified [`TimerType`](crate::g_rpc::proto::services::alarms::TimerType).
     async fn delete_alarm_timer(
         &self, device: String, timer_type: String,
     ) -> Result<String, Error> {
@@ -54,6 +79,15 @@ impl AlarmsMutations {
         }
     }
 
+    /// A request to snooze the specified alarms.
+    async fn snooze_alarms(
+        &self, devices: Vec<String>, updated_by: String, wake: DateTime<Utc>,
+    ) -> Result<Vec<String>, Error> {
+        alarms_svc::snooze_alarms(devices.clone(), updated_by, wake).await?;
+        Ok(devices)
+    }
+
+    /// A request to update an alarms timer.
     async fn update_alarm_timer(
         &self, device: String, end_time: Option<DateTime<Utc>>,
         timer_type: String, updated_by: String,
@@ -76,10 +110,12 @@ impl AlarmsMutations {
     }
 }
 
+/// Describes the various queries (data reads) related to alarms.
 #[derive(Default)]
 pub struct AlarmsQueries;
 #[Object]
 impl AlarmsQueries {
+    /// Reads all [`AlarmGroupMetadatum`] items in the database.
     async fn alarms_group_metadata(
         &self,
     ) -> Result<Vec<AlarmGroupMetadatum>, Error> {
@@ -96,6 +132,7 @@ impl AlarmsQueries {
         }
     }
 
+    /// Reads the [`AlarmGroup`] data for specified groups.
     async fn alarms_groups(
         &self, groups: Vec<String>,
     ) -> Result<Vec<AlarmGroup>, Error> {
@@ -116,6 +153,7 @@ impl AlarmsQueries {
         }
     }
 
+    /// Reads all [`UserLayout`]s in the database.
     async fn alarms_user_layouts(&self) -> Result<Vec<UserLayout>, Error> {
         match alarms_db::layouts::read_layouts(Request::new(())).await {
             Ok(response) => {
@@ -130,6 +168,7 @@ impl AlarmsQueries {
         }
     }
 
+    /// Reads a snapshot of the alarms topic.
     async fn alarms_snapshot(&self) -> Result<Vec<Message>, Error> {
         match Snapshot::for_topic(get_host(), get_topic()) {
             Ok(snapshot) => Ok(snapshot.data),
@@ -137,6 +176,7 @@ impl AlarmsQueries {
         }
     }
 
+    /// Reads all alarms timers of the specified [`TimerType`](crate::g_rpc::proto::services::alarms::TimerType) for the given user.
     async fn alarms_timers(
         &self, timer_type: String, user: String,
     ) -> Result<Vec<AlarmTimer>, Error> {
@@ -159,11 +199,13 @@ impl AlarmsQueries {
     }
 }
 
+/// Describes long-lived data streams for alarms.
 #[derive(Default)]
 pub struct AlarmsSubscriptions;
 
 #[Subscription]
 impl<'ctx> AlarmsSubscriptions {
+    /// Streams back all alarms from the alarms topic.
     async fn alarms(
         &self, ctxt: &Context<'ctx>,
     ) -> Result<BroadcastStream<Message>, Error> {
@@ -205,7 +247,34 @@ mod tests {
                 .finish();
         let result = schema.execute(gql_query).await;
         let err = result.errors.first().unwrap();
-        assert_eq!(err.message, err_msg);
+        println!("{err}");
+        assert!(err.message.starts_with(err_msg));
+    }
+
+    #[tokio::test]
+    async fn acknowledge_alarms_returns_internal_err_on_bad_connection() {
+        test_query_returns_err(
+            r#"
+            mutation Alarms {
+                acknowledgeAlarms(devices: ["G:AMANDA"], updatedBy: "test user")
+            }
+        "#,
+            "code: 'Internal error', message: \"See server logs for details; reference token ",
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn bypass_alarms_returns_internal_err_on_bad_connection() {
+        test_query_returns_err(
+            r#"
+            mutation Alarms {
+                bypassAlarms(devices: ["G:AMANDA"], updatedBy: "test user")
+            }
+        "#,
+            "code: 'Internal error', message: \"See server logs for details; reference token ",
+        )
+        .await;
     }
 
     #[tokio::test]
@@ -237,7 +306,7 @@ mod tests {
         let err = output.errors.first().unwrap();
         assert_eq!(
             err.message.as_str(),
-            "Data `extapi_dpm::pubsub::Subscriber` does not exist."
+            "Data `extapi_acsys::pubsub::Subscriber` does not exist."
         );
     }
 
@@ -255,7 +324,7 @@ mod tests {
                 }
             }
         "#,
-            "code: 'Internal error', message: \"Could not connect to the database service. See server logs for details.\"",
+            "code: 'Internal error', message: \"See server logs for details; reference token ",
         )
         .await;
     }
@@ -268,7 +337,7 @@ mod tests {
                 deleteAlarmTimer(device: "G:AMANDA", timerType: "test_type")
             }
         "#,
-            "code: 'Internal error', message: \"Could not connect to the database service. See server logs for details.\"",
+            "code: 'Internal error', message: \"See server logs for details; reference token ",
         )
         .await;
     }
@@ -295,7 +364,10 @@ mod tests {
             Status::invalid_argument("test invalid arg"),
             "testing alarm timer",
         );
-        assert_eq!(result.unwrap_err().message, "code: 'Client specified an invalid argument', message: \"test invalid arg\"");
+        assert_eq!(
+            result.unwrap_err().message,
+            "code: 'Client specified an invalid argument', message: \"test invalid arg\""
+        );
 
         let result = handle_error::<()>(
             Status::internal("test internal err"),
@@ -330,7 +402,7 @@ mod tests {
                 }
             }
         "#,
-            "code: 'Internal error', message: \"Could not connect to the database service. See server logs for details.\"",
+            "code: 'Internal error', message: \"See server logs for details; reference token ",
         )
         .await;
     }
@@ -345,7 +417,7 @@ mod tests {
                 }
             }
         "#,
-            "code: 'Internal error', message: \"Could not connect to the database service. See server logs for details.\"",
+            "code: 'Internal error', message: \"See server logs for details; reference token",
         )
         .await;
     }
@@ -360,7 +432,7 @@ mod tests {
                 }
             }
         "#,
-            "code: 'Internal error', message: \"Could not connect to the database service. See server logs for details.\"",
+            "code: 'Internal error', message: \"See server logs for details; reference token ",
         )
         .await;
     }
@@ -375,7 +447,20 @@ mod tests {
                 }
             }
         "#,
-            "code: 'Internal error', message: \"Could not connect to the database service. See server logs for details.\"",
+            "code: 'Internal error', message: \"See server logs for details; reference token ",
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn snooze_alarms_returns_internal_err_on_bad_connection() {
+        test_query_returns_err(
+            r#"
+            mutation Alarms {
+                snoozeAlarms(devices: ["G:AMANDA"], updatedBy: "test user", wake: "2026-03-24T15:17:32.000Z")
+            }
+        "#,
+            "code: 'Internal error', message: \"See server logs for details; reference token ",
         )
         .await;
     }
@@ -394,7 +479,7 @@ mod tests {
                 }
             }
         "#,
-            "code: 'Internal error', message: \"Could not connect to the database service. See server logs for details.\"",
+            "code: 'Internal error', message: \"See server logs for details; reference token",
         )
         .await;
     }

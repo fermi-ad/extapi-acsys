@@ -1,17 +1,17 @@
-use crate::env_var;
 use async_graphql::SimpleObject;
 use kafkang::{
     client::{FetchOffset, GroupOffsetStorage},
     consumer::Consumer,
 };
+use rust_env_var_lib::env_var;
 use std::{
     error::Error,
     fmt::{self, Debug},
-    sync::{mpsc, Arc},
+    sync::{Arc, mpsc},
     thread,
     time::Duration,
 };
-use tokio::sync::broadcast::{self, error::SendError, Receiver, Sender};
+use tokio::sync::broadcast::{self, Receiver, Sender, error::SendError};
 use tokio_stream::wrappers::BroadcastStream;
 use tracing::error;
 use uuid::Uuid;

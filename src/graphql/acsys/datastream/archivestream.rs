@@ -1,4 +1,4 @@
-use super::{global, DataStream};
+use super::{DataStream, global};
 use futures::Stream;
 use futures_util::StreamExt;
 use std::{pin::Pin, task::Poll};

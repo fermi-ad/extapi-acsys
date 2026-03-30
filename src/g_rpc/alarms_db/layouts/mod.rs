@@ -1,13 +1,16 @@
-use crate::g_rpc::proto::services::alarms::{
-    user_layouts_service_client::UserLayoutsServiceClient, UserLayouts,
-};
+//! Alarms DB User Layouts Module
+//!
+//! Provides functions for interacting with alarms user layouts.
 
+use crate::g_rpc::{
+    alarms_db::AlarmsDbConnectionAdapter, proto::services::alarms::UserLayouts,
+};
 use tonic::{Request, Status};
 
+/// Requests all [`UserLayouts`] from the database.
 pub async fn read_layouts(request: Request<()>) -> Result<UserLayouts, Status> {
-    super::execute_with_client(
-        UserLayoutsServiceClient::connect,
-        |mut client| async move { client.get_user_layouts(request).await },
-    )
-    .await
+    let do_read = |mut client: AlarmsDbConnectionAdapter| async move {
+        client.layouts_conn.get_user_layouts(request).await
+    };
+    super::ALARMS_DB_CLIENT.run_with_client(do_read).await
 }

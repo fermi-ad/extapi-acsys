@@ -1,5 +1,5 @@
 use super::global;
-use futures::{future::Either, Stream};
+use futures::{Stream, future::Either};
 use futures_util::StreamExt;
 use std::{collections::HashSet, pin::Pin, task::Poll};
 
@@ -219,8 +219,8 @@ mod test {
 
     #[test]
     fn test_pending() {
-        use futures::stream::{self, StreamExt};
         use futures::FutureExt;
+        use futures::stream::{self, StreamExt};
 
         let mut s = super::end_stream_at(stream::pending(), 2, Some(115.0));
 

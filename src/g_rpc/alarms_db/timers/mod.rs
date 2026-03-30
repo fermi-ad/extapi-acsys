@@ -1,40 +1,45 @@
-use crate::g_rpc::proto::services::alarms::{
-    alarm_timer_service_client::AlarmTimerServiceClient, AlarmTimer,
-    AlarmTimers, DeleteRequest, ReadRequest,
-};
+//! Alarms DB Timers Module
+//!
+//! Provides functions for interacting with alarms timers.
 
+use crate::g_rpc::{
+    alarms_db::AlarmsDbConnectionAdapter,
+    proto::services::alarms::{
+        AlarmTimer, AlarmTimers, DeleteRequest, ReadRequest,
+    },
+};
 use tonic::{Request, Status};
 
+/// Creates a new [`AlarmTimer`] in the database.
 pub async fn create(request: Request<AlarmTimer>) -> Result<(), Status> {
-    super::execute_with_client(
-        AlarmTimerServiceClient::connect,
-        |mut client| async move { client.create(request).await },
-    )
-    .await
+    let do_create = |mut client: AlarmsDbConnectionAdapter| async move {
+        client.timers_conn.create(request).await
+    };
+    super::ALARMS_DB_CLIENT.run_with_client(do_create).await
 }
 
+/// Deletes the specified [`AlarmTimer`] from the database.
 pub async fn delete(request: Request<DeleteRequest>) -> Result<(), Status> {
-    super::execute_with_client(
-        AlarmTimerServiceClient::connect,
-        |mut client| async move { client.delete(request).await },
-    )
-    .await
+    let do_delete = |mut client: AlarmsDbConnectionAdapter| async move {
+        client.timers_conn.delete(request).await
+    };
+    super::ALARMS_DB_CLIENT.run_with_client(do_delete).await
 }
 
+/// Reads all [`AlarmTimers`] of the specified [`TimerType`](crate::g_rpc::proto::services::alarms::TimerType) for a given user.
 pub async fn read(
     request: Request<ReadRequest>,
 ) -> Result<AlarmTimers, Status> {
-    super::execute_with_client(
-        AlarmTimerServiceClient::connect,
-        |mut client| async move { client.read(request).await },
-    )
-    .await
+    let do_read = |mut client: AlarmsDbConnectionAdapter| async move {
+        client.timers_conn.read(request).await
+    };
+    super::ALARMS_DB_CLIENT.run_with_client(do_read).await
 }
 
+/// Updates a specified [`AlarmTimer`] with new data.
 pub async fn update(request: Request<AlarmTimer>) -> Result<(), Status> {
-    super::execute_with_client(
-        AlarmTimerServiceClient::connect,
-        |mut client| async move { client.update(request).await },
-    )
-    .await
+    let do_update = |mut client: AlarmsDbConnectionAdapter| async move {
+        client.timers_conn.update(request).await
+    };
+    super::ALARMS_DB_CLIENT.run_with_client(do_update).await
 }
