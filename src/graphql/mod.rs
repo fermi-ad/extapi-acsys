@@ -16,6 +16,7 @@ use http::{Method, header};
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use tower_http::cors::{Any, CorsLayer};
 use tracing::{info, instrument};
+mod compression;
 mod acsys;
 mod alarms;
 mod bbm;
@@ -265,6 +266,7 @@ async fn create_site() -> Router {
         .merge(create_faas_router())
         .merge(create_tlg_router())
         .merge(create_wscan_router())
+        .layer(compression::compression_layer())
         .layer(
             CorsLayer::new()
                 .allow_methods([Method::OPTIONS, Method::GET, Method::POST])
