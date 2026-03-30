@@ -466,13 +466,25 @@ mod tests {
                     .unwrap();
 
                 assert_eq!(response.status(), StatusCode::OK);
-                assert_eq!(
-                    response
-                        .headers()
-                        .get("content-encoding")
-                        .expect("missing content-encoding header"),
-                    encoding.as_str()
-                );
+                let header = response.headers().get("content-encoding");
+                match encoding.as_str() {
+                    "gzip" | "zstd" => {
+                        let value = header
+                            .expect("missing content-encoding header for supported encoding")
+                            .to_str()
+                            .expect("invalid content-encoding header value");
+                        assert_eq!(value, encoding);
+                    }
+                    _ => {
+                        // For unsupported encodings (e.g., deflate), we expect no compression.
+                        assert!(
+                            header.is_none(),
+                            "expected no content-encoding header for unsupported encoding {}, got {:?}",
+                            encoding,
+                            header
+                        );
+                    }
+                }
             }
         };
 
