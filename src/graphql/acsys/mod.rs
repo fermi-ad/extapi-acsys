@@ -1092,7 +1092,7 @@ live data."]
         };
 
         Ok(Box::pin(datastream::end_stream_at(
-            datastream::filter_dupes(datastream::merge(s_archived, s_live)),
+            datastream::merge(s_archived, s_live),
             total,
             end_time,
         )) as DataStream)

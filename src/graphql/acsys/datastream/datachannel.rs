@@ -10,9 +10,10 @@ use tracing::warn;
 // Implements the merge logic for a data channel. When the channel is
 // in buffering mode, it adds any new live data to its buffer. In feed
 // through mode, all live data is simply forwarded on.
-
 pub enum DataChannel {
-    Buffering(Vec<global::DataInfo>),
+    Buffering {
+        buffered_data: Vec<global::DataInfo>,
+    },
     FeedThrough,
 }
 
@@ -21,7 +22,9 @@ impl DataChannel {
     // an empty buffer.
 
     pub fn new() -> Self {
-        DataChannel::Buffering(vec![])
+        DataChannel::Buffering {
+            buffered_data: vec![],
+        }
     }
 
     // Returns the buffered data, if any.
@@ -29,13 +32,12 @@ impl DataChannel {
     pub fn get_buffer(&mut self) -> Option<Vec<global::DataInfo>> {
         match self {
             Self::FeedThrough => None,
-            Self::Buffering(data) => {
-                if data.is_empty() {
+            Self::Buffering { buffered_data } => {
+                if buffered_data.is_empty() {
                     None
                 } else {
                     let mut tmp = vec![];
-
-                    std::mem::swap(data, &mut tmp);
+                    std::mem::swap(buffered_data, &mut tmp);
                     Some(tmp)
                 }
             }
@@ -49,18 +51,28 @@ impl DataChannel {
     ) -> Option<Vec<global::DataInfo>> {
         match self {
             // In feedthrough mode, we simply pass on the live data.
-            Self::FeedThrough => Some(live_data),
+            Self::FeedThrough => {
+                if live_data.is_empty() {
+                    None
+                } else {
+                    Some(live_data)
+                }
+            }
 
             // If in buffering mode, we append the data and return
-            // `None` so the caller knows there's nothing to do.
-            Self::Buffering(data) => {
-                data.append(&mut live_data);
+            // `None` so the caller knows there's nothing to emit yet.
+            Self::Buffering { buffered_data } => {
+                buffered_data.append(&mut live_data);
                 if archive_done {
-                    let mut tmp = vec![];
-
-                    std::mem::swap(data, &mut tmp);
-                    *self = Self::FeedThrough;
-                    Some(tmp)
+                    if !buffered_data.is_empty() {
+                        let mut tmp = vec![];
+                        std::mem::swap(buffered_data, &mut tmp);
+                        *self = Self::FeedThrough;
+                        Some(tmp)
+                    } else {
+                        *self = Self::FeedThrough;
+                        None
+                    }
                 } else {
                     None
                 }
@@ -72,7 +84,7 @@ impl DataChannel {
 
     pub fn process_archive_data(
         &mut self, archive_data: Vec<global::DataInfo>,
-    ) -> Vec<global::DataInfo> {
+    ) -> Option<Vec<global::DataInfo>> {
         match self {
             // We shouldn't get archived data once we've entered
             // feed-through mode. The producer made a mistake. Generate
@@ -80,26 +92,34 @@ impl DataChannel {
             // probably be earlier and will get filtered by a later stage.
             Self::FeedThrough => {
                 warn!("received archived data after end was specified");
-                archive_data
+                if archive_data.is_empty() {
+                    None
+                } else {
+                    Some(archive_data)
+                }
             }
 
             // If we're in buffer mode, the contents of this archive
             // packet determines what comes next.
-            Self::Buffering(data) => {
+            Self::Buffering { buffered_data } => {
                 // If the archived data is empty, there won't be any more
                 // from the archiver. We switch to FeedThrough mode and
                 // return our buffered data.
 
                 if archive_data.is_empty() {
-                    let mut tmp = vec![];
+                    if !buffered_data.is_empty() {
+                        let mut tmp = vec![];
 
-                    std::mem::swap(data, &mut tmp);
-                    *self = Self::FeedThrough;
-                    tmp
+                        std::mem::swap(buffered_data, &mut tmp);
+                        *self = Self::FeedThrough;
+                        Some(tmp)
+                    } else {
+                        *self = Self::FeedThrough;
+                        None
+                    }
                 } else {
                     // If there's archive data, pass it on.
-
-                    archive_data
+                    Some(archive_data)
                 }
             }
         }
@@ -126,19 +146,17 @@ mod test {
 
         // Assert a new channel is in buffer mode.
 
-        assert!(matches!(chan, DataChannel::Buffering(_)));
+        assert!(matches!(chan, DataChannel::Buffering { .. }));
 
         // Run an archive packet through. The channel should return
         // it, as is.
-
         assert_eq!(
             chan.process_archive_data(vec![data_info(100.0)]),
-            vec![data_info(100.0)]
+            Some(vec![data_info(100.0)])
         );
 
         // Add some live data to the channel. Since we're in buffer
         // mode, live data is saved and `None` should be returned.
-
         assert_eq!(
             chan.process_live_data(
                 vec![data_info(200.0), data_info(210.0),],
@@ -151,19 +169,29 @@ mod test {
         // returned.
 
         assert_eq!(
-            chan.process_archive_data(
-                vec![data_info(110.0), data_info(120.0),]
-            ),
-            vec![data_info(110.0), data_info(120.0),]
+            chan.process_archive_data(vec![data_info(110.0), data_info(120.0)]),
+            Some(vec![data_info(110.0), data_info(120.0)])
         );
 
         // Send an empty archive packet. This signifies no more archive
         // data will be received. The channel should return the buffered
         // data and switch to feed-through mode.
-
         assert_eq!(
             chan.process_archive_data(vec![]),
-            vec![data_info(200.0), data_info(210.0)]
+            Some(vec![data_info(200.0), data_info(210.0)])
+        );
+
+        // Assert the channel is now in feed-through mode.
+        assert!(matches!(chan, DataChannel::FeedThrough));
+
+        // Send another empty archive packet. It should warn and return None.
+        // (The warning is logged, but the return value is None because there's no data).
+        assert_eq!(chan.process_archive_data(vec![]), None);
+
+        // Send an empty archive packet with data. It should warn and return Some(data).
+        assert_eq!(
+            chan.process_archive_data(vec![data_info(999.0)]),
+            Some(vec![data_info(999.0)])
         );
 
         // Now add live data. It should get passed through.
