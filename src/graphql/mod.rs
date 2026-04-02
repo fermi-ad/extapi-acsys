@@ -1,3 +1,8 @@
+//! GraphQL Service Module
+//!
+//! This module contains the code for the GraphQL service. It defines the various GraphQL
+//! schemas and resolvers, and starts the web server that receives GraphQL queries.
+
 use crate::g_rpc::dpm::build_connection;
 use async_graphql::{
     EmptyMutation, EmptySubscription, ObjectType, Schema, SubscriptionType,
@@ -16,6 +21,8 @@ use http::{Method, header};
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use tower_http::cors::{Any, CorsLayer};
 use tracing::{info, instrument};
+use types::AuthInfo;
+
 mod acsys;
 mod alarms;
 mod bbm;
@@ -24,7 +31,6 @@ mod faas;
 mod scanner;
 mod tlg;
 mod types;
-use types::AuthInfo;
 
 // Generic function which adds `AuthInfo` to the context. This
 // function can be used for all the GraphQL schemas.
@@ -118,7 +124,6 @@ fn create_alarms_router() -> Router {
         alarms::AlarmsMutations,
         alarms::AlarmsSubscriptions,
     )
-    .data(alarms::get_alarms_subscriber())
     .finish();
     let graphiql = axum::response::Html(
         async_graphql::http::GraphiQLSource::build()
@@ -344,12 +349,8 @@ mod tests {
     fn mk_test_site() -> Router {
         const Q_ENDPOINT: &str = "/test";
 
-        let schema = Schema::build(
-            TestQuery::default(),
-            EmptyMutation,
-            EmptySubscription,
-        )
-        .finish();
+        let schema =
+            Schema::build(TestQuery, EmptyMutation, EmptySubscription).finish();
 
         Router::new()
             .route(Q_ENDPOINT, post(graphql_handler).with_state(schema))

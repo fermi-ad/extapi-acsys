@@ -4,23 +4,22 @@
 
 use crate::{
     g_rpc::{alarms_db, alarms_svc, proto::services::alarms},
-    pubsub::{Message, Snapshot, Subscriber},
+    pubsub::{
+        Message, Snapshot, Subscriber,
+        kafka_impl::{KafkaSnapshot, KafkaSubscriber},
+    },
 };
-use async_graphql::{Context, Error, Object, Subscription};
+use async_graphql::{Error, Object, Subscription};
 use chrono::{DateTime, Utc};
 use rust_env_var_lib::env_var;
 use tokio_stream::wrappers::BroadcastStream;
 use tonic::{Code, Request, Status};
 use tracing::error;
 use types::{AlarmGroup, AlarmGroupMetadatum, AlarmTimer, UserLayout};
+use uuid::Uuid;
 
 mod types;
 mod utils;
-
-/// Generates a [`Subscriber`] to the alarms host and topic.
-pub fn get_alarms_subscriber() -> Subscriber {
-    Subscriber::for_topic(get_host(), get_topic())
-}
 
 /// Describes the mutations (data writes/updates) allowed by the GQL interface.
 #[derive(Default)]
@@ -31,16 +30,21 @@ impl AlarmsMutations {
     async fn acknowledge_alarms(
         &self, devices: Vec<String>, updated_by: String,
     ) -> Result<Vec<String>, Error> {
-        alarms_svc::acknowledge_alarms(devices.clone(), updated_by).await?;
-        Ok(devices)
+        match alarms_svc::acknowledge_alarms(devices.clone(), updated_by).await
+        {
+            Ok(_) => Ok(devices),
+            Err(e) => handle_error(e, "acknowledging alarms"),
+        }
     }
 
     /// A request to bypass the specified alarms.
     async fn bypass_alarms(
         &self, devices: Vec<String>, updated_by: String,
     ) -> Result<Vec<String>, Error> {
-        alarms_svc::bypass_alarms(devices.clone(), updated_by).await?;
-        Ok(devices)
+        match alarms_svc::bypass_alarms(devices.clone(), updated_by).await {
+            Ok(_) => Ok(devices),
+            Err(e) => handle_error(e, "bypassing alarms"),
+        }
     }
 
     /// A request to create an alarms timer of the specified [`TimerType`](crate::g_rpc::proto::services::alarms::TimerType).
@@ -83,8 +87,11 @@ impl AlarmsMutations {
     async fn snooze_alarms(
         &self, devices: Vec<String>, updated_by: String, wake: DateTime<Utc>,
     ) -> Result<Vec<String>, Error> {
-        alarms_svc::snooze_alarms(devices.clone(), updated_by, wake).await?;
-        Ok(devices)
+        match alarms_svc::snooze_alarms(devices.clone(), updated_by, wake).await
+        {
+            Ok(_) => Ok(devices),
+            Err(e) => handle_error(e, "snoozing alarms"),
+        }
     }
 
     /// A request to update an alarms timer.
@@ -170,10 +177,9 @@ impl AlarmsQueries {
 
     /// Reads a snapshot of the alarms topic.
     async fn alarms_snapshot(&self) -> Result<Vec<Message>, Error> {
-        match Snapshot::for_topic(get_host(), get_topic()) {
-            Ok(snapshot) => Ok(snapshot.data),
-            Err(err) => Err(Error::new(format!("{err}"))),
-        }
+        KafkaSnapshot::get(get_host(), get_topic())
+            .await
+            .map_err(|e| Error::new(format!("{e}")))
     }
 
     /// Reads all alarms timers of the specified [`TimerType`](crate::g_rpc::proto::services::alarms::TimerType) for the given user.
@@ -204,13 +210,12 @@ impl AlarmsQueries {
 pub struct AlarmsSubscriptions;
 
 #[Subscription]
-impl<'ctx> AlarmsSubscriptions {
+impl AlarmsSubscriptions {
     /// Streams back all alarms from the alarms topic.
-    async fn alarms(
-        &self, ctxt: &Context<'ctx>,
-    ) -> Result<BroadcastStream<Message>, Error> {
-        ctxt.data::<Subscriber>()
-            .map(|subscriber| subscriber.get_stream())
+    async fn alarms(&self) -> Result<BroadcastStream<Message>, Error> {
+        KafkaSubscriber::subscribe(get_host(), get_topic())
+            .await
+            .map_err(|e| Error::new(format!("{e}")))
     }
 }
 
@@ -225,21 +230,22 @@ fn get_topic() -> String {
 }
 
 fn handle_error<T>(e: Status, gerund: &str) -> Result<T, Error> {
-    error!("gRPC Error {gerund}: {e:?}");
+    let err_id = Uuid::new_v4();
+    error!("{err_id} gRPC Error {gerund}: {e:?}");
     Err(match e.code() {
-        Code::InvalidArgument | Code::Internal => Error::new(format!("{}", e)),
-        _ => {
-            Error::new(format!("Error {gerund}. See server logs for details."))
+        Code::InvalidArgument => {
+            Error::new(format!("{e} (Error ID: {err_id})"))
         }
+        _ => Error::new(format!(
+            "Error {gerund}. See server logs for details. (Error ID: {err_id})"
+        )),
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pubsub::PubSubError;
-    use async_graphql::{Response, Schema};
-    use futures::StreamExt;
+    use async_graphql::Schema;
 
     async fn test_query_returns_err(gql_query: &str, err_msg: &str) {
         let schema =
@@ -259,7 +265,7 @@ mod tests {
                 acknowledgeAlarms(devices: ["G:AMANDA"], updatedBy: "test user")
             }
         "#,
-            "code: 'Internal error', message: \"See server logs for details; reference token ",
+            "Error acknowledging alarms. See server logs for details. (Error ID: ",
         )
         .await;
     }
@@ -272,42 +278,9 @@ mod tests {
                 bypassAlarms(devices: ["G:AMANDA"], updatedBy: "test user")
             }
         "#,
-            "code: 'Internal error', message: \"See server logs for details; reference token ",
+            "Error bypassing alarms. See server logs for details. (Error ID: ",
         )
         .await;
-    }
-
-    #[tokio::test]
-    async fn get_alarms_subscriber_returns_instance() {
-        let instance = get_alarms_subscriber();
-        let result = instance.get_stream().take(0).collect::<Vec<_>>().await;
-        assert_eq!(0, result.len());
-    }
-
-    #[tokio::test]
-    async fn alarms_sub_returns_err_response_when_no_subscriber_provided() {
-        let schema =
-            Schema::build(AlarmsQueries, AlarmsMutations, AlarmsSubscriptions)
-                .finish();
-        let result = schema.execute_stream(
-            r#"
-            subscription Alarms {
-                alarms {
-                  key,
-                  value
-                }
-            }
-        "#,
-        );
-        let collection = result.collect::<Vec<Response>>().await;
-        assert_eq!(collection.len(), 1);
-        let output = collection.first().unwrap();
-        assert_eq!(output.errors.len(), 1);
-        let err = output.errors.first().unwrap();
-        assert_eq!(
-            err.message.as_str(),
-            "Data `extapi_acsys::pubsub::Subscriber` does not exist."
-        );
     }
 
     #[tokio::test]
@@ -324,7 +297,7 @@ mod tests {
                 }
             }
         "#,
-            "code: 'Internal error', message: \"See server logs for details; reference token ",
+            "Error creating alarm timer. See server logs for details. (Error ID: ",
         )
         .await;
     }
@@ -337,7 +310,7 @@ mod tests {
                 deleteAlarmTimer(device: "G:AMANDA", timerType: "test_type")
             }
         "#,
-            "code: 'Internal error', message: \"See server logs for details; reference token ",
+            "Error deleting alarm timer. See server logs for details. (Error ID: ",
         )
         .await;
     }
@@ -353,7 +326,7 @@ mod tests {
                 }
             }
         "#,
-            &format!("{}", PubSubError::default()),
+            "An error occurred while performing a pub/sub operation (Error ID: ",
         )
         .await;
     }
@@ -364,28 +337,18 @@ mod tests {
             Status::invalid_argument("test invalid arg"),
             "testing alarm timer",
         );
-        assert_eq!(
-            result.unwrap_err().message,
-            "code: 'Client specified an invalid argument', message: \"test invalid arg\""
+        assert!(
+            result.unwrap_err().message.starts_with(
+            "code: 'Client specified an invalid argument', message: \"test invalid arg\"")
         );
 
         let result = handle_error::<()>(
             Status::internal("test internal err"),
             "testing alarm timer",
         );
-        assert_eq!(
-            result.unwrap_err().message,
-            "code: 'Internal error', message: \"test internal err\""
-        );
-
-        let result = handle_error::<()>(
-            Status::not_found("test other err"),
-            "testing alarm timer",
-        );
-        assert_eq!(
-            result.unwrap_err().message,
-            "Error testing alarm timer. See server logs for details."
-        );
+        assert!(result.unwrap_err().message.starts_with(
+            "Error testing alarm timer. See server logs for details. (Error ID: "
+        ));
     }
 
     #[tokio::test]
@@ -402,7 +365,7 @@ mod tests {
                 }
             }
         "#,
-            "code: 'Internal error', message: \"See server logs for details; reference token ",
+            "Error reading alarm timer. See server logs for details. (Error ID: ",
         )
         .await;
     }
@@ -417,7 +380,7 @@ mod tests {
                 }
             }
         "#,
-            "code: 'Internal error', message: \"See server logs for details; reference token",
+            "Error reading alarm group metadata. See server logs for details. (Error ID: ",
         )
         .await;
     }
@@ -432,7 +395,7 @@ mod tests {
                 }
             }
         "#,
-            "code: 'Internal error', message: \"See server logs for details; reference token ",
+            "Error reading alarm groups. See server logs for details. (Error ID: ",
         )
         .await;
     }
@@ -447,7 +410,7 @@ mod tests {
                 }
             }
         "#,
-            "code: 'Internal error', message: \"See server logs for details; reference token ",
+            "Error reading user layouts. See server logs for details. (Error ID: ",
         )
         .await;
     }
@@ -460,7 +423,7 @@ mod tests {
                 snoozeAlarms(devices: ["G:AMANDA"], updatedBy: "test user", wake: "2026-03-24T15:17:32.000Z")
             }
         "#,
-            "code: 'Internal error', message: \"See server logs for details; reference token ",
+            "Error snoozing alarms. See server logs for details. (Error ID: ",
         )
         .await;
     }
@@ -479,7 +442,7 @@ mod tests {
                 }
             }
         "#,
-            "code: 'Internal error', message: \"See server logs for details; reference token",
+            "Error updating alarm timer. See server logs for details. (Error ID: ",
         )
         .await;
     }
