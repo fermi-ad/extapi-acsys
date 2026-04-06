@@ -1,7 +1,7 @@
 # ------------------------
 # BUILD
 # ------------------------
-FROM adregistry.fnal.gov/dev-containers/rust:1.94.0-debian AS builder
+FROM adregistry.fnal.gov/dev-containers/rust-kafka:1.94.0-debian AS builder
 
 COPY --chown=dev . /app/
 WORKDIR /app

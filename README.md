@@ -13,6 +13,19 @@ The middle layer of the control system uses gRPCs for communications. The GraphQ
 - [Rust >= 1.90](https://www.rust-lang.org/learn/get-started)
 - [Protocol Buffer](https://grpc.io/docs/protoc-installation/)
 
+#### Kafka (rdkafka) native dependencies
+
+This service uses [`rdkafka`](https://crates.io/crates/rdkafka) (librdkafka bindings) for Kafka pub/sub.
+
+If you are building locally (outside the devcontainer/Docker image), you may need native dependencies installed.
+
+Debian/Ubuntu packages typically required:
+
+- `libsasl2-dev`
+- `libcurl4-openssl-dev`
+
+Depending on your environment, you may also need a C toolchain and build tooling (e.g. `cmake`, `pkg-config`).
+
 ### Environment variables
 The following variables exist for configuring the service at runtime:
 - `ALARMS_KAFKA_HOST` -> Hostname for the Kafka instance that supports the alarms service
@@ -22,11 +35,19 @@ The following variables exist for configuring the service at runtime:
 - `DPM_GRPC_HOST` -> Hostname for the DPM gRPC service
 - `GRAPHQL_PORT` -> Port for clients to connect via GraphQL to this service
 - `GRPC_ALARMS_DB_HOST` -> Hostname for the Alarms DB Access gRPC service
-- `KAFKA_CONNECTION_SECONDS` -> The number of seconds to wait for a connection to Kafka before timing out
+- `KAFKA_CONNECTION_SECONDS` -> Kafka operation timeout (seconds) used by the pub/sub layer (connect/send/etc.). This also affects test runs via [`.cargo/config.toml`](.cargo/config.toml).
 - `RUST_LOG` -> The default logging environment variable from Rust. Can be configured to log specific crates/modules at different levels from the global default.
 - `SCANNER_GRPC_HOST` -> Hostname for the wire scanner gRPC service
 - `TLG_GRPC_HOST` -> Hostname for the TLG gRPC service
 
+### Error IDs in responses
+
+Alarms requests intentionally return a generic error message that includes an **Error ID** (a UUID). The underlying error details are logged server-side.
+
+To debug an issue reported by a client:
+
+1. Copy the Error ID from the client-visible message.
+2. Search the server logs for that UUID to find the corresponding detailed error entry.
 
 ### Check out the project:
 
