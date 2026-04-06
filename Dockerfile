@@ -13,5 +13,6 @@ RUN cargo build --release
 FROM gcr.io/distroless/cc-debian12
 
 COPY --from=builder /app/target/release/extapi-acsys /usr/local/bin/extapi-acsys
+COPY --from=builder /lib/x86_64-linux-gnu/libz.so.1 /lib/x86_64-linux-gnu/libz.so.1
 EXPOSE 8000
 CMD ["extapi-acsys"]
