@@ -37,6 +37,7 @@ impl DataChannel {
                     None
                 } else {
                     let mut tmp = vec![];
+
                     std::mem::swap(buffered_data, &mut tmp);
                     Some(tmp)
                 }
