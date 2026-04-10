@@ -52,6 +52,26 @@ where
             pending: HashMap::new(),
         }
     }
+
+    /// Filters out data points that have already been seen based on the `latest` timestamp
+    /// and updates `latest` with the newest timestamp in the batch. Returns true if
+    /// there is data left to emit.
+    fn filter_and_update_latest(
+        data: &mut Vec<global::DataInfo>, latest: &mut f64,
+    ) -> bool {
+        if data.is_empty() {
+            return false;
+        }
+
+        let start = data.partition_point(|info| info.timestamp <= *latest);
+        *latest = (*latest).max(data.last().unwrap().timestamp);
+
+        if start > 0 {
+            data.drain(..start);
+        }
+
+        !data.is_empty()
+    }
 }
 
 impl<SA, SL> Stream for DataMerge<SA, SL>
@@ -71,31 +91,16 @@ where
 
             if !this.archived_done {
                 match this.archived.poll_next_unpin(ctxt) {
-                    Poll::Ready(Some(global::DataReply {
-                        ref_id,
-                        mut data,
-                    })) => {
+                    Poll::Ready(Some(global::DataReply { ref_id, data })) => {
                         let (chan, latest) = this
                             .pending
                             .entry(ref_id)
                             .or_insert_with(|| (DataChannel::new(), 0.0));
-                        if let Some(processed_data) =
-                            chan.process_archive_data(data)
+
+                        if let Some(mut data) = chan.process_archive_data(data)
                         {
-                            data = processed_data;
-                        } else {
-                            continue;
-                        }
-
-                        if !data.is_empty() {
-                            let start = data.partition_point(|info| {
-                                info.timestamp <= *latest
-                            });
-                            *latest =
-                                latest.max(data.last().unwrap().timestamp);
-                            data.drain(..start);
-
-                            if !data.is_empty() {
+                            if Self::filter_and_update_latest(&mut data, latest)
+                            {
                                 return Poll::Ready(Some(global::DataReply {
                                     ref_id,
                                     data,
@@ -120,14 +125,8 @@ where
                         if let Some(mut data) =
                             chan.process_live_data(data, this.archived_done)
                         {
-                            let start = data.partition_point(|info| {
-                                info.timestamp <= *latest
-                            });
-                            *latest =
-                                latest.max(data.last().unwrap().timestamp);
-                            data.drain(..start);
-
-                            if !data.is_empty() {
+                            if Self::filter_and_update_latest(&mut data, latest)
+                            {
                                 return Poll::Ready(Some(global::DataReply {
                                     ref_id,
                                     data,
@@ -142,21 +141,21 @@ where
             }
 
             if this.archived_done && this.live_done {
-                let mut next = None;
-                for (&ref_id, (chan, latest)) in this.pending.iter_mut() {
+                if let Some(&ref_id) = this.pending.keys().next() {
+                    let (mut chan, mut latest) =
+                        this.pending.remove(&ref_id).unwrap();
                     if let Some(mut data) = chan.get_buffer() {
-                        let start = data
-                            .partition_point(|info| info.timestamp <= *latest);
-                        if start < data.len() {
-                            *latest = data.last().unwrap().timestamp;
-                            data.drain(..start);
-                            next = Some(global::DataReply { ref_id, data });
-                            break;
+                        if Self::filter_and_update_latest(
+                            &mut data,
+                            &mut latest,
+                        ) {
+                            return Poll::Ready(Some(global::DataReply {
+                                ref_id,
+                                data,
+                            }));
                         }
                     }
-                }
-                if let Some(reply) = next {
-                    return Poll::Ready(Some(reply));
+                    continue;
                 }
                 return Poll::Ready(None);
             }

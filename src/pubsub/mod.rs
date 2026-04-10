@@ -31,6 +31,7 @@ impl Message {
     }
 }
 
+<<<<<<< HEAD
 /// A trait for retrieving the instantaneous set of [`Message`]s on a topic.
 #[tonic::async_trait]
 pub trait Snapshot {
@@ -41,6 +42,76 @@ pub trait Snapshot {
     async fn get(
         host: String, topic: String,
     ) -> Result<Vec<Message>, PubSubError>;
+=======
+struct MessageJob {
+    consumer: Option<Consumer>,
+    host: String,
+    sender: Arc<Sender<Message>>,
+    topic: String,
+    uuid: Uuid,
+}
+impl MessageJob {
+    fn check_connection(&mut self) {
+        if self.consumer.is_none() {
+            self.consumer = get_consumer(
+                self.host.clone(),
+                self.topic.clone(),
+                Some(self.uuid.to_string()),
+            )
+            .ok();
+        }
+    }
+
+    fn from(host: String, topic: String, sender: Arc<Sender<Message>>) -> Self {
+        let uuid = Uuid::new_v4();
+        Self {
+            consumer: get_consumer(
+                host.clone(),
+                topic.clone(),
+                Some(uuid.to_string()),
+            )
+            .ok(),
+            host,
+            sender,
+            topic,
+            uuid,
+        }
+    }
+
+    fn run(&mut self) {
+        loop {
+            self.check_connection();
+            let mut got_data = false;
+
+            if let Some(cons) = &mut self.consumer {
+                // sender.send() returns Result<usize, SendError<T>>, where the Ok path is the number of receivers
+                // that got the message. We don't really care about that, but still want to capture any errors, so
+                // we use .map(drop) to just drop the Ok path.
+                let result = do_poll(cons, |msg| {
+                    got_data = true;
+                    self.sender.send(msg).map(drop)
+                });
+                if let Err(err) = result {
+                    if err.downcast_ref::<SendError<Message>>().is_some() {
+                        // The send stream is closed, so all receivers must have been dropped and there is no
+                        // more need for this thread to run.
+                        break;
+                    } else {
+                        // Something else went wrong with the consumer. Drop the current instance so we can
+                        // attempt to reconnect on the next pass.
+                        error!("{err}");
+                        self.consumer = None;
+                    }
+                }
+            }
+
+            // Only sleep if no data was processed to avoid introducing latency during high-traffic periods.
+            if !got_data {
+                thread::sleep(Duration::from_millis(100));
+            }
+        }
+    }
+>>>>>>> 6f22692 (:zap: performance improvements)
 }
 
 /// A trait for subscribing to a message topic. Returns the values as a stream of [`Message`]s for clients to handle.

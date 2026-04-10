@@ -33,13 +33,12 @@ impl DataChannel {
         match self {
             Self::FeedThrough => None,
             Self::Buffering { buffered_data } => {
-                if buffered_data.is_empty() {
+                let result = std::mem::take(buffered_data);
+
+                if result.is_empty() {
                     None
                 } else {
-                    let mut tmp = vec![];
-
-                    std::mem::swap(buffered_data, &mut tmp);
-                    Some(tmp)
+                    Some(result)
                 }
             }
         }
@@ -63,18 +62,26 @@ impl DataChannel {
             // If in buffering mode, we append the data and return
             // `None` so the caller knows there's nothing to emit yet.
             Self::Buffering { buffered_data } => {
-                buffered_data.append(&mut live_data);
                 if archive_done {
-                    if !buffered_data.is_empty() {
-                        let mut tmp = vec![];
-                        std::mem::swap(buffered_data, &mut tmp);
-                        *self = Self::FeedThrough;
-                        Some(tmp)
+                    let mut result = std::mem::take(buffered_data);
+
+                    *self = Self::FeedThrough;
+                    if result.is_empty() {
+                        if live_data.is_empty() {
+                            None
+                        } else {
+                            Some(live_data)
+                        }
                     } else {
-                        *self = Self::FeedThrough;
-                        None
+                        result.append(&mut live_data);
+                        Some(result)
                     }
                 } else {
+                    if buffered_data.is_empty() {
+                        *buffered_data = live_data;
+                    } else {
+                        buffered_data.append(&mut live_data);
+                    }
                     None
                 }
             }
@@ -103,23 +110,16 @@ impl DataChannel {
             // If we're in buffer mode, the contents of this archive
             // packet determines what comes next.
             Self::Buffering { buffered_data } => {
-                // If the archived data is empty, there won't be any more
-                // from the archiver. We switch to FeedThrough mode and
-                // return our buffered data.
-
                 if archive_data.is_empty() {
-                    if !buffered_data.is_empty() {
-                        let mut tmp = vec![];
+                    let result = std::mem::take(buffered_data);
 
-                        std::mem::swap(buffered_data, &mut tmp);
-                        *self = Self::FeedThrough;
-                        Some(tmp)
-                    } else {
-                        *self = Self::FeedThrough;
+                    *self = Self::FeedThrough;
+                    if result.is_empty() {
                         None
+                    } else {
+                        Some(result)
                     }
                 } else {
-                    // If there's archive data, pass it on.
                     Some(archive_data)
                 }
             }

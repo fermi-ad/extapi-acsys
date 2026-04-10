@@ -39,13 +39,13 @@ fn now() -> f64 {
 // Converts a gRPC proto::ReadingReply structure into a GraphQL
 // global::DataReply object.
 
-fn reading_to_reply(rdg: &daq::ReadingReply) -> global::DataReply {
-    match &rdg.value {
+fn reading_to_reply(rdg: daq::ReadingReply) -> global::DataReply {
+    match rdg.value {
         Some(reading_reply::Value::Readings(rdgs)) => global::DataReply {
             ref_id: rdg.index as i32,
             data: rdgs
                 .reading
-                .iter()
+                .into_iter()
                 .map(|v| global::DataInfo {
                     timestamp: v
                         .timestamp
@@ -53,12 +53,7 @@ fn reading_to_reply(rdg: &daq::ReadingReply) -> global::DataReply {
                             v.seconds as f64 + v.nanos as f64 / 1_000_000_000.0
                         })
                         .unwrap(),
-                    result: v
-                        .data
-                        .as_ref()
-                        .map(|v| v.try_into())
-                        .unwrap()
-                        .unwrap(),
+                    result: v.data.map(|v| v.try_into()).unwrap().unwrap(),
                 })
                 .collect(),
         },
@@ -78,7 +73,7 @@ fn reading_to_reply(rdg: &daq::ReadingReply) -> global::DataReply {
 
 fn xlat_reply(e: Result<daq::ReadingReply, Status>) -> global::DataReply {
     match e {
-        Ok(e) => reading_to_reply(&e),
+        Ok(e) => reading_to_reply(e),
         Err(e) => {
             warn!("channel error: {}", &e);
             global::DataReply {
@@ -154,7 +149,7 @@ immediately or after a delay."]
                 Ok(reply) => {
                     let index = reply.index as usize;
 
-                    results[index] = reading_to_reply(&reply);
+                    results[index] = reading_to_reply(reply);
 
                     remaining.remove(&index);
                     if remaining.is_empty() {
