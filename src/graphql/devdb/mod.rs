@@ -97,10 +97,8 @@ fn to_info_result(item: &InfoEntry) -> types::DeviceInfoResult {
                     is_knobbable: p.is_knobbable,
                     is_step_motor: p.is_step_motor,
                 }),
-                dig_control: di.control.as_ref().map(|p| {
-                    types::DigControl {
-                        entries: p.cmds.iter().map(to_dig_ctrl).collect(),
-                    }
+                dig_control: di.control.as_ref().map(|p| types::DigControl {
+                    entries: p.cmds.iter().map(to_dig_ctrl).collect(),
                 }),
                 dig_status: di.status.as_ref().map(|p| types::DigStatus {
                     entries: p.bits.iter().map(to_dig_status).collect(),

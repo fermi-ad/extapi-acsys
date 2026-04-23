@@ -95,7 +95,6 @@ async fn create_acsys_router() -> Router {
             .await
             .expect("couldn't make connection to DPM"),
     )
-    .data(acsys::new_context())
     .finish();
 
     let graphiql = axum::response::Html(

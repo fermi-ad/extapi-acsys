@@ -1,6 +1,7 @@
 use crate::g_rpc::{
-    dpm,
+    devdb, dpm,
     proto::services::daq::{self, reading_reply},
+    proto::services::devdb::{plot_config_result, PlotConfigResult},
 };
 
 use async_graphql::*;
@@ -20,12 +21,7 @@ use super::types as global;
 // Pull in our local types.
 
 mod datastream;
-mod plotconfigdb;
 pub mod types;
-
-pub fn new_context() -> plotconfigdb::T {
-    plotconfigdb::T::new()
-}
 
 use crate::g_rpc::dpm::Connection;
 
@@ -177,13 +173,39 @@ Returns a plot configuration associated with the specified ID. If the \
 ID is `null`, all configurations are returned. Both style of requests \
 return an array result -- it's just that specifying an ID will return \
 an array with 0 or 1 element."]
-    #[instrument(skip(self, ctxt))]
+    #[instrument(skip(self))]
     async fn plot_configuration(
-        &self, ctxt: &Context<'_>, id: Option<usize>,
+        &self, id: Option<u32>,
     ) -> Vec<types::PlotConfig> {
         info!("returning plot configuration(s)");
 
-        ctxt.data_unchecked::<plotconfigdb::T>().find(id).await
+        match devdb::get_plot_config(id).await {
+            Ok(PlotConfigResult {
+                result: Some(plot_config_result::Result::Config(config)),
+            }) => config
+                .data
+                .into_iter()
+                .map(|v| types::PlotConfig {
+                    config_id: v.id as usize,
+                    config_name: v.name.into(),
+                    config: v.config.into(),
+                })
+                .collect(),
+            Ok(PlotConfigResult {
+                result: Some(plot_config_result::Result::ErrMsg(msg)),
+            }) => {
+                warn!("{}", msg);
+                vec![]
+            }
+            Ok(PlotConfigResult { .. }) => {
+                warn!("unexpected gRPC reply --- missing result");
+                vec![]
+            }
+            Err(e) => {
+                warn!("unexpected gRPC reply: {e}");
+                vec![]
+            }
+        }
     }
 
     #[doc = "Obtain the user's last configuration.
@@ -202,11 +224,6 @@ that is included in the request."]
 
             if let Some(account) = auth.unsafe_account() {
                 info!("using account: {:?}", &account);
-
-                return ctxt
-                    .data_unchecked::<plotconfigdb::T>()
-                    .find_user(&account)
-                    .await;
             }
         }
         warn!("unable to determine user : no config returned");
@@ -240,6 +257,7 @@ want to set."]
         {
             if let Ok(auth) = _ctxt.data::<global::AuthInfo>() {
                 // TEMPORARY: If there isn't a JWT, use the account
+
                 // specified by the caller.
 
                 if let Some(account) = auth.unsafe_account() {
@@ -272,25 +290,23 @@ want to set."]
         })
     }
 
-    #[instrument(skip(self, ctxt))]
+    #[doc = "Add/Update a plot configuration"]
+    #[instrument(skip(self))]
     async fn update_plot_configuration(
-        &self, ctxt: &Context<'_>, id: Option<usize>, name: String,
-        config: Arc<str>,
-    ) -> Option<usize> {
-        info!("updating config");
-        ctxt.data_unchecked::<plotconfigdb::T>()
-            .update(id, name, config)
-            .await
+        &self, id: Option<usize>, name: String, config: String,
+    ) -> Result<usize> {
+        match devdb::save_plot_config(id, name, config).await {
+            Ok(id) => Ok(id),
+            Err(e) => Err(Error::new(format!("{}", e).as_str())),
+        }
     }
 
-    #[instrument(skip(self, ctxt))]
+    #[doc = "Delete a plot configuration"]
+    #[instrument(skip(self))]
     async fn delete_plot_configuration(
-        &self, ctxt: &Context<'_>, configuration_id: usize,
+        &self, configuration_id: usize,
     ) -> global::StatusReply {
         info!("deleting config");
-        ctxt.data_unchecked::<plotconfigdb::T>()
-            .remove(&configuration_id)
-            .await;
         global::StatusReply { status: 0 }
     }
 
@@ -300,17 +316,13 @@ The content of the configuration are used to set the default \
 configuration for the user. All fields, except the ID and name \
 fields, are used. The user's account name is obtained from the \
 authentication token that accompanies the request."]
-    #[instrument(skip(self, ctxt, config))]
+    #[instrument(skip(self, ctxt))]
     async fn users_configuration(
-        &self, ctxt: &Context<'_>, config: Arc<str>,
+        &self, ctxt: &Context<'_>, _config: Arc<str>,
     ) -> Result<global::StatusReply> {
         if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
             if let Some(account) = auth.unsafe_account() {
                 info!("using account: {:?}", &account);
-
-                ctxt.data_unchecked::<plotconfigdb::T>()
-                    .update_user(&account, config)
-                    .await;
                 Ok(global::StatusReply { status: 0 })
             } else {
                 Err(Error::new("unable to verify user credentials"))
