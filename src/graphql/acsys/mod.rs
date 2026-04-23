@@ -374,6 +374,10 @@ fn add_event(
     move |device| format!("{device}@{}", event)
 }
 
+// These type aliases are used for the public Subscription API.
+// The streams use Either combinators internally to avoid heap allocations,
+// but these are boxed at the public API boundary since async_graphql
+// requires concrete trait object types.
 type DataStream = Pin<Box<dyn Stream<Item = global::DataReply> + Send>>;
 type PlotStream = Pin<Box<dyn Stream<Item = types::PlotReplyData> + Send>>;
 
@@ -621,8 +625,7 @@ impl<'ctx> ACSysSubscriptions {
                     }
                     _ => None,
                 }
-            })
-            .boxed();
+            });
 
         Ok(datastream::group_scalars::<500, _>(strm))
     }
@@ -632,7 +635,8 @@ impl<'ctx> ACSysSubscriptions {
     #[instrument(name = "ACNET_ARCH", skip(ctxt, device, start_time, end_time))]
     async fn archived_data(
         ctxt: &Context<'ctx>, device: &str, start_time: f64, end_time: f64,
-    ) -> Result<DataStream> {
+    ) -> Result<impl Stream<Item = global::DataReply> + Send + 'static + Unpin>
+    {
         use tokio_stream::StreamExt;
 
         // If the device has a subscript, then the client wants
@@ -666,10 +670,10 @@ impl<'ctx> ACSysSubscriptions {
         )
         .await
         {
-            Ok(s) => Ok(datastream::as_archive_stream(
-                Box::pin(StreamExt::map(s.into_inner(), xlat_reply))
-                    as DataStream,
-            )),
+            Ok(s) => Ok(datastream::as_archive_stream(StreamExt::map(
+                s.into_inner(),
+                xlat_reply,
+            ))),
             Err(e) => Err(Error::new(format!("{}", e).as_str())),
         }
     }

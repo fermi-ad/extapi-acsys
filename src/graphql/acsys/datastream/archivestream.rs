@@ -1,4 +1,4 @@
-use super::{DataStream, global};
+use super::global;
 use futures::Stream;
 use futures_util::StreamExt;
 use std::{pin::Pin, task::Poll};
@@ -11,13 +11,19 @@ use std::{pin::Pin, task::Poll};
 // per stream. This wrapper Stream, once it sees and returns the empty
 // array, will close the stream.
 
-pub struct ArchiveStream {
-    archived: DataStream,
+pub struct ArchiveStream<S>
+where
+    S: Stream<Item = global::DataReply> + Send + 'static + Unpin,
+{
+    archived: S,
     done: bool,
 }
 
-impl ArchiveStream {
-    pub fn new(archived: DataStream) -> Self {
+impl<S> ArchiveStream<S>
+where
+    S: Stream<Item = global::DataReply> + Send + 'static + Unpin,
+{
+    pub fn new(archived: S) -> Self {
         ArchiveStream {
             archived,
             done: false,
@@ -25,11 +31,19 @@ impl ArchiveStream {
     }
 }
 
-pub fn as_archive_stream(s: DataStream) -> DataStream {
-    Box::pin(ArchiveStream::new(s)) as DataStream
+pub fn as_archive_stream<S>(
+    s: S,
+) -> impl Stream<Item = global::DataReply> + Send + 'static + Unpin
+where
+    S: Stream<Item = global::DataReply> + Send + 'static + Unpin,
+{
+    ArchiveStream::new(s)
 }
 
-impl Stream for ArchiveStream {
+impl<S> Stream for ArchiveStream<S>
+where
+    S: Stream<Item = global::DataReply> + Send + 'static + Unpin,
+{
     type Item = global::DataReply;
 
     fn poll_next(

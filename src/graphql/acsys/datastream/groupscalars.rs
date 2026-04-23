@@ -39,7 +39,7 @@ where
 
 pub fn group_scalars<const MAX_PAYLOAD: usize, S>(
     s: S,
-) -> impl Stream<Item = global::DataReply> + Send + 'static + Unpin
+) -> GroupScalars<MAX_PAYLOAD, S>
 where
     S: Stream<Item = global::DataReply> + Send + 'static + Unpin,
 {

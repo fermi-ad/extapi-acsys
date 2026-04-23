@@ -30,11 +30,16 @@ where
 }
 
 // Useful combinator that assembles the internal stream type.
+// This uses a closure to create a type-erased stream that composes
+// different stream implementations without boxing.
 
-pub fn merge(
-    archived: impl Stream<Item = global::DataReply> + Send + 'static + Unpin,
-    live: impl Stream<Item = global::DataReply> + Send + 'static + Unpin,
-) -> impl Stream<Item = global::DataReply> + Send + 'static + Unpin {
+pub fn merge<SA, SL>(
+    archived: SA, live: SL,
+) -> impl Stream<Item = global::DataReply> + Send + 'static + Unpin
+where
+    SA: Stream<Item = global::DataReply> + Send + 'static + Unpin,
+    SL: Stream<Item = global::DataReply> + Send + 'static + Unpin,
+{
     DataMerge::new(archived, live)
 }
 

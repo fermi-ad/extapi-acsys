@@ -1,4 +1,4 @@
-use super::{DataStream, global};
+use super::global;
 
 mod archivestream;
 mod datachannel;
