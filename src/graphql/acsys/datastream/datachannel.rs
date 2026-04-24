@@ -7,6 +7,7 @@
 use super::global;
 use tracing::warn;
 
+#[derive(Debug, PartialEq)]
 pub enum BufferResult {
     Overflow,
     Data(Option<Vec<global::DataInfo>>),
