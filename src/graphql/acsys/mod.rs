@@ -625,7 +625,8 @@ impl<'ctx> ACSysSubscriptions {
                     }
                     _ => None,
                 }
-            });
+            })
+            .boxed();
 
         Ok(datastream::group_scalars::<500, _>(strm))
     }

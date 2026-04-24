@@ -63,35 +63,34 @@ impl DataChannel {
             return BufferResult::Data(None);
         }
 
-        match (self, archive_done) {
+        match self {
             // In feedthrough mode, we simply pass on the live data.
-            (Self::FeedThrough, _) => BufferResult::Data(Some(live_data)),
+            Self::FeedThrough => BufferResult::Data(Some(live_data)),
 
             // If in buffering mode, we append the data and return
             // `None` so the caller knows there's nothing to emit yet.
-            (Self::Buffering { buffered_data }, true) => {
-                let mut result = std::mem::take(buffered_data);
-
-                *self = Self::FeedThrough;
-                BufferResult::Data(if result.is_empty() {
-                    Some(live_data)
+            Self::Buffering { buffered_data } => {
+                if archive_done {
+                    let mut result = std::mem::take(buffered_data);
+                    *self = Self::FeedThrough;
+                    BufferResult::Data(if result.is_empty() {
+                        Some(live_data)
+                    } else {
+                        result.append(&mut live_data);
+                        Some(result)
+                    })
                 } else {
-                    result.append(&mut live_data);
-                    Some(result)
-                })
-            }
-
-            (Self::Buffering { buffered_data }, false) => {
-                if buffered_data.is_empty() {
-                    *buffered_data = live_data;
-                } else if buffered_data.len() + live_data.len() <= 1000 {
-                    buffered_data.append(&mut live_data);
-                } else {
-                    warn!("live data buffer overflowed; dropping data");
-                    buffered_data.clear();
-                    return BufferResult::Overflow;
+                    if buffered_data.is_empty() {
+                        *buffered_data = live_data;
+                    } else if buffered_data.len() + live_data.len() <= 1000 {
+                        buffered_data.append(&mut live_data);
+                    } else {
+                        warn!("live data buffer overflowed; dropping data");
+                        buffered_data.clear();
+                        return BufferResult::Overflow;
+                    }
+                    BufferResult::Data(None)
                 }
-                BufferResult::Data(None)
             }
         }
     }
@@ -137,7 +136,7 @@ impl DataChannel {
 
 #[cfg(test)]
 mod test {
-    use super::DataChannel;
+    use super::{BufferResult, DataChannel};
     use crate::graphql::types as global;
 
     fn data_info(ts: f64) -> global::DataInfo {
@@ -166,13 +165,13 @@ mod test {
 
         // Add some live data to the channel. Since we're in buffer
         // mode, live data is saved and `None` should be returned.
-        assert_eq!(
+        assert!(matches!(
             chan.process_live_data(
                 vec![data_info(200.0), data_info(210.0),],
                 false
             ),
-            None
-        );
+            BufferResult::Data(None)
+        ));
 
         // Add some more archived data. The array should still be
         // returned.
@@ -205,12 +204,13 @@ mod test {
 
         // Now add live data. It should get passed through.
 
-        assert_eq!(
-            chan.process_live_data(
-                vec![data_info(220.0), data_info(230.0)],
-                false
-            ),
-            Some(vec![data_info(220.0), data_info(230.0)])
-        );
+        match chan
+            .process_live_data(vec![data_info(220.0), data_info(230.0)], false)
+        {
+            BufferResult::Data(Some(data)) => {
+                assert_eq!(data, vec![data_info(220.0), data_info(230.0)])
+            }
+            _ => panic!("unexpected result"),
+        }
     }
 }

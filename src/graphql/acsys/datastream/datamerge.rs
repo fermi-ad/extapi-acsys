@@ -6,6 +6,7 @@ use std::{
     pin::Pin,
     task::{Context, Poll},
 };
+use tracing::warn;
 
 // This stream type merges a stream of archive data with a stream of live
 // data. It has to take several things into consideration:
@@ -131,7 +132,7 @@ where
 
                         match chan.process_live_data(data, this.archived_done) {
                             BufferResult::Data(None) => {}
-                            BufferResult::Data(Some((mut data))) => {
+                            BufferResult::Data(Some(mut data)) => {
                                 if Self::filter_and_update_latest(
                                     &mut data, latest,
                                 ) {
