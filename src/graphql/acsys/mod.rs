@@ -6,8 +6,8 @@ use crate::g_rpc::{
 
 use async_graphql::*;
 use futures::future::{self, Either};
-use futures_util::{Stream, StreamExt, stream};
-use serde::Deserialize;
+use futures_util::{stream, Stream, StreamExt};
+use serde::{Deserialize, Deserializer};
 use std::{collections::HashSet, pin::Pin, sync::Arc};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio_util::io::StreamReader;
@@ -388,11 +388,80 @@ struct TimeBounds {
 
 // Represents a single PV data point (event)
 
+/// Custom deserializer that converts JSON values directly to Vec<f64> or a
+/// scalar, avoiding intermediate Value allocations. This allows us to parse
+/// arrays directly to f64 without heap overhead from Value enum wrappers.
+fn deserialize_archiver_value<'de, D>(
+    deserializer: D,
+) -> Result<ArchiverValue, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use serde::de::{self, Visitor};
+
+    struct ArchiverValueVisitor;
+
+    impl<'de> Visitor<'de> for ArchiverValueVisitor {
+        type Value = ArchiverValue;
+
+        fn expecting(
+            &self, formatter: &mut std::fmt::Formatter,
+        ) -> std::fmt::Result {
+            formatter.write_str("a number or array of numbers")
+        }
+
+        fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(ArchiverValue::Scalar(v as f64))
+        }
+
+        fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(ArchiverValue::Scalar(v as f64))
+        }
+
+        fn visit_f64<E>(self, v: f64) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(ArchiverValue::Scalar(v))
+        }
+
+        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: de::SeqAccess<'de>,
+        {
+            let mut array = Vec::new();
+            while let Some(val) = seq.next_element::<serde_json::Number>()? {
+                if let Some(f) = val.as_f64() {
+                    array.push(f);
+                }
+            }
+            Ok(ArchiverValue::Array(array))
+        }
+    }
+
+    deserializer.deserialize_any(ArchiverValueVisitor)
+}
+
+/// Optimized representation of archiver event values.
+/// Stores either a scalar f64 or an array of f64s, avoiding Value enum overhead.
+#[derive(Debug)]
+enum ArchiverValue {
+    Scalar(f64),
+    Array(Vec<f64>),
+}
+
 #[derive(Debug, Deserialize)]
 struct ArchiverEvent {
     pub secs: i64,
     pub nanos: u32,
-    pub val: serde_json::Value,
+    #[serde(deserialize_with = "deserialize_archiver_value")]
+    pub val: ArchiverValue,
 }
 
 #[derive(Default)]
@@ -416,26 +485,19 @@ fn to_iso(timestamp_f64: f64) -> String {
     datetime_utc.format("%Y-%m-%dT%H:%M:%S.%fZ").to_string()
 }
 
-fn transform_event(event: &ArchiverEvent) -> global::DataReply {
+fn transform_event(event: ArchiverEvent) -> global::DataReply {
     let timestamp = event.secs as f64 + (event.nanos as f64 / 1_000_000_000.0);
-    let result = match &event.val {
-        serde_json::Value::Array(arr) => {
+    let result = match event.val {
+        ArchiverValue::Array(arr) => {
             global::DataType::ScalarArray(global::ScalarArray {
-                scalar_array_value: arr
-                    .iter()
-                    .filter_map(|v| match v {
-                        serde_json::Value::Number(n) => n.as_f64(),
-                        _ => None,
-                    })
-                    .collect(),
+                scalar_array_value: arr,
             })
         }
-        serde_json::Value::Number(n) => {
+        ArchiverValue::Scalar(scalar) => {
             global::DataType::Scalar(global::Scalar {
-                scalar_value: n.as_f64().unwrap_or(0.0),
+                scalar_value: scalar,
             })
         }
-        _ => global::DataType::Scalar(global::Scalar { scalar_value: 0.0 }),
     };
 
     global::DataReply {
@@ -612,7 +674,7 @@ impl<'ctx> ACSysSubscriptions {
                     Ok(Some(bytes)) => {
                         match serde_json::from_slice::<ArchiverEvent>(&bytes) {
                             Ok(item) => {
-                                Some((transform_event(&item), (r, true)))
+                                Some((transform_event(item), (r, true)))
                             }
                             Err(e) => {
                                 error!(
