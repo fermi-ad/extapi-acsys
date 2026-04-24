@@ -34,6 +34,7 @@ where
 // This uses a closure to create a type-erased stream that composes
 // different stream implementations without boxing.
 
+#[inline(never)]
 pub fn merge<SA, SL>(
     archived: SA, live: SL,
 ) -> impl Stream<Item = global::DataReply> + Send + 'static + Unpin

@@ -31,6 +31,7 @@ where
     }
 }
 
+#[inline(never)]
 pub fn as_archive_stream<S>(
     s: S,
 ) -> impl Stream<Item = global::DataReply> + Send + 'static + Unpin

@@ -29,6 +29,7 @@ impl<const MAX_PAYLOAD: usize, S> GroupScalars<MAX_PAYLOAD, S>
 where
     S: Stream<Item = global::DataReply> + Send + 'static + Unpin,
 {
+    #[inline(never)]
     pub fn new(archived: S) -> Self {
         GroupScalars {
             archived,

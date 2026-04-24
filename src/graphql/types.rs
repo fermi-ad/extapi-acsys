@@ -188,6 +188,7 @@ pub struct DevValue {
 // `proto::Data` type.
 
 impl From<DevValue> for device::Value {
+    #[inline(never)]
     fn from(val: DevValue) -> Self {
         match val {
             // TODO: Need to make an integer a valid device type.
@@ -275,6 +276,7 @@ impl From<DevValue> for device::Value {
 impl TryFrom<device::Value> for DataType {
     type Error = std::io::Error;
 
+    #[inline(never)]
     fn try_from(val: device::Value) -> Result<Self, Self::Error> {
         match val.value {
             Some(device::value::Value::Scalar(v)) => {

@@ -25,6 +25,7 @@ where
     }
 }
 
+#[inline(never)]
 pub fn end_stream_at(
     s: impl Stream<Item = global::DataReply> + Send + 'static + Unpin,
     total: i32, end_date: Option<f64>,
