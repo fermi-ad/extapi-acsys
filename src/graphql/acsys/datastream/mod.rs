@@ -4,7 +4,6 @@ mod archivestream;
 mod datachannel;
 mod datamerge;
 mod endondate;
-mod filterdupes;
 mod groupscalars;
 
 pub use archivestream::as_archive_stream;
