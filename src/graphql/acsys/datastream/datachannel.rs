@@ -7,6 +7,11 @@
 use super::global;
 use tracing::warn;
 
+pub enum BufferResult {
+    Overflow,
+    Data(Option<Vec<global::DataInfo>>),
+}
+
 // Implements the merge logic for a data channel. When the channel is
 // in buffering mode, it adds any new live data to its buffer. In feed
 // through mode, all live data is simply forwarded on.
@@ -48,42 +53,45 @@ impl DataChannel {
 
     pub fn process_live_data(
         &mut self, mut live_data: Vec<global::DataInfo>, archive_done: bool,
-    ) -> Option<Vec<global::DataInfo>> {
-        match self {
+    ) -> BufferResult {
+        // If there's no live data to process, just return None. This should
+        // never happen. If it does, we'll log the incident but won't update
+        // the channel's state.
+
+        if live_data.is_empty() {
+            warn!("received empty live data packet");
+            return BufferResult::Data(None);
+        }
+
+        match (self, archive_done) {
             // In feedthrough mode, we simply pass on the live data.
-            Self::FeedThrough => {
-                if live_data.is_empty() {
-                    None
-                } else {
-                    Some(live_data)
-                }
-            }
+            (Self::FeedThrough, _) => BufferResult::Data(Some(live_data)),
 
             // If in buffering mode, we append the data and return
             // `None` so the caller knows there's nothing to emit yet.
-            Self::Buffering { buffered_data } => {
-                if archive_done {
-                    let mut result = std::mem::take(buffered_data);
+            (Self::Buffering { buffered_data }, true) => {
+                let mut result = std::mem::take(buffered_data);
 
-                    *self = Self::FeedThrough;
-                    if result.is_empty() {
-                        if live_data.is_empty() {
-                            None
-                        } else {
-                            Some(live_data)
-                        }
-                    } else {
-                        result.append(&mut live_data);
-                        Some(result)
-                    }
+                *self = Self::FeedThrough;
+                BufferResult::Data(if result.is_empty() {
+                    Some(live_data)
                 } else {
-                    if buffered_data.is_empty() {
-                        *buffered_data = live_data;
-                    } else {
-                        buffered_data.append(&mut live_data);
-                    }
-                    None
+                    result.append(&mut live_data);
+                    Some(result)
+                })
+            }
+
+            (Self::Buffering { buffered_data }, false) => {
+                if buffered_data.is_empty() {
+                    *buffered_data = live_data;
+                } else if buffered_data.len() + live_data.len() <= 1000 {
+                    buffered_data.append(&mut live_data);
+                } else {
+                    warn!("live data buffer overflowed; dropping data");
+                    buffered_data.clear();
+                    return BufferResult::Overflow;
                 }
+                BufferResult::Data(None)
             }
         }
     }

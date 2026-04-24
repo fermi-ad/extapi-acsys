@@ -1,4 +1,4 @@
-use super::{DataChannel, global};
+use super::{datachannel::BufferResult, global, DataChannel};
 use futures::Stream;
 use futures_util::StreamExt;
 use std::{
@@ -121,29 +121,42 @@ where
 
             if !this.live_done {
                 match this.live.poll_next_unpin(ctxt) {
-                    Poll::Ready(Some(global::DataReply { ref_id, data })) => {
+                    Poll::Ready(Some(global::DataReply { ref_id, data }))
+                        if !data.is_empty() =>
+                    {
                         let (chan, latest) = this
                             .pending
                             .entry(ref_id)
                             .or_insert_with(|| (DataChannel::new(), 0.0));
 
-                        if let Some(mut data) =
-                            chan.process_live_data(data, this.archived_done)
-                        {
-                            if Self::filter_and_update_latest(&mut data, latest)
-                            {
-                                return Poll::Ready(Some(global::DataReply {
-                                    ref_id,
-                                    data,
-                                }));
+                        match chan.process_live_data(data, this.archived_done) {
+                            BufferResult::Data(None) => {}
+                            BufferResult::Data(Some((mut data))) => {
+                                if Self::filter_and_update_latest(
+                                    &mut data, latest,
+                                ) {
+                                    return Poll::Ready(Some(
+                                        global::DataReply { ref_id, data },
+                                    ));
+                                }
+                            }
+                            BufferResult::Overflow => {
+                                warn!("buffer overflow for ref_id {ref_id}");
+                                return Poll::Ready(None);
                             }
                         }
                         continue;
+                    }
+                    Poll::Ready(Some(global::DataReply { ref_id, .. })) => {
+                        warn!("received empty live data packet for ref_id {ref_id}");
                     }
                     Poll::Ready(None) => this.live_done = true,
                     Poll::Pending => {}
                 }
             }
+
+            // Both, archive and live stream, are done. Flush any pending data
+            // in the channels before shutting down the stream.
 
             if this.archived_done && this.live_done {
                 if let Some(&ref_id) = this.pending.keys().next() {
