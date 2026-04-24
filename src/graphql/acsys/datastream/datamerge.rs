@@ -59,9 +59,10 @@ where
         }
     }
 
-    /// Filters out data points that have already been seen based on the `latest` timestamp
-    /// and updates `latest` with the newest timestamp in the batch. Returns true if
-    /// there is data left to emit.
+    /// Filters out data points that have already been seen based on the
+    /// `latest` timestamp and updates `latest` with the newest timestamp in
+    /// the batch. Returns true if there is data left to emit.
+
     fn filter_and_update_latest(
         data: &mut Vec<global::DataInfo>, latest: &mut f64,
     ) -> bool {
@@ -70,10 +71,15 @@ where
         }
 
         let start = data.partition_point(|info| info.timestamp <= *latest);
+
+        // Remember the latest timestamp we've seen.
+
         *latest = (*latest).max(data.last().unwrap().timestamp);
 
+        // Throw away any data points we've already seen.
+
         if start > 0 {
-            data.drain(..start);
+            data.drain(0..start);
         }
 
         !data.is_empty()

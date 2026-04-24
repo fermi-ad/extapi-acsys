@@ -57,7 +57,7 @@ where
 
                     // Remove any readings that have already been sent.
 
-                    v.data.drain(start_index..);
+                    v.data.truncate(start_index);
 
                     // If the data is empty, then we need to remove the
                     // ref ID from our set to mark that device as complete.

@@ -140,9 +140,12 @@ where
                             std::cmp::min(space, payload.data.len());
 
                         if amount_to_move > 0 {
-                            pending
-                                .data
-                                .extend(payload.data.drain(..amount_to_move));
+                            pending.data.reserve(amount_to_move);
+                            pending.data.extend_from_slice(
+                                &payload.data[..amount_to_move],
+                            );
+                            // Remove the transferred items from payload
+                            payload.data.drain(..amount_to_move);
                         }
 
                         // If the payload data isn't empty, it means
