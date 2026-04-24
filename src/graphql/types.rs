@@ -285,51 +285,15 @@ impl TryFrom<device::Value> for DataType {
                     scalar_array_value: v.value,
                 }))
             }
-            Some(device::value::Value::Raw(v)) => Ok(DataType::Raw(Raw {
-                raw_value: v.clone(),
-            })),
+            Some(device::value::Value::Raw(v)) => {
+                Ok(DataType::Raw(Raw { raw_value: v }))
+            }
             Some(device::value::Value::Text(v)) => {
                 Ok(DataType::Text(Text { text_value: v }))
             }
             Some(device::value::Value::TextArr(v)) => {
                 Ok(DataType::TextArray(TextArray {
-                    text_array_value: v.value.clone(),
-                }))
-            }
-            Some(_) => Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "received a device type we don't yet translate",
-            )),
-            _ => Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "received a device type that is not recognized",
-            )),
-        }
-    }
-}
-
-impl TryFrom<&device::Value> for DataType {
-    type Error = std::io::Error;
-
-    fn try_from(val: &device::Value) -> Result<Self, Self::Error> {
-        match &val.value {
-            Some(device::value::Value::Scalar(v)) => {
-                Ok(DataType::Scalar(Scalar { scalar_value: *v }))
-            }
-            Some(device::value::Value::ScalarArr(v)) => {
-                Ok(DataType::ScalarArray(ScalarArray {
-                    scalar_array_value: v.value.clone(),
-                }))
-            }
-            Some(device::value::Value::Raw(v)) => Ok(DataType::Raw(Raw {
-                raw_value: v.clone(),
-            })),
-            Some(device::value::Value::Text(v)) => Ok(DataType::Text(Text {
-                text_value: v.clone(),
-            })),
-            Some(device::value::Value::TextArr(v)) => {
-                Ok(DataType::TextArray(TextArray {
-                    text_array_value: v.value.clone(),
+                    text_array_value: v.value,
                 }))
             }
             Some(_) => Err(std::io::Error::new(
