@@ -18,8 +18,9 @@ pub mod proto {
         pub mod aclk {
             include!("generated/services.clock_event.rs");
         }
+	#[cfg(feature = "alarms")]
         pub mod alarms {
-            include!("generated/services.alarm_commands.v1.rs");
+            include!("generated/services.alarm_commands.rs");
             include!("generated/services.alarm_groups.rs");
             include!("generated/services.alarm_timers.rs");
             include!("generated/services.alarm_user_layouts.rs");
@@ -33,7 +34,9 @@ pub mod proto {
     }
 }
 
+#[cfg(feature = "alarms")]
 pub mod alarms_db;
+#[cfg(feature = "alarms")]
 pub mod alarms_svc;
 pub mod clock;
 pub mod devdb;

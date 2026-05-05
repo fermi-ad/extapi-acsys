@@ -4,6 +4,8 @@ use tracing_subscriber::{
 };
 mod g_rpc;
 mod graphql;
+
+#[cfg(feature = "alarms")]
 mod pubsub;
 
 #[tokio::main]

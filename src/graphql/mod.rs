@@ -24,6 +24,7 @@ use tracing::{info, instrument};
 use types::AuthInfo;
 
 mod acsys;
+#[cfg(feature = "alarms")]
 mod alarms;
 mod bbm;
 mod devdb;
@@ -114,6 +115,7 @@ async fn create_acsys_router() -> Router {
         .route_service(S_ENDPOINT, GraphQLSubscription::new(schema))
 }
 
+#[cfg(feature = "alarms")]
 fn create_alarms_router() -> Router {
     const Q_ENDPOINT: &str = "/alarms";
     const S_ENDPOINT: &str = "/alarms/s";
@@ -260,10 +262,15 @@ fn create_wscan_router() -> Router {
 
 // Creates the web site for the various GraphQL APIs.
 async fn create_site() -> Router {
-    Router::new()
+    let router = Router::new()
         .route("/", get(base_page))
-        .merge(create_acsys_router().await)
-        .merge(create_alarms_router())
+        .merge(create_acsys_router().await);
+
+    #[cfg(feature = "alarms")]
+    let router = router
+        .merge(create_alarms_router());
+
+    router
         .merge(create_bbm_router())
         .merge(create_devdb_router())
         .merge(create_faas_router())

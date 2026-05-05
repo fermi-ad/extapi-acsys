@@ -3,7 +3,7 @@ use super::proto::services::devdb::{
     DeviceList, PlotConfigResult, PlotConfigResults, PlotConfigSpecification,
     PlotSelector,
 };
-use crate::env_var;
+use rust_env_var_lib::env_var;
 
 const DEVDB_HOST: &str = "DEVDB_GRPC_HOST";
 
