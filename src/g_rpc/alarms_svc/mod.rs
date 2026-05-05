@@ -5,7 +5,7 @@
 use crate::g_rpc::{
     connection_utils::{ConnectionAdapter, ConnectionPort},
     proto::services::alarms::{
-        AcknowledgeAlarmRequest, BypassAlarmRequest, SnoozeAlarmRequest,
+        AcknowledgeRequest, BypassRequest, SnoozeRequest,
         alarm_commands_client::AlarmCommandsClient,
     },
 };
@@ -30,7 +30,7 @@ static ALARMS_SERVICE_CLIENT: LazyLock<
 pub async fn acknowledge_alarms(
     devices: Vec<String>, updated_by: String,
 ) -> Result<(), Status> {
-    let request = AcknowledgeAlarmRequest {
+    let request = AcknowledgeRequest {
         devices,
         user: updated_by,
     };
@@ -44,7 +44,7 @@ pub async fn acknowledge_alarms(
 pub async fn bypass_alarms(
     devices: Vec<String>, updated_by: String,
 ) -> Result<(), Status> {
-    let request = BypassAlarmRequest {
+    let request = BypassRequest {
         devices,
         user: updated_by,
     };
@@ -58,7 +58,7 @@ pub async fn bypass_alarms(
 pub async fn snooze_alarms(
     devices: Vec<String>, updated_by: String, wake: DateTime<Utc>,
 ) -> Result<(), Status> {
-    let request = SnoozeAlarmRequest {
+    let request = SnoozeRequest {
         devices,
         user: updated_by,
         wake: Some(Timestamp {
