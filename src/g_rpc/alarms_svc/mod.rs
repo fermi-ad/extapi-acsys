@@ -35,7 +35,7 @@ pub async fn acknowledge_alarms(
         user: updated_by,
     };
     let do_ack = |mut client: AlarmsServiceConnectionAdapter| async move {
-        client.conn.acknowledge_alarm(request).await
+        client.conn.acknowledge(request).await
     };
     ALARMS_SERVICE_CLIENT.run_with_client(do_ack).await
 }
@@ -49,7 +49,7 @@ pub async fn bypass_alarms(
         user: updated_by,
     };
     let do_bypass = |mut client: AlarmsServiceConnectionAdapter| async move {
-        client.conn.bypass_alarm(request).await
+        client.conn.bypass(request).await
     };
     ALARMS_SERVICE_CLIENT.run_with_client(do_bypass).await
 }
@@ -67,7 +67,7 @@ pub async fn snooze_alarms(
         }),
     };
     let do_snooze = |mut client: AlarmsServiceConnectionAdapter| async move {
-        client.conn.snooze_alarm(request).await
+        client.conn.snooze(request).await
     };
     ALARMS_SERVICE_CLIENT.run_with_client(do_snooze).await
 }
