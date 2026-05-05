@@ -1,6 +1,6 @@
 [package]
 name = "extapi-acsys"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 
 [build-dependencies]
@@ -57,6 +57,6 @@ lto = false
 enum_variant_names = "allow"
 
 [features]
-default = ["alarms"]
+default = []
 
 alarms = ["dep:rdkafka"]
