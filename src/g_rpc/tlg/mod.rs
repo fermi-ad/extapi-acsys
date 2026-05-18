@@ -1,14 +1,6 @@
 //! Timeline Generator gRPC Module
 
-pub mod proto {
-    pub mod services {
-        pub mod tlg_placement {
-            include!("../generated/services.tlg_placement.rs");
-        }
-    }
-}
-
-use proto::services::tlg_placement::{
+use super::proto::services::tlg_placement::{
     TlgDevices, TlgPlacementResponse,
     tlg_placement_mutation_service_client::TlgPlacementMutationServiceClient,
     tlg_placement_service_client::TlgPlacementServiceClient,

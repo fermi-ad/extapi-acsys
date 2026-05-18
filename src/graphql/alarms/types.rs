@@ -3,15 +3,53 @@
 //! Describes GraphQL-friendly types to be used in the GraphQL Alarms Module.
 
 use crate::{
-    g_rpc::proto::services::alarms::{
-        AlarmGroup as ProtoAlarmGroup,
-        AlarmGroupMetadatum as ProtoGroupMetadatum,
-        AlarmTimer as ProtoAlarmTimer, UserLayout as ProtoUserLayout,
+    g_rpc::proto::{
+        common::alarm::{
+            Status,
+            status::{Severity, Source, State},
+        },
+        services::alarms::{
+            AlarmGroup as ProtoAlarmGroup,
+            AlarmGroupMetadatum as ProtoGroupMetadatum,
+            AlarmTimer as ProtoAlarmTimer, UserLayout as ProtoUserLayout,
+        },
     },
     graphql::alarms::utils,
 };
 use async_graphql::SimpleObject;
 use chrono::{DateTime, Utc};
+
+#[derive(Clone, Debug, PartialEq, SimpleObject)]
+pub struct Alarm {
+    pub device: String,
+    pub source: Source,
+    pub state: State,
+    pub severity: Severity,
+    pub acknowledgeable: bool,
+    pub time: Option<DateTime<Utc>>,
+    pub epics_type: String,
+    pub user: String,
+    pub wake: Option<DateTime<Utc>>,
+}
+
+impl From<Status> for Alarm {
+    fn from(value: Status) -> Self {
+        let source = value.source();
+        let state = value.state();
+        let severity = value.severity();
+        Self {
+            device: value.device,
+            source,
+            state,
+            severity,
+            acknowledgeable: value.acknowledgeable,
+            time: utils::timestamp_to_datetime(value.time),
+            epics_type: value.epics_type,
+            user: value.user,
+            wake: utils::timestamp_to_datetime(value.wake),
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, SimpleObject)]
 pub struct AlarmGroup {
@@ -92,6 +130,33 @@ mod test {
     use super::*;
     use crate::g_rpc::proto::services::alarms::TimerType;
     use prost_types::Timestamp;
+
+    #[test]
+    fn alarm_from_proto_to_gql() {
+        let status = Status {
+            device: "M:BEAM".to_string(),
+            source: Source::Analog as i32,
+            state: State::Ok as i32,
+            severity: Severity::Unknown as i32,
+            acknowledgeable: false,
+            time: utils::datetime_to_timestamp(Some(Utc::now())),
+            epics_type: String::new(),
+            user: "test user".to_string(),
+            wake: None,
+        };
+
+        let output = Alarm::from(status.clone());
+
+        assert_eq!(status.device, output.device);
+        assert_eq!(status.source(), output.source);
+        assert_eq!(status.state(), output.state);
+        assert_eq!(status.severity(), output.severity);
+        assert_eq!(status.acknowledgeable, output.acknowledgeable);
+        assert_eq!(status.time, utils::datetime_to_timestamp(output.time));
+        assert_eq!(status.epics_type, output.epics_type);
+        assert_eq!(status.user, output.user);
+        assert_eq!(status.wake, utils::datetime_to_timestamp(output.wake));
+    }
 
     #[test]
     fn group_from_proto_to_gql() {

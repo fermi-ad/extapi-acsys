@@ -6,26 +6,32 @@
 
 pub mod proto {
     pub mod common {
+        pub mod alarm {
+            tonic::include_proto!("common.alarm");
+        }
         pub mod status {
-            include!("generated/common.status.rs");
+            tonic::include_proto!("common.status");
         }
         pub mod device {
-            include!("generated/common.device.rs");
+            tonic::include_proto!("common.device");
         }
     }
 
     pub mod services {
         pub mod aclk {
-            include!("generated/services.clock_event.rs");
+            tonic::include_proto!("services.clock_event");
         }
         pub mod alarms {
-            include!("generated/services.alarm_commands.v1.rs");
-            include!("generated/services.alarm_groups.rs");
-            include!("generated/services.alarm_timers.rs");
-            include!("generated/services.alarm_user_layouts.rs");
+            tonic::include_proto!("services.alarm_commands");
+            tonic::include_proto!("services.alarm_groups");
+            tonic::include_proto!("services.alarm_timers");
+            tonic::include_proto!("services.alarm_user_layouts");
         }
         pub mod daq {
-            include!("generated/services.daq.rs");
+            tonic::include_proto!("services.daq");
+        }
+        pub mod tlg_placement {
+            tonic::include_proto!("services.tlg_placement");
         }
     }
 }
