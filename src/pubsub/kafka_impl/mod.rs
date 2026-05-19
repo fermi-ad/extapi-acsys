@@ -30,23 +30,15 @@
 //! This prevents unbounded growth in long-running processes that may subscribe to many topics over
 //! time.
 
-use super::{Message, PubSubError, Snapshot, Subscriber};
-use rdkafka::{
-    ClientConfig, Message as RdMessage,
-    consumer::{Consumer, StreamConsumer},
-    error::KafkaError,
-    types::RDKafkaErrorCode,
-};
-use rust_env_var_lib::env_var;
+use super::{Message, PubSubError, Subscriber};
+use rdkafka::error::KafkaError;
 use std::{collections::HashMap, fmt::Debug, sync::LazyLock, time::Duration};
 use stream::KafkaStream;
 use tokio::{
     sync::RwLock,
     time::{Instant, sleep},
 };
-use tokio_stream::{StreamExt, wrappers::BroadcastStream};
-use tracing::warn;
-use uuid::Uuid;
+use tokio_stream::wrappers::BroadcastStream;
 
 mod stream;
 
@@ -55,9 +47,8 @@ mod testing_utils;
 #[cfg(test)]
 mod tests;
 
-/// With [`Snapshot`] available for use, [`KafkaSubscriber`] can be a lightweight wrapper around a Kafka consumer. Each instance of [`KafkaSubscriber`]
-/// will share a single underlying consumer for a given host and topic, conserving system resources. New connections will pick up from the end of the stream,
-/// and any need to grab historical records can be handled by the [`KafkaSnapshot`] implementation of the [`Snapshot`] trait.
+/// [`KafkaSubscriber`] is a lightweight wrapper around a Kafka consumer. Each instance of [`KafkaSubscriber`]
+/// will share a single underlying consumer for a given host and topic, conserving system resources. New connections will pick up from the end of the stream.
 /// As such, we build a static map of the consumers to be shared by all instances of [`KafkaSubscriber`] that get requested for the same host and topic.
 ///
 /// Entries are evicted by a background reaper once they have had 0 receivers for a grace period.
@@ -80,92 +71,6 @@ struct StreamEntry {
 impl From<KafkaError> for PubSubError {
     fn from(value: KafkaError) -> Self {
         PubSubError::caused_by(value)
-    }
-}
-
-/// Implementation of the [`Snapshot`] trait for Kafka connections.
-#[derive(Debug)]
-pub struct KafkaSnapshot;
-impl KafkaSnapshot {
-    fn configure_consumer(
-        host: &str, topic: &str,
-    ) -> Result<StreamConsumer, PubSubError> {
-        let consumer = ClientConfig::new()
-            .set("bootstrap.servers", host)
-            .set("group.id", Uuid::new_v4().as_hyphenated().to_string())
-            .set("auto.offset.reset", "earliest")
-            .create::<StreamConsumer>()?;
-        consumer.subscribe(&[topic])?;
-        Ok(consumer)
-    }
-
-    fn determine_max_offsets(
-        consumer: &StreamConsumer, topic: &str,
-    ) -> Result<HashMap<i32, i64>, KafkaError> {
-        let timeout = get_kafka_timeout_val();
-        let metadata = consumer.fetch_metadata(Some(topic), timeout)?;
-        match metadata.topics().first() {
-            Some(topic_metadata) => {
-                let mut offsets = HashMap::new();
-                for partition in topic_metadata.partitions() {
-                    let (_, high) = consumer.fetch_watermarks(
-                        topic,
-                        partition.id(),
-                        timeout,
-                    )?;
-                    if high > 0 {
-                        // The "high watermark" is the next offset to be assigned. Subtracting 1 ensures we
-                        // return the actual max offset for messages in the topic currently.
-                        offsets.insert(partition.id(), high - 1);
-                    }
-                }
-                Ok(offsets)
-            }
-            None => Err(KafkaError::MetadataFetch(
-                RDKafkaErrorCode::InvalidPartitions,
-            )),
-        }
-    }
-}
-#[tonic::async_trait]
-impl Snapshot for KafkaSnapshot {
-    async fn get(
-        host: String, topic: String,
-    ) -> Result<Vec<Message>, PubSubError> {
-        let consumer = Self::configure_consumer(&host, &topic)?;
-        let mut offsets = Self::determine_max_offsets(&consumer, &topic)?;
-
-        let stream = consumer.stream().timeout(Duration::from_secs(5));
-        tokio::pin!(stream);
-        let mut data: Vec<Message> = Vec::new();
-        while !offsets.is_empty() {
-            let message_result = stream.next().await;
-            match message_result {
-                Some(Ok(msg_res)) => {
-                    let msg = msg_res?;
-                    let partition = msg.partition();
-                    let offset = msg.offset();
-                    offsets.retain(|k, v| *k != partition || *v > offset);
-
-                    match convert_to_message(msg) {
-                        Some(message) => data.push(message),
-                        None => warn!(
-                            "Received Kafka message with no payload on topic {}",
-                            topic
-                        ),
-                    }
-                }
-                Some(Err(e)) => return Err(PubSubError::caused_by(e)),
-                None => {
-                    return Err(PubSubError::caused_by(
-                        KafkaError::MessageConsumption(
-                            RDKafkaErrorCode::PartitionEOF,
-                        ),
-                    ));
-                }
-            }
-        }
-        Ok(data)
     }
 }
 
@@ -205,31 +110,6 @@ impl Subscriber for KafkaSubscriber {
         );
         Ok(stream)
     }
-}
-
-fn convert_to_message(incoming: impl RdMessage) -> Option<Message> {
-    match incoming.payload() {
-        Some(value_bytes) => {
-            let value = String::from_utf8_lossy(value_bytes).to_string();
-
-            let key = incoming
-                .key()
-                .map(|bytes| String::from_utf8_lossy(bytes).to_string());
-            Some(Message { key, value })
-        }
-        None => {
-            warn!(
-                "Received Kafka message with no payload on topic {}",
-                incoming.topic()
-            );
-            None
-        }
-    }
-}
-
-fn get_kafka_timeout_val() -> Duration {
-    let secs = env_var::get("KAFKA_CONNECTION_SECONDS").or(1);
-    Duration::from_secs(secs)
 }
 
 async fn reap_unused_streams() {

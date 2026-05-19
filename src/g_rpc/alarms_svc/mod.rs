@@ -4,16 +4,20 @@
 
 use crate::g_rpc::{
     connection_utils::{ConnectionAdapter, ConnectionPort},
-    proto::services::alarms::{
-        AcknowledgeAlarmRequest, BypassAlarmRequest, SnoozeAlarmRequest,
-        alarm_commands_client::AlarmCommandsClient,
+    proto::{
+        common::alarm,
+        services::alarms::{
+            AcknowledgeRequest, ActivateRequest, BypassRequest,
+            SnapshotResponse, SnoozeRequest,
+            alarm_commands_client::AlarmCommandsClient,
+        },
     },
 };
 use chrono::{DateTime, Timelike, Utc};
 use prost_types::Timestamp;
 use std::sync::LazyLock;
 use tonic::{
-    Status, async_trait,
+    Response, Status, async_trait,
     transport::{Channel, Error},
 };
 
@@ -30,35 +34,57 @@ static ALARMS_SERVICE_CLIENT: LazyLock<
 pub async fn acknowledge_alarms(
     devices: Vec<String>, updated_by: String,
 ) -> Result<(), Status> {
-    let request = AcknowledgeAlarmRequest {
+    let request = AcknowledgeRequest {
         devices,
         user: updated_by,
     };
     let do_ack = |mut client: AlarmsServiceConnectionAdapter| async move {
-        client.conn.acknowledge_alarm(request).await
+        client.conn.acknowledge(request).await
     };
     ALARMS_SERVICE_CLIENT.run_with_client(do_ack).await
+}
+
+/// Makes a request to the alarms gRPC service to activate (unbypass) the specified alarms.
+pub async fn activate_alarms(
+    devices: Vec<String>, updated_by: String,
+) -> Result<(), Status> {
+    let request = ActivateRequest {
+        devices,
+        user: updated_by,
+    };
+    let do_activate = |mut client: AlarmsServiceConnectionAdapter| async move {
+        client.conn.activate(request).await
+    };
+    ALARMS_SERVICE_CLIENT.run_with_client(do_activate).await
 }
 
 /// Makes a request to the alarms gRPC service to bypass the specified alarms.
 pub async fn bypass_alarms(
     devices: Vec<String>, updated_by: String,
 ) -> Result<(), Status> {
-    let request = BypassAlarmRequest {
+    let request = BypassRequest {
         devices,
         user: updated_by,
     };
     let do_bypass = |mut client: AlarmsServiceConnectionAdapter| async move {
-        client.conn.bypass_alarm(request).await
+        client.conn.bypass(request).await
     };
     ALARMS_SERVICE_CLIENT.run_with_client(do_bypass).await
+}
+
+/// Makes a request to the alarms gRPC service to get a snapshot of the non-Ok alarms.
+pub async fn get_snapshot() -> Result<Vec<alarm::Status>, Status> {
+    let response = ALARMS_SERVICE_CLIENT
+        .run_with_client(do_snapshot_request)
+        .await?;
+    Ok(response.snapshot)
 }
 
 /// Makes a request to the alarms gRPC service to snooze the specified alarms until the provided wake time.
 pub async fn snooze_alarms(
     devices: Vec<String>, updated_by: String, wake: DateTime<Utc>,
 ) -> Result<(), Status> {
-    let request = SnoozeAlarmRequest {
+    let request = SnoozeRequest {
         devices,
         user: updated_by,
         wake: Some(Timestamp {
@@ -67,9 +93,15 @@ pub async fn snooze_alarms(
         }),
     };
     let do_snooze = |mut client: AlarmsServiceConnectionAdapter| async move {
-        client.conn.snooze_alarm(request).await
+        client.conn.snooze(request).await
     };
     ALARMS_SERVICE_CLIENT.run_with_client(do_snooze).await
+}
+
+async fn do_snapshot_request(
+    mut client: AlarmsServiceConnectionAdapter,
+) -> Result<Response<SnapshotResponse>, Status> {
+    client.conn.get_snapshot(()).await
 }
 
 /// An implementation of [`ConnectionAdapter`] to hold the [`AlarmCommandsClient`] reference.

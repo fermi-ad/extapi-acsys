@@ -4,10 +4,8 @@
 
 use crate::{
     g_rpc::{alarms_db, alarms_svc, proto::services::alarms},
-    pubsub::{
-        Message, Snapshot, Subscriber,
-        kafka_impl::{KafkaSnapshot, KafkaSubscriber},
-    },
+    graphql::alarms::types::Alarm,
+    pubsub::{Message, Subscriber, kafka_impl::KafkaSubscriber},
 };
 use async_graphql::{Error, Object, Subscription};
 use chrono::{DateTime, Utc};
@@ -34,6 +32,16 @@ impl AlarmsMutations {
         {
             Ok(_) => Ok(devices),
             Err(e) => handle_error(e, "acknowledging alarms"),
+        }
+    }
+
+    /// A request to activate (unbypass) the specified alarms.
+    async fn activate_alarms(
+        &self, devices: Vec<String>, updated_by: String,
+    ) -> Result<Vec<String>, Error> {
+        match alarms_svc::activate_alarms(devices.clone(), updated_by).await {
+            Ok(_) => Ok(devices),
+            Err(e) => handle_error(e, "activating alarms"),
         }
     }
 
@@ -176,10 +184,11 @@ impl AlarmsQueries {
     }
 
     /// Reads a snapshot of the alarms topic.
-    async fn alarms_snapshot(&self) -> Result<Vec<Message>, Error> {
-        KafkaSnapshot::get(get_host(), get_topic())
+    async fn alarms_snapshot(&self) -> Result<Vec<Alarm>, Error> {
+        alarms_svc::get_snapshot()
             .await
-            .map_err(|e| Error::new(format!("{e}")))
+            .map(|statuses| statuses.into_iter().map(Alarm::from).collect())
+            .or_else(|e| handle_error(e, "getting alarm snapshot"))
     }
 
     /// Reads all alarms timers of the specified [`TimerType`](crate::g_rpc::proto::services::alarms::TimerType) for the given user.
@@ -271,6 +280,19 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn activate_alarms_returns_internal_err_on_bad_connection() {
+        test_query_returns_err(
+            r#"
+            mutation Alarms {
+                activateAlarms(devices: ["G:AMANDA"], updatedBy: "test user")
+            }
+        "#,
+            "Error activating alarms. See server logs for details. (Error ID: ",
+        )
+        .await;
+    }
+
+    #[tokio::test]
     async fn bypass_alarms_returns_internal_err_on_bad_connection() {
         test_query_returns_err(
             r#"
@@ -321,12 +343,19 @@ mod tests {
             r#"
             query Alarms {
                 alarmsSnapshot {
-                  key,
-                  value
+                  acknowledgeable,
+                  device,
+                  epicsType,
+                  severity,
+                  source,
+                  state,
+                  time,
+                  user,
+                  wake,
                 }
             }
         "#,
-            "An error occurred while performing a pub/sub operation (Error ID: ",
+            "Error getting alarm snapshot. See server logs for details. (Error ID: ",
         )
         .await;
     }

@@ -1,4 +1,4 @@
-use crate::g_rpc::tlg::proto::services::tlg_placement as gRPC;
+use crate::g_rpc::proto::services::tlg_placement as gRPC;
 use async_graphql::*;
 
 #[derive(InputObject)]
@@ -27,9 +27,9 @@ pub struct TlgDevices {
 
 #[allow(clippy::from_over_into)]
 impl Into<gRPC::TlgDevices> for TlgDevices {
-    fn into(mut self) -> gRPC::TlgDevices {
+    fn into(self) -> gRPC::TlgDevices {
         gRPC::TlgDevices {
-            devices: self.devices.drain(..).map(|e| e.into()).collect(),
+            devices: self.devices.into_iter().map(TlgDevice::into).collect(),
         }
     }
 }

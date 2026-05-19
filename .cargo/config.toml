@@ -7,7 +7,6 @@ DEVDB_GRPC_HOST = "test host"
 DPM_GRPC_HOST = "test host"
 GRAPHQL_PORT = "42"
 GRPC_ALARMS_DB_HOST = "test host"
-KAFKA_CONNECTION_SECONDS = "1"
 SCANNER_GRPC_HOST = "test host"
 TLG_GRPC_HOST = "test host"
 

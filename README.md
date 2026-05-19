@@ -35,7 +35,6 @@ The following variables exist for configuring the service at runtime:
 - `DPM_GRPC_HOST` -> Hostname for the DPM gRPC service
 - `GRAPHQL_PORT` -> Port for clients to connect via GraphQL to this service
 - `GRPC_ALARMS_DB_HOST` -> Hostname for the Alarms DB Access gRPC service
-- `KAFKA_CONNECTION_SECONDS` -> Kafka operation timeout (seconds) used by the pub/sub layer (connect/send/etc.). This also affects test runs via [`.cargo/config.toml`](.cargo/config.toml).
 - `RUST_LOG` -> The default logging environment variable from Rust. Can be configured to log specific crates/modules at different levels from the global default.
 - `SCANNER_GRPC_HOST` -> Hostname for the wire scanner gRPC service
 - `TLG_GRPC_HOST` -> Hostname for the TLG gRPC service
