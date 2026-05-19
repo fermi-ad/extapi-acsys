@@ -15,11 +15,15 @@ use crate::{
         },
     },
     graphql::alarms::utils,
+    pubsub::Message,
 };
 use async_graphql::SimpleObject;
 use chrono::{DateTime, Utc};
 
-#[derive(Clone, Debug, PartialEq, SimpleObject)]
+#[cfg(test)]
+mod tests;
+
+#[derive(Clone, Debug, serde::Deserialize, PartialEq, SimpleObject)]
 pub struct Alarm {
     pub device: String,
     pub source: Source,
@@ -48,6 +52,14 @@ impl From<Status> for Alarm {
             user: value.user,
             wake: utils::timestamp_to_datetime(value.wake),
         }
+    }
+}
+
+impl TryFrom<Message> for Alarm {
+    type Error = serde_json::Error;
+
+    fn try_from(value: Message) -> Result<Self, Self::Error> {
+        serde_json::from_str(&value.value)
     }
 }
 
@@ -122,151 +134,5 @@ impl From<ProtoUserLayout> for UserLayout {
             user_name: value.user_name,
             groups: value.groups,
         }
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use crate::g_rpc::proto::services::alarms::TimerType;
-    use prost_types::Timestamp;
-
-    #[test]
-    fn alarm_from_proto_to_gql() {
-        let status = Status {
-            device: "M:BEAM".to_string(),
-            source: Source::Analog as i32,
-            state: State::Ok as i32,
-            severity: Severity::Unknown as i32,
-            acknowledgeable: false,
-            time: utils::datetime_to_timestamp(Some(Utc::now())),
-            epics_type: String::new(),
-            user: "test user".to_string(),
-            wake: None,
-        };
-
-        let output = Alarm::from(status.clone());
-
-        assert_eq!(status.device, output.device);
-        assert_eq!(status.source(), output.source);
-        assert_eq!(status.state(), output.state);
-        assert_eq!(status.severity(), output.severity);
-        assert_eq!(status.acknowledgeable, output.acknowledgeable);
-        assert_eq!(status.time, utils::datetime_to_timestamp(output.time));
-        assert_eq!(status.epics_type, output.epics_type);
-        assert_eq!(status.user, output.user);
-        assert_eq!(status.wake, utils::datetime_to_timestamp(output.wake));
-    }
-
-    #[test]
-    fn group_from_proto_to_gql() {
-        let test_name = "device A";
-        let test_desc = "desc";
-        let test_seconds = 100;
-        let test_nanos = 3242;
-        let test_user = "user 1";
-        let proto_meta = ProtoGroupMetadatum {
-            name: test_name.to_string(),
-            description: test_desc.to_string(),
-            is_user_category: true,
-            updated_at: Some(Timestamp {
-                seconds: test_seconds,
-                nanos: test_nanos,
-            }),
-            updated_by: test_user.to_string(),
-        };
-        let test_devices =
-            vec![String::from("device 1"), String::from("device 2")];
-        let test_groups = vec![String::from("group 1")];
-        let proto = ProtoAlarmGroup {
-            metadata: Some(proto_meta.clone()),
-            devices: test_devices.clone(),
-            groups: test_groups.clone(),
-        };
-
-        let result = AlarmGroup::from(proto);
-
-        assert_eq!(result.devices, test_devices);
-        assert_eq!(result.groups, test_groups);
-        assert_eq!(
-            result.metadata.unwrap(),
-            AlarmGroupMetadatum::from(proto_meta)
-        );
-    }
-
-    #[test]
-    fn metadatum_from_proto_to_gql() {
-        let test_name = "device A";
-        let test_desc = "desc";
-        let test_seconds = 100;
-        let test_nanos = 3242;
-        let test_user = "user 1";
-        let proto = ProtoGroupMetadatum {
-            name: test_name.to_string(),
-            description: test_desc.to_string(),
-            is_user_category: true,
-            updated_at: Some(Timestamp {
-                seconds: test_seconds,
-                nanos: test_nanos,
-            }),
-            updated_by: test_user.to_string(),
-        };
-
-        let result = AlarmGroupMetadatum::from(proto);
-
-        assert_eq!(result.name, test_name);
-        assert_eq!(result.description, test_desc);
-        assert!(result.is_user_category);
-        assert_eq!(
-            result.updated_at,
-            DateTime::from_timestamp(test_seconds, test_nanos as u32)
-        );
-        assert_eq!(result.updated_by, test_user);
-    }
-
-    #[test]
-    fn timer_from_proto_to_gql() {
-        let test_device = "device A";
-        let test_seconds = 100;
-        let test_nanos = 3242;
-        let test_user = "user 1";
-        let proto = ProtoAlarmTimer {
-            device: test_device.to_string(),
-            end_time: Some(Timestamp {
-                seconds: test_seconds,
-                nanos: test_nanos,
-            }),
-            timer_type: TimerType::BypassReminder as i32,
-            updated_at: None,
-            updated_by: test_user.to_string(),
-        };
-
-        let result = AlarmTimer::from(proto);
-
-        assert_eq!(result.device, test_device);
-        assert_eq!(
-            result.end_time,
-            DateTime::from_timestamp(test_seconds, test_nanos as u32)
-        );
-        assert_eq!(result.timer_type, TimerType::BypassReminder.as_str_name());
-        assert_eq!(result.updated_at, None);
-        assert_eq!(result.updated_by, test_user);
-    }
-
-    #[test]
-    fn user_layout_from_proto_to_gql() {
-        let test_user = "user1";
-        let grp1 = "group 1";
-        let grp2 = "group 2";
-        let test_groups = vec![grp1.to_string(), grp2.to_string()];
-        let proto_layout = ProtoUserLayout {
-            user_name: test_user.to_string(),
-            groups: test_groups.clone(),
-        };
-
-        let result = UserLayout::from(proto_layout);
-
-        assert_eq!(result.user_name, test_user);
-        assert_eq!(result.groups, test_groups);
     }
 }

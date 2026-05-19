@@ -7,7 +7,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_client(true)
         .build_server(false)
 	    .emit_rerun_if_changed(true)
-        .enum_attribute(".common.alarm", "#[derive(async_graphql::Enum)]")
+        .enum_attribute(".common.alarm", "#[derive(serde::Deserialize, async_graphql::Enum)]")
         .compile_protos(
             &[
                 "src/g_rpc/protos/proto/controls/common/v1/alarm.proto",
