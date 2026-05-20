@@ -4,14 +4,17 @@
 
 use crate::g_rpc::{
     alarms_db::AlarmsDbConnectionAdapter,
-    proto::services::alarms::{
-        AlarmTimer, AlarmTimers, DeleteRequest, ReadRequest,
+    proto::{
+        google::protobuf::Empty,
+        services::alarms::{
+            AlarmTimer, AlarmTimers, DeleteRequest, ReadRequest,
+        },
     },
 };
 use tonic::{Request, Status};
 
 /// Creates a new [`AlarmTimer`] in the database.
-pub async fn create(request: Request<AlarmTimer>) -> Result<(), Status> {
+pub async fn create(request: Request<AlarmTimer>) -> Result<Empty, Status> {
     let do_create = |mut client: AlarmsDbConnectionAdapter| async move {
         client.timers_conn.create(request).await
     };
@@ -19,7 +22,7 @@ pub async fn create(request: Request<AlarmTimer>) -> Result<(), Status> {
 }
 
 /// Deletes the specified [`AlarmTimer`] from the database.
-pub async fn delete(request: Request<DeleteRequest>) -> Result<(), Status> {
+pub async fn delete(request: Request<DeleteRequest>) -> Result<Empty, Status> {
     let do_delete = |mut client: AlarmsDbConnectionAdapter| async move {
         client.timers_conn.delete(request).await
     };
@@ -37,7 +40,7 @@ pub async fn read(
 }
 
 /// Updates a specified [`AlarmTimer`] with new data.
-pub async fn update(request: Request<AlarmTimer>) -> Result<(), Status> {
+pub async fn update(request: Request<AlarmTimer>) -> Result<Empty, Status> {
     let do_update = |mut client: AlarmsDbConnectionAdapter| async move {
         client.timers_conn.update(request).await
     };

@@ -4,13 +4,16 @@
 
 use crate::g_rpc::{
     alarms_db::AlarmsDbConnectionAdapter,
-    proto::services::alarms::{AlarmGroupMetadata, AlarmGroups, GroupsRequest},
+    proto::{
+        google::protobuf::Empty,
+        services::alarms::{AlarmGroupMetadata, AlarmGroups, GroupsRequest},
+    },
 };
 use tonic::{Request, Status};
 
 /// Requests all [`AlarmGroupMetadata`] from the database.
 pub async fn read_metadata(
-    request: Request<()>,
+    request: Request<Empty>,
 ) -> Result<AlarmGroupMetadata, Status> {
     let do_read = |mut client: AlarmsDbConnectionAdapter| async move {
         client.groups_conn.get_group_metadata(request).await

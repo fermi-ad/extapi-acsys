@@ -6,6 +6,7 @@ use crate::g_rpc::{
     connection_utils::{ConnectionAdapter, ConnectionPort},
     proto::{
         common::alarm,
+        google::protobuf::{Empty, Timestamp},
         services::alarms::{
             AcknowledgeRequest, ActivateRequest, BypassRequest,
             SnapshotResponse, SnoozeRequest,
@@ -14,7 +15,6 @@ use crate::g_rpc::{
     },
 };
 use chrono::{DateTime, Timelike, Utc};
-use prost_types::Timestamp;
 use std::sync::LazyLock;
 use tonic::{
     Response, Status, async_trait,
@@ -33,7 +33,7 @@ static ALARMS_SERVICE_CLIENT: LazyLock<
 /// Makes a request to the alarms gRPC service to acknowledge the specified alarms.
 pub async fn acknowledge_alarms(
     devices: Vec<String>, updated_by: String,
-) -> Result<(), Status> {
+) -> Result<Empty, Status> {
     let request = AcknowledgeRequest {
         devices,
         user: updated_by,
@@ -47,7 +47,7 @@ pub async fn acknowledge_alarms(
 /// Makes a request to the alarms gRPC service to activate (unbypass) the specified alarms.
 pub async fn activate_alarms(
     devices: Vec<String>, updated_by: String,
-) -> Result<(), Status> {
+) -> Result<Empty, Status> {
     let request = ActivateRequest {
         devices,
         user: updated_by,
@@ -61,7 +61,7 @@ pub async fn activate_alarms(
 /// Makes a request to the alarms gRPC service to bypass the specified alarms.
 pub async fn bypass_alarms(
     devices: Vec<String>, updated_by: String,
-) -> Result<(), Status> {
+) -> Result<Empty, Status> {
     let request = BypassRequest {
         devices,
         user: updated_by,
@@ -83,7 +83,7 @@ pub async fn get_snapshot() -> Result<Vec<alarm::Status>, Status> {
 /// Makes a request to the alarms gRPC service to snooze the specified alarms until the provided wake time.
 pub async fn snooze_alarms(
     devices: Vec<String>, updated_by: String, wake: DateTime<Utc>,
-) -> Result<(), Status> {
+) -> Result<Empty, Status> {
     let request = SnoozeRequest {
         devices,
         user: updated_by,
@@ -101,7 +101,7 @@ pub async fn snooze_alarms(
 async fn do_snapshot_request(
     mut client: AlarmsServiceConnectionAdapter,
 ) -> Result<Response<SnapshotResponse>, Status> {
-    client.conn.get_snapshot(()).await
+    client.conn.get_snapshot(Empty {}).await
 }
 
 /// An implementation of [`ConnectionAdapter`] to hold the [`AlarmCommandsClient`] reference.

@@ -3,7 +3,10 @@
 //! Provides the query implementations for the Alarms GraphQL interface.
 
 use crate::{
-    g_rpc::{alarms_db, alarms_svc, proto::services::alarms},
+    g_rpc::{
+        alarms_db, alarms_svc,
+        proto::{google::protobuf::Empty, services::alarms},
+    },
     graphql::alarms::types::Alarm,
     pubsub::{Subscriber, kafka_impl::KafkaSubscriber},
 };
@@ -134,7 +137,7 @@ impl AlarmsQueries {
     async fn alarms_group_metadata(
         &self,
     ) -> Result<Vec<AlarmGroupMetadatum>, Error> {
-        match alarms_db::groups::read_metadata(Request::new(())).await {
+        match alarms_db::groups::read_metadata(Request::new(Empty {})).await {
             Ok(response) => {
                 let mapped_response = response
                     .metadata
@@ -170,7 +173,7 @@ impl AlarmsQueries {
 
     /// Reads all [`UserLayout`]s in the database.
     async fn alarms_user_layouts(&self) -> Result<Vec<UserLayout>, Error> {
-        match alarms_db::layouts::read_layouts(Request::new(())).await {
+        match alarms_db::layouts::read_layouts(Request::new(Empty {})).await {
             Ok(response) => {
                 let mapped_response = response
                     .layouts

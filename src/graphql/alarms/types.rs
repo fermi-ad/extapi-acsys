@@ -23,7 +23,7 @@ use chrono::{DateTime, Utc};
 #[cfg(test)]
 mod tests;
 
-#[derive(Clone, Debug, serde::Deserialize, PartialEq, SimpleObject)]
+#[derive(Clone, Debug, PartialEq, SimpleObject)]
 pub struct Alarm {
     pub device: String,
     pub source: Source,
@@ -59,7 +59,7 @@ impl TryFrom<Message> for Alarm {
     type Error = serde_json::Error;
 
     fn try_from(value: Message) -> Result<Self, Self::Error> {
-        serde_json::from_str(&value.value)
+        serde_json::from_str::<Status>(&value.value).map(Alarm::from)
     }
 }
 

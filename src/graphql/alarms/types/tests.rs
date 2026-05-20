@@ -1,6 +1,7 @@
 use super::*;
-use crate::g_rpc::proto::services::alarms::TimerType;
-use prost_types::Timestamp;
+use crate::g_rpc::proto::{
+    google::protobuf::Timestamp, services::alarms::TimerType,
+};
 
 #[test]
 fn alarm_from_proto_to_gql() {
@@ -31,17 +32,22 @@ fn alarm_from_proto_to_gql() {
 
 #[test]
 fn alarm_try_from_message() {
-    let text = r#"
-        {
-            "device": "M:BEAM",
-            "source": "Analog",
-            "state": "Ok",
-            "severity": "Unknown",
-            "acknowledgeable": false,
-            "epics_type": "",
-            "user": ""
-        }
-    "#;
+    let source_int = Source::Analog as i32;
+    let state_int = State::Ok as i32;
+    let severity_int = Severity::Unknown as i32;
+    let text = format!(
+        r#"
+            {{
+                "device": "M:BEAM",
+                "source": {source_int},
+                "state": {state_int},
+                "severity": {severity_int},
+                "acknowledgeable": false,
+                "epics_type": "",
+                "user": ""
+            }}
+        "#
+    );
     let message = Message::new(None, text.to_string());
 
     let output = Alarm::try_from(message).unwrap();

@@ -17,6 +17,12 @@ pub mod proto {
         }
     }
 
+    pub mod google {
+        pub mod protobuf {
+            tonic::include_proto!("google.protobuf");
+        }
+    }
+
     pub mod services {
         pub mod aclk {
             tonic::include_proto!("services.clock_event");
