@@ -3,14 +3,17 @@
 //! Provides the query implementations for the Alarms GraphQL interface.
 
 use crate::{
-    g_rpc::{alarms_db, alarms_svc, proto::services::alarms},
+    g_rpc::{
+        alarms_db, alarms_svc,
+        proto::{google::protobuf::Empty, services::alarms},
+    },
     graphql::alarms::types::Alarm,
-    pubsub::{Message, Subscriber, kafka_impl::KafkaSubscriber},
+    pubsub::{Subscriber, kafka_impl::KafkaSubscriber},
 };
 use async_graphql::{Error, Object, Subscription};
 use chrono::{DateTime, Utc};
 use rust_env_var_lib::env_var;
-use tokio_stream::wrappers::BroadcastStream;
+use tokio_stream::{Stream, StreamExt};
 use tonic::{Code, Request, Status};
 use tracing::error;
 use types::{AlarmGroup, AlarmGroupMetadatum, AlarmTimer, UserLayout};
@@ -134,7 +137,7 @@ impl AlarmsQueries {
     async fn alarms_group_metadata(
         &self,
     ) -> Result<Vec<AlarmGroupMetadatum>, Error> {
-        match alarms_db::groups::read_metadata(Request::new(())).await {
+        match alarms_db::groups::read_metadata(Request::new(Empty {})).await {
             Ok(response) => {
                 let mapped_response = response
                     .metadata
@@ -170,7 +173,7 @@ impl AlarmsQueries {
 
     /// Reads all [`UserLayout`]s in the database.
     async fn alarms_user_layouts(&self) -> Result<Vec<UserLayout>, Error> {
-        match alarms_db::layouts::read_layouts(Request::new(())).await {
+        match alarms_db::layouts::read_layouts(Request::new(Empty {})).await {
             Ok(response) => {
                 let mapped_response = response
                     .layouts
@@ -221,9 +224,20 @@ pub struct AlarmsSubscriptions;
 #[Subscription]
 impl AlarmsSubscriptions {
     /// Streams back all alarms from the alarms topic.
-    async fn alarms(&self) -> Result<BroadcastStream<Message>, Error> {
+    async fn alarms(&self) -> Result<impl Stream<Item = Alarm>, Error> {
         KafkaSubscriber::subscribe(get_host(), get_topic())
             .await
+            .map(|stream| {
+                stream.filter_map(|stream_item| match stream_item {
+                    Err(e) => {
+                        error!("{e:?}");
+                        None
+                    }
+                    Ok(message) => Alarm::try_from(message)
+                        .inspect_err(|e| error!("{e:?}"))
+                        .ok(),
+                })
+            })
             .map_err(|e| Error::new(format!("{e}")))
     }
 }

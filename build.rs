@@ -7,6 +7,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_client(true)
         .build_server(false)
 	    .emit_rerun_if_changed(true)
+        .compile_well_known_types(true)
+        .type_attribute(".google.protobuf.Timestamp", "#[derive(serde::Deserialize)]")
+        .type_attribute(".common.alarm", "#[derive(serde::Deserialize)]")
         .enum_attribute(".common.alarm", "#[derive(async_graphql::Enum)]")
         .compile_protos(
             &[

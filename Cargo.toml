@@ -14,12 +14,11 @@ async-stream = "0.3"
 axum = { version = "0.8", features = ["ws"] }
 axum-server = { version = "0.7", features = ["tls-rustls"] }
 base64 = "0.22"
-chrono = "0.4.44"
+chrono = { version = "0.4.44", features = ["serde"] }
 futures = "0.3.27"
 futures-util = { version = "0.3", features = ["tokio-io"] }
 http = "1"
 prost = "0.14"
-prost-types = "0.14"
 rdkafka = { version = "0.39.0", features = ["cmake-build", "gssapi", "tracing"] }
 reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls", "rustls-tls-webpki-roots", "json"] }
 rustls = { version = "0.23.40", features = ["ring"] }
