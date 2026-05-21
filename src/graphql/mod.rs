@@ -302,6 +302,8 @@ pub async fn start_service() {
     .await
     .expect("couldn't load certificate info from PEM file(s)");
 
+    info!("Config details: {config:?}");
+
     info!("site certificate successfully read");
 
     // Build up the routes for the site.
