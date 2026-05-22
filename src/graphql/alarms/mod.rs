@@ -3,10 +3,7 @@
 //! Provides the query implementations for the Alarms GraphQL interface.
 
 use crate::{
-    g_rpc::{
-        alarms_db, alarms_svc,
-        proto::{google::protobuf::Empty, services::alarms},
-    },
+    g_rpc::{alarms_db, alarms_svc},
     graphql::alarms::types::Alarm,
     pubsub::{Subscriber, kafka_impl::KafkaSubscriber},
 };
@@ -14,7 +11,7 @@ use async_graphql::{Error, Object, Subscription};
 use chrono::{DateTime, Utc};
 use rust_env_var_lib::env_var;
 use tokio_stream::{Stream, StreamExt};
-use tonic::{Code, Request, Status};
+use tonic::{Code, Status};
 use tracing::error;
 use types::{AlarmGroup, AlarmGroupMetadatum, AlarmTimer, UserLayout};
 use uuid::Uuid;
@@ -63,18 +60,12 @@ impl AlarmsMutations {
         &self, device: String, end_time: Option<DateTime<Utc>>,
         timer_type: String, updated_by: String,
     ) -> Result<AlarmTimer, Error> {
-        let timer_type_enum = utils::string_to_timer_type(&timer_type);
-        let end_time_ts = utils::datetime_to_timestamp(end_time);
-        let alarm_timer = alarms::AlarmTimer {
-            device,
-            end_time: end_time_ts,
-            timer_type: timer_type_enum as i32,
-            updated_at: None,
-            updated_by,
-        };
-        match alarms_db::timers::create(Request::new(alarm_timer.clone())).await
+        match alarms_db::timers::create(
+            device, end_time, timer_type, updated_by,
+        )
+        .await
         {
-            Ok(_) => Ok(AlarmTimer::from(alarm_timer)),
+            Ok(alarm_timer) => Ok(AlarmTimer::from(alarm_timer)),
             Err(e) => handle_error(e, "creating alarm timer"),
         }
     }
@@ -83,12 +74,7 @@ impl AlarmsMutations {
     async fn delete_alarm_timer(
         &self, device: String, timer_type: String,
     ) -> Result<String, Error> {
-        let timer_type_enum = utils::string_to_timer_type(&timer_type);
-        let request = alarms::DeleteRequest {
-            device: device.clone(),
-            timer_type: timer_type_enum as i32,
-        };
-        match alarms_db::timers::delete(Request::new(request)).await {
+        match alarms_db::timers::delete(device.clone(), timer_type).await {
             Ok(_) => Ok(device),
             Err(e) => handle_error(e, "deleting alarm timer"),
         }
@@ -105,24 +91,18 @@ impl AlarmsMutations {
         }
     }
 
-    /// A request to update an alarms timer.
+    /// A request to update an existing alarms timer of the specified
+    /// [`TimerType`](crate::g_rpc::proto::services::alarms::TimerType).
     async fn update_alarm_timer(
         &self, device: String, end_time: Option<DateTime<Utc>>,
         timer_type: String, updated_by: String,
     ) -> Result<AlarmTimer, Error> {
-        let timer_type_enum = utils::string_to_timer_type(&timer_type);
-        let end_time_ts = utils::datetime_to_timestamp(end_time);
-        let alarm_timer_proto = alarms::AlarmTimer {
-            device,
-            end_time: end_time_ts,
-            timer_type: timer_type_enum as i32,
-            updated_at: None,
-            updated_by,
-        };
-        match alarms_db::timers::update(Request::new(alarm_timer_proto.clone()))
-            .await
+        match alarms_db::timers::update(
+            device, end_time, timer_type, updated_by,
+        )
+        .await
         {
-            Ok(_) => Ok(AlarmTimer::from(alarm_timer_proto)),
+            Ok(alarm_timer) => Ok(AlarmTimer::from(alarm_timer)),
             Err(e) => handle_error(e, "updating alarm timer"),
         }
     }
@@ -137,7 +117,7 @@ impl AlarmsQueries {
     async fn alarms_group_metadata(
         &self,
     ) -> Result<Vec<AlarmGroupMetadatum>, Error> {
-        match alarms_db::groups::read_metadata(Request::new(Empty {})).await {
+        match alarms_db::groups::read_metadata().await {
             Ok(response) => {
                 let mapped_response = response
                     .metadata
@@ -154,11 +134,7 @@ impl AlarmsQueries {
     async fn alarms_groups(
         &self, groups: Vec<String>,
     ) -> Result<Vec<AlarmGroup>, Error> {
-        match alarms_db::groups::read_groups(Request::new(
-            alarms::GroupsRequest { groups },
-        ))
-        .await
-        {
+        match alarms_db::groups::read_groups(groups).await {
             Ok(response) => {
                 let mapped_response = response
                     .alarm_groups
@@ -173,7 +149,7 @@ impl AlarmsQueries {
 
     /// Reads all [`UserLayout`]s in the database.
     async fn alarms_user_layouts(&self) -> Result<Vec<UserLayout>, Error> {
-        match alarms_db::layouts::read_layouts(Request::new(Empty {})).await {
+        match alarms_db::layouts::read_layouts().await {
             Ok(response) => {
                 let mapped_response = response
                     .layouts
@@ -198,12 +174,7 @@ impl AlarmsQueries {
     async fn alarms_timers(
         &self, timer_type: String, user: String,
     ) -> Result<Vec<AlarmTimer>, Error> {
-        match alarms_db::timers::read(Request::new(alarms::ReadRequest {
-            timer_type: utils::string_to_timer_type(&timer_type) as i32,
-            user,
-        }))
-        .await
-        {
+        match alarms_db::timers::read(timer_type, user).await {
             Ok(response) => {
                 let timers = response
                     .alarm_timers

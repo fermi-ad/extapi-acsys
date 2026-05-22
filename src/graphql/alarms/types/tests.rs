@@ -11,7 +11,10 @@ fn alarm_from_proto_to_gql() {
         state: State::Ok as i32,
         severity: Severity::Unknown as i32,
         acknowledgeable: false,
-        time: utils::datetime_to_timestamp(Some(Utc::now())),
+        time: Some(Timestamp {
+            seconds: 1_234_567_890,
+            nanos: 0,
+        }),
         epics_type: String::new(),
         user: "test user".to_string(),
         wake: None,
@@ -24,10 +27,10 @@ fn alarm_from_proto_to_gql() {
     assert_eq!(status.state(), output.state);
     assert_eq!(status.severity(), output.severity);
     assert_eq!(status.acknowledgeable, output.acknowledgeable);
-    assert_eq!(status.time, utils::datetime_to_timestamp(output.time));
+    assert_eq!(utils::timestamp_to_datetime(status.time), output.time);
     assert_eq!(status.epics_type, output.epics_type);
     assert_eq!(status.user, output.user);
-    assert_eq!(status.wake, utils::datetime_to_timestamp(output.wake));
+    assert_eq!(utils::timestamp_to_datetime(status.wake), output.wake);
 }
 
 #[test]
