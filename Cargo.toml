@@ -16,7 +16,7 @@ axum-server = { version = "0.7", features = ["tls-rustls-no-provider"] }
 base64 = "0.22"
 chrono = { version = "0.4.44", features = ["serde"] }
 futures = "0.3.27"
-futures-util = { version = "0.3", features = ["tokio-io"] }
+futures-util = "0.3"
 http = "1"
 prost = "0.14"
 reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls", "rustls-tls-webpki-roots", "json"] }
