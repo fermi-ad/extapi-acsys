@@ -1,0 +1,51 @@
+// Defines the structure for the status of an ACORN generic alarm
+
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+
+package common.alarm;
+
+message Status {
+    string device = 1;                      //  required
+
+    enum Source {
+        SOURCE_UNKNOWN      = 0;
+        SOURCE_ANALOG       = 1;
+        SOURCE_DIGITAL      = 2;
+        SOURCE_EPICS        = 3;
+    }
+    Source source = 2;                      //  required
+
+    enum State {
+        STATE_UNKNOWN       = 0;
+        STATE_OK            = 1;
+        STATE_ALARMED       = 2;
+        STATE_BYPASSED      = 3;
+        STATE_LATCHED       = 4;
+        STATE_ACKNOWLEDGED  = 5;
+    }
+    State state = 3;                        //  required
+
+    enum Severity {
+        SEVERITY_UNKNOWN    = 0;
+        SEVERITY_LOW        = 1;
+        SEVERITY_HIGH       = 2;
+    }
+    Severity severity = 4;                  //  required
+
+    bool acknowledgeable = 5;               //  required
+
+    // The time the current state was set.
+    google.protobuf.Timestamp time = 6;     //  required
+
+    // Indicates which sort of EPICS alarm this is (out of range, lost connection, etc.)
+    string epics_type = 7;
+
+    // Filled when the current status state was set by a user. Contains the username
+    // of the user who made the change
+    string user = 8;
+
+    // Indicates when an alarm is scheduled to come back into active status from bypass
+    google.protobuf.Timestamp wake = 9;
+}

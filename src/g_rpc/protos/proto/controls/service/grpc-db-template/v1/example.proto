@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+
+package services.example;
+
+service ExampleDB {
+    rpc getEndPointOne(IdList) returns (ReplyOne) {}
+    rpc getEndPointTwo(IdList) returns (ReplyTwo) {}
+}
+
+message IdList {
+    repeated uint32 id = 1;
+}
+
+message ReplyOne {
+    repeated SectionOne section_one = 1;
+}
+
+message ReplyTwo {
+    repeated SectionTwo section_two = 1;
+}
+
+// Supporting messages.
+
+message SectionOne {
+    uint32 id = 1;
+    PartOne part_one = 2;
+    PartTwo part_two = 3;
+    optional PartThree part_three = 4;
+}
+
+message SectionTwo {
+    uint32 id = 1;
+    PartThree part_three = 2;
+}
+
+message PartOne {
+    string some_string_alpha = 1;
+    uint32 some_integer_alpha = 2;
+}
+
+message PartTwo {
+    string some_string_beta = 1;
+    google.protobuf.Timestamp some_timestamp_beta = 2;
+    optional uint32 some_integer_beta = 3;
+}
+
+message PartThree {
+    string some_string_delta = 1;
+    bool some_bool_delta = 2;
+    optional uint32 some_integer_delta = 3;
+}

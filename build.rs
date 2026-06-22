@@ -7,10 +7,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_client(true)
         .build_server(false)
         .protoc_arg("--experimental_allow_proto3_optional")
-        .out_dir("src/g_rpc/generated")
 	    .emit_rerun_if_changed(true)
+        .compile_well_known_types(true)
+        .type_attribute(".google.protobuf.Timestamp", "#[derive(serde::Deserialize)]")
+        .type_attribute(".common.alarm", "#[derive(serde::Deserialize)]")
+        .enum_attribute(".common.alarm", "#[derive(async_graphql::Enum)]")
         .compile_protos(
             &[
+                "src/g_rpc/protos/proto/controls/common/v1/alarm.proto",
                 "src/g_rpc/protos/proto/controls/common/v1/status.proto",
                 "src/g_rpc/protos/proto/controls/service/ACLK/v1/ACLK.proto",
                 "src/g_rpc/protos/proto/controls/service/DAQ/v1/DAQ.proto",

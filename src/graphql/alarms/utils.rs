@@ -1,24 +1,16 @@
 //! GraphQL Alarms Utilities
 //!
-//! Provides various utility functions that are useful in the context of alarms.
+//! Conversion helpers between protobuf wire types and GraphQL domain types:
+//! - [`timer_type_to_string`] — converts a [`TimerType`] `i32` to its string name
+//! - [`timestamp_to_datetime`] — converts a protobuf [`Timestamp`] to [`DateTime<Utc>`]
 
+use crate::g_rpc::proto::google::protobuf::Timestamp;
 use crate::g_rpc::proto::services::alarms::TimerType;
-use chrono::{DateTime, Timelike, Utc};
-use prost_types::Timestamp;
+use chrono::{DateTime, Utc};
 
-pub fn datetime_to_timestamp(
-    datetime: Option<DateTime<Utc>>,
-) -> Option<Timestamp> {
-    datetime.map(|dt| Timestamp {
-        seconds: dt.timestamp(),
-        nanos: dt.nanosecond() as i32,
-    })
-}
-
-pub fn string_to_timer_type(value: &str) -> TimerType {
-    TimerType::from_str_name(value).unwrap_or(TimerType::Unknown)
-}
-
+/// Converts a protobuf [`TimerType`] integer representation to its string name.
+///
+/// Unrecognised values are treated as [`TimerType::Unknown`].
 pub fn timer_type_to_string(timer_type: i32) -> String {
     TimerType::try_from(timer_type)
         .unwrap_or(TimerType::Unknown)
@@ -26,6 +18,10 @@ pub fn timer_type_to_string(timer_type: i32) -> String {
         .to_string()
 }
 
+/// Converts a protobuf [`Timestamp`] to a [`DateTime<Utc>`].
+///
+/// Returns `None` if `timestamp` is `None` or if the seconds/nanos
+/// values cannot be represented as a valid [`DateTime`].
 pub fn timestamp_to_datetime(
     timestamp: Option<Timestamp>,
 ) -> Option<DateTime<Utc>> {
@@ -38,34 +34,6 @@ pub fn timestamp_to_datetime(
 #[cfg(test)]
 mod test {
     use super::*;
-
-    #[test]
-    fn datetime_to_timestamp_converts_properly() {
-        let ts = Timestamp {
-            seconds: 1_234_567_890,
-            nanos: 0,
-        };
-        let dt = DateTime::parse_from_rfc3339("2009-02-13T23:31:30.000Z")
-            .unwrap()
-            .to_utc();
-        let result = datetime_to_timestamp(Some(dt)).unwrap();
-        assert_eq!(result, ts);
-
-        assert!(datetime_to_timestamp(None).is_none());
-    }
-
-    #[test]
-    fn string_to_timer_type_converts_properly() {
-        assert_eq!(
-            TimerType::BypassReminder,
-            string_to_timer_type("TimerType_BYPASS_REMINDER")
-        );
-        assert_eq!(TimerType::Snooze, string_to_timer_type("TimerType_SNOOZE"));
-        assert_eq!(
-            TimerType::Unknown,
-            string_to_timer_type("Not an instance of TimerType")
-        );
-    }
 
     #[test]
     fn timer_type_to_string_converts_properly() {

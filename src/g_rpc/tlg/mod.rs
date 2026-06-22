@@ -1,14 +1,8 @@
 //! Timeline Generator gRPC Module
 
-pub mod proto {
-    pub mod services {
-        pub mod tlg_placement {
-            include!("../generated/services.tlg_placement.rs");
-        }
-    }
-}
+use crate::g_rpc::proto::google::protobuf::Empty;
 
-use proto::services::tlg_placement::{
+use super::proto::services::tlg_placement::{
     TlgDevices, TlgPlacementResponse,
     tlg_placement_mutation_service_client::TlgPlacementMutationServiceClient,
     tlg_placement_service_client::TlgPlacementServiceClient,
@@ -39,7 +33,7 @@ async fn get_mutation_service_client()
 pub async fn get_version() -> Result<String, Status> {
     get_service_client()
         .await?
-        .get_version(())
+        .get_version(Empty {})
         .await
         .map(|v| v.into_inner().version)
 }

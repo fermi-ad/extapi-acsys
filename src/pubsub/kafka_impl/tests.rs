@@ -30,16 +30,3 @@ async fn kafka_consumer_and_producer() {
 
     assert_eq!(message, stream.next().await.unwrap().unwrap());
 }
-
-#[tokio::test]
-async fn kafka_snapshot() {
-    let topic = String::from("test_topic");
-    let test_harness = Harness::with_topics(vec![topic.clone()]).await;
-
-    let message = Message::new(None, "testing".to_string());
-    let test_pub = KafkaPublisher::new(test_harness.host(), topic.clone());
-    test_pub.publish(message.clone()).await.unwrap();
-
-    let result = KafkaSnapshot::get(test_harness.host(), topic).await;
-    assert!(result.unwrap().contains(&message));
-}

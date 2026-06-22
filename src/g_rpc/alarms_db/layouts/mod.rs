@@ -3,14 +3,22 @@
 //! Provides functions for interacting with alarms user layouts.
 
 use crate::g_rpc::{
-    alarms_db::AlarmsDbConnectionAdapter, proto::services::alarms::UserLayouts,
+    alarms_db::AlarmsDbConnectionAdapter,
+    proto::{google::protobuf::Empty, services::alarms::UserLayouts},
 };
-use tonic::{Request, Status};
+use tonic::{Response, Status};
 
 /// Requests all [`UserLayouts`] from the database.
-pub async fn read_layouts(request: Request<()>) -> Result<UserLayouts, Status> {
-    let do_read = |mut client: AlarmsDbConnectionAdapter| async move {
-        client.layouts_conn.get_user_layouts(request).await
-    };
-    super::ALARMS_DB_CLIENT.run_with_client(do_read).await
+pub async fn read_layouts() -> Result<UserLayouts, Status> {
+    super::ALARMS_DB_CLIENT
+        .run_with_client(get_user_layouts)
+        .await
+}
+
+// Named function (rather than a closure) so it can be passed directly
+// to `run_with_client` without capturing.
+async fn get_user_layouts(
+    mut client: AlarmsDbConnectionAdapter,
+) -> Result<Response<UserLayouts>, Status> {
+    client.layouts_conn.get_user_layouts(Empty {}).await
 }

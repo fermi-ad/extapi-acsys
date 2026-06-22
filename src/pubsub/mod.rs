@@ -31,18 +31,6 @@ impl Message {
     }
 }
 
-/// A trait for retrieving the instantaneous set of [`Message`]s on a topic.
-#[tonic::async_trait]
-pub trait Snapshot {
-    /// Retrieves a snapshot of a message topic.
-    /// This function connects to the message broker,
-    /// loads all [`Message`]s currently on the specified topic, and returns them
-    /// to the caller.
-    async fn get(
-        host: String, topic: String,
-    ) -> Result<Vec<Message>, PubSubError>;
-}
-
 /// A trait for subscribing to a message topic. Returns the values as a stream of [`Message`]s for clients to handle.
 #[tonic::async_trait]
 pub trait Subscriber: Debug {
