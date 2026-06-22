@@ -1,8 +1,8 @@
 use crate::g_rpc::{
     devdb,
     proto::services::devdb::{
-        info_entry, DigitalControlItem, DigitalExtStatusItem,
-        DigitalStatusItem, InfoEntry,
+        DigitalControlItem, DigitalExtStatusItem, DigitalStatusItem, InfoEntry,
+        info_entry,
     },
 };
 

@@ -1,4 +1,4 @@
-use super::{datachannel::BufferResult, global, DataChannel};
+use super::{DataChannel, datachannel::BufferResult, global};
 use futures::Stream;
 use futures_util::StreamExt;
 use std::{
@@ -156,7 +156,9 @@ where
                         continue;
                     }
                     Poll::Ready(Some(global::DataReply { ref_id, .. })) => {
-                        warn!("received empty live data packet for ref_id {ref_id}");
+                        warn!(
+                            "received empty live data packet for ref_id {ref_id}"
+                        );
                     }
                     Poll::Ready(None) => this.live_done = true,
                     Poll::Pending => {}

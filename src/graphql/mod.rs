@@ -267,8 +267,7 @@ async fn create_site() -> Router {
         .merge(create_acsys_router().await);
 
     #[cfg(feature = "alarms")]
-    let router = router
-        .merge(create_alarms_router());
+    let router = router.merge(create_alarms_router());
 
     router
         .merge(create_bbm_router())

@@ -1,7 +1,7 @@
 use super::proto::services::devdb::{
-    dev_db_client::DevDbClient, plot_config_result, DeviceInfoReply,
-    DeviceList, PlotConfigResult, PlotConfigResults, PlotConfigSpecification,
-    PlotSelector,
+    DeviceInfoReply, DeviceList, PlotConfigResult, PlotConfigResults,
+    PlotConfigSpecification, PlotSelector, dev_db_client::DevDbClient,
+    plot_config_result,
 };
 use rust_env_var_lib::env_var;
 

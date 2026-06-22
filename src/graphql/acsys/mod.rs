@@ -1,12 +1,12 @@
 use crate::g_rpc::{
     devdb, dpm,
     proto::services::daq::{self, reading_reply},
-    proto::services::devdb::{plot_config_result, PlotConfigResult},
+    proto::services::devdb::{PlotConfigResult, plot_config_result},
 };
 
 use async_graphql::*;
 use futures::future::{self, Either};
-use futures_util::{stream, Stream, StreamExt};
+use futures_util::{Stream, StreamExt, stream};
 use serde::{Deserialize, Deserializer};
 use std::{collections::HashSet, pin::Pin, sync::Arc};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
@@ -237,7 +237,7 @@ Not all devices can be set -- most are read-only. To be able to set a \
 device, your SSO account must be associated with every device you may \
 want to set."]
     #[instrument(skip(self, _ctxt, _value))]
-    async fn _set_device(
+    async fn set_device(
         &self, _ctxt: &Context<'_>,
         #[graphql(
             desc = "The device to be set. This parameter should be expressed \

@@ -5,7 +5,7 @@ use super::proto::{
         daq_client::DaqClient,
     },
 };
-use tokio::time::{timeout, Duration};
+use tokio::time::{Duration, timeout};
 use tonic::transport::{Channel, Endpoint, Error};
 use tracing::{error, info, instrument, warn};
 
@@ -89,7 +89,7 @@ pub async fn _set_device(
     conn: &Connection, session_id: Option<String>, device: String,
     value: device::Value,
 ) -> _TonicQueryResult<Vec<i32>> {
-    use tonic::{metadata::MetadataValue, IntoRequest};
+    use tonic::{IntoRequest, metadata::MetadataValue};
 
     info!("setting to {:?}", &value);
 
