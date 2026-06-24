@@ -474,7 +474,11 @@ fn to_iso(timestamp_f64: f64) -> String {
     use chrono::{TimeZone, Utc};
 
     let seconds = timestamp_f64.trunc() as i64;
-    let nanoseconds = (timestamp_f64.fract() * 1_000_000_000.0) as u32;
+    let nanoseconds = {
+        let nanos = (timestamp_f64.fract() * 1_000_000_000.0).round() as i64;
+        let nanos = nanos.clamp(0, 999_999_999);
+        nanos as u32
+    };
     let datetime_utc = Utc
         .timestamp_opt(seconds, nanoseconds)
         .earliest()
