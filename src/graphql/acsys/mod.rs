@@ -292,7 +292,7 @@ want to set."]
     ) -> Result<usize> {
         match devdb::save_plot_config(id, name, config).await {
             Ok(id) => Ok(id),
-            Err(e) => Err(Error::new(format!("{}", e).as_str())),
+            Err(e) => Err(Error::new(e.to_string())),
         }
     }
 
