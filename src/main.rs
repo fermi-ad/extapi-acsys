@@ -1,3 +1,4 @@
+use tokio_rustls as _;
 use tracing::{error, info, subscriber};
 use tracing_subscriber::{
     Registry, filter::EnvFilter, fmt::layer, layer::SubscriberExt,
