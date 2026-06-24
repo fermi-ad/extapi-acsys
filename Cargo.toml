@@ -33,7 +33,8 @@ tonic-prost = "0.14"
 tower-http = { version = "0.6", features = ["cors", "compression-deflate", "decompression-deflate"] }
 tracing = { version = "0.1", features = ["log"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-#uuid = { version = "1.23.1", features = ["v4"] }
+
+uuid = { version = "1.23.1", optional = true, features = ["v4"] }
 
 rdkafka.version = "0.39.0"
 rdkafka.features = ["cmake-build", "tracing"]
@@ -60,4 +61,4 @@ large_enum_variant = "allow"
 [features]
 default = []
 
-alarms = ["dep:rdkafka"]
+alarms = ["dep:rdkafka", "dep:uuid"]
