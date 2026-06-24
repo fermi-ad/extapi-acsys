@@ -55,5 +55,3 @@ pub mod devdb;
 pub mod dpm;
 pub mod tlg;
 pub mod wscan;
-
-mod connection_utils;

@@ -15,8 +15,6 @@ type TonicStreamResult<T> =
     Result<tonic::Response<tonic::Streaming<T>>, tonic::Status>;
 type _TonicQueryResult<T> = Result<T, tonic::Status>;
 
-const DPM_HOST: &str = "DPM_GRPC_HOST";
-
 // Builds a sharable connection to the DPM pool. All instances will use the
 // same connection.
 

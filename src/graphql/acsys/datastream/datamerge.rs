@@ -63,7 +63,6 @@ where
     /// Filters out data points that have already been seen based on the
     /// `latest` timestamp and updates `latest` with the newest timestamp in
     /// the batch. Returns true if there is data left to emit.
-
     fn filter_and_update_latest(
         data: &mut Vec<global::DataInfo>, latest: &mut f64,
     ) -> bool {
@@ -111,14 +110,12 @@ where
                             .or_insert_with(|| (DataChannel::new(), 0.0));
 
                         if let Some(mut data) = chan.process_archive_data(data)
+                            && Self::filter_and_update_latest(&mut data, latest)
                         {
-                            if Self::filter_and_update_latest(&mut data, latest)
-                            {
-                                return Poll::Ready(Some(global::DataReply {
-                                    ref_id,
-                                    data,
-                                }));
-                            }
+                            return Poll::Ready(Some(global::DataReply {
+                                ref_id,
+                                data,
+                            }));
                         }
                         continue;
                     }
@@ -172,16 +169,16 @@ where
                 if let Some(&ref_id) = this.pending.keys().next() {
                     let (mut chan, mut latest) =
                         this.pending.remove(&ref_id).unwrap();
-                    if let Some(mut data) = chan.get_buffer() {
-                        if Self::filter_and_update_latest(
+                    if let Some(mut data) = chan.get_buffer()
+                        && Self::filter_and_update_latest(
                             &mut data,
                             &mut latest,
-                        ) {
-                            return Poll::Ready(Some(global::DataReply {
-                                ref_id,
-                                data,
-                            }));
-                        }
+                        )
+                    {
+                        return Poll::Ready(Some(global::DataReply {
+                            ref_id,
+                            data,
+                        }));
                     }
                     continue;
                 }
