@@ -55,6 +55,7 @@ lto = false
 
 [lints.clippy]
 enum_variant_names = "allow"
+large_enum_variant = "allow"
 
 [features]
 default = []
