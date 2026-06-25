@@ -39,6 +39,7 @@ uuid = { version = "1.23.1", optional = true, features = ["v4"] }
 rdkafka.version = "0.39.0"
 rdkafka.features = ["cmake-build", "tracing"]
 rdkafka.optional = true
+clap = { version = "4.6.1", features = ["env"] }
 
 [dev-dependencies]
 tower = "0.5"
