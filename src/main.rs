@@ -1,3 +1,4 @@
+use clap::Parser;
 use tokio_rustls as _;
 use tracing::{error, info, subscriber};
 use tracing_subscriber::{
@@ -9,8 +10,18 @@ mod graphql;
 #[cfg(feature = "alarms")]
 mod pubsub;
 
+#[derive(Parser)]
+#[command(about = "GraphQL API server")]
+struct Args {
+    /// Port the GraphQL web server listens on
+    #[arg(short = 'p', long, default_value_t = 443)]
+    port: u16,
+}
+
 #[tokio::main]
 async fn main() {
+    let args = Args::parse();
+
     // Set up logging.
     let fmt_layer = layer()
         .with_target(false)
@@ -27,7 +38,7 @@ async fn main() {
     match rustls::crypto::ring::default_provider().install_default() {
         Ok(_) => {
             info!("starting");
-            graphql::start_service().await;
+            graphql::start_service(args.port).await;
         }
         Err(e) => {
             error!("failed to install default crypto provider: {:?}", e);
