@@ -47,6 +47,9 @@ pub mod proto {
 }
 
 #[cfg(feature = "alarms")]
+mod connection_utils;
+
+#[cfg(feature = "alarms")]
 pub mod alarms_db;
 #[cfg(feature = "alarms")]
 pub mod alarms_svc;
