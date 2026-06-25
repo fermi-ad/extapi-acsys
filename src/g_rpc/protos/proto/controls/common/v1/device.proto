@@ -6,7 +6,6 @@
 // types we're using. As we add more types, dependent protocols will
 // add them to their set (when rebuilt.)
 
-//adding comment for testing purpose
 syntax = "proto3";
 
 package common.device;
