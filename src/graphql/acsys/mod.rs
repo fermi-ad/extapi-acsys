@@ -299,10 +299,23 @@ want to set."]
     #[doc = "Delete a plot configuration"]
     #[instrument(skip(self))]
     async fn delete_plot_configuration(
-        &self, configuration_id: usize,
-    ) -> global::StatusReply {
-        info!("deleting config");
-        global::StatusReply { status: 0 }
+        &self, configuration_id: i32,
+    ) -> Result<global::StatusReply> {
+        info!("deleting plot configuration {}", configuration_id);
+
+        match devdb::delete_plot_config(configuration_id).await {
+            Ok(PlotConfigResult {
+                result: Some(plot_config_result::Result::ErrMsg(msg)),
+            }) => {
+                warn!("{}", msg);
+                Err(Error::new(msg))
+            }
+            Ok(_) => Ok(global::StatusReply { status: 0 }),
+            Err(e) => {
+                warn!("unexpected gRPC reply: {e}");
+                Err(Error::new(e.to_string()))
+            }
+        }
     }
 
     #[doc = "Sets the user's default configuration.

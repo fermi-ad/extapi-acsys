@@ -86,3 +86,26 @@ pub async fn get_plot_config(
         ))),
     }
 }
+
+pub async fn delete_plot_config(
+    id: i32,
+) -> Result<PlotConfigResult, tonic::Status> {
+    let host: String = env_var::expect(DEVDB_HOST);
+
+    match DevDbClient::connect(host.clone()).await {
+        Ok(mut client) => {
+            let req = PlotSelector {
+                id: Some(id as u32),
+            };
+
+            Ok(client
+                .delete_plot_configuration(req)
+                .await
+                .map(|v| v.into_inner())?)
+        }
+        Err(e) => Err(tonic::Status::unavailable(format!(
+            "DevDB service ({}) unavailable: {}",
+            &host, e
+        ))),
+    }
+}
