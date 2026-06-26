@@ -171,13 +171,13 @@ an array with 0 or 1 element."]
     #[instrument(skip(self))]
     async fn plot_configuration(
         &self, id: Option<u32>,
-    ) -> Vec<types::PlotConfig> {
+    ) -> Result<Vec<types::PlotConfig>> {
         info!("returning plot configuration(s)");
 
         match devdb::get_plot_config(id).await {
             Ok(PlotConfigResult {
                 result: Some(plot_config_result::Result::Config(config)),
-            }) => config
+            }) => Ok(config
                 .data
                 .into_iter()
                 .map(|v| types::PlotConfig {
@@ -185,20 +185,20 @@ an array with 0 or 1 element."]
                     config_name: v.name.into(),
                     config: v.config.into(),
                 })
-                .collect(),
+                .collect()),
             Ok(PlotConfigResult {
                 result: Some(plot_config_result::Result::ErrMsg(msg)),
             }) => {
                 warn!("{}", msg);
-                vec![]
+                Err(Error::new(msg))
             }
             Ok(PlotConfigResult { .. }) => {
                 warn!("unexpected gRPC reply --- missing result");
-                vec![]
+                Err(Error::new("unexpected gRPC reply: missing result"))
             }
             Err(e) => {
                 warn!("unexpected gRPC reply: {e}");
-                vec![]
+                Err(Error::new(e.to_string()))
             }
         }
     }
