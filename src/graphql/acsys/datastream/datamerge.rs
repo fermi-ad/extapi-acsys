@@ -23,10 +23,8 @@ where
     SA: Stream<Item = global::DataReply> + Send + 'static + Unpin,
     SL: Stream<Item = global::DataReply> + Send + 'static + Unpin,
 {
-    archived: SA,
-    archived_done: bool,
-    live: SL,
-    live_done: bool,
+    archived: Option<SA>,
+    live: Option<SL>,
     pending: HashMap<i32, (DataChannel, f64)>,
 }
 
@@ -36,7 +34,7 @@ where
 
 #[inline(never)]
 pub fn merge<SA, SL>(
-    archived: SA, live: SL,
+    archived: Option<SA>, live: Option<SL>,
 ) -> impl Stream<Item = global::DataReply> + Send + 'static + Unpin
 where
     SA: Stream<Item = global::DataReply> + Send + 'static + Unpin,
@@ -50,12 +48,10 @@ where
     SA: Stream<Item = global::DataReply> + Send + 'static + Unpin,
     SL: Stream<Item = global::DataReply> + Send + 'static + Unpin,
 {
-    pub fn new(archived: SA, live: SL) -> Self {
+    pub fn new(archived: Option<SA>, live: Option<SL>) -> Self {
         DataMerge {
             archived,
-            archived_done: false,
             live,
-            live_done: false,
             pending: HashMap::new(),
         }
     }
@@ -101,8 +97,8 @@ where
             // See if there's any archive data to process. If so, pass it
             // through the associated data channel.
 
-            if !this.archived_done {
-                match this.archived.poll_next_unpin(ctxt) {
+            if let Some(ref mut archived) = this.archived {
+                match archived.poll_next_unpin(ctxt) {
                     Poll::Ready(Some(global::DataReply { ref_id, data })) => {
                         let (chan, latest) = this
                             .pending
@@ -119,13 +115,13 @@ where
                         }
                         continue;
                     }
-                    Poll::Ready(None) => this.archived_done = true,
+                    Poll::Ready(None) => this.archived = None,
                     Poll::Pending => (),
                 }
             }
 
-            if !this.live_done {
-                match this.live.poll_next_unpin(ctxt) {
+            if let Some(ref mut live) = this.live {
+                match live.poll_next_unpin(ctxt) {
                     Poll::Ready(Some(global::DataReply { ref_id, data }))
                         if !data.is_empty() =>
                     {
@@ -134,7 +130,9 @@ where
                             .entry(ref_id)
                             .or_insert_with(|| (DataChannel::new(), 0.0));
 
-                        match chan.process_live_data(data, this.archived_done) {
+                        match chan
+                            .process_live_data(data, this.archived.is_none())
+                        {
                             BufferResult::Data(None) => {}
                             BufferResult::Data(Some(mut data)) => {
                                 if Self::filter_and_update_latest(
@@ -157,7 +155,7 @@ where
                             "received empty live data packet for ref_id {ref_id}"
                         );
                     }
-                    Poll::Ready(None) => this.live_done = true,
+                    Poll::Ready(None) => this.live = None,
                     Poll::Pending => {}
                 }
             }
@@ -165,7 +163,7 @@ where
             // Both, archive and live stream, are done. Flush any pending data
             // in the channels before shutting down the stream.
 
-            if this.archived_done && this.live_done {
+            if this.archived.is_none() && this.live.is_none() {
                 if let Some(&ref_id) = this.pending.keys().next() {
                     let (mut chan, mut latest) =
                         this.pending.remove(&ref_id).unwrap();
@@ -217,7 +215,10 @@ mod test {
                 data: vec![data_info(130.0)],
             },
         ];
-        let mut s = super::merge(stream::empty(), stream::iter(live_input));
+        let mut s = super::merge(
+            None::<stream::Empty<_>>,
+            Some(stream::iter(live_input)),
+        );
 
         assert_eq!(
             s.next().await.unwrap(),
@@ -260,8 +261,10 @@ mod test {
                 data: vec![data_info(130.0)],
             },
         ];
-        let mut s =
-            super::merge(stream::iter(archive_input), stream::iter(live_input));
+        let mut s = super::merge(
+            Some(stream::iter(archive_input)),
+            Some(stream::iter(live_input)),
+        );
 
         assert_eq!(
             s.next().await.unwrap(),
@@ -316,8 +319,10 @@ mod test {
             },
         ];
 
-        let mut s =
-            super::merge(stream::iter(archive_input), stream::iter(live_input));
+        let mut s = super::merge(
+            Some(stream::iter(archive_input)),
+            Some(stream::iter(live_input)),
+        );
 
         // Expect archive data for ref 0 and 1
         assert_eq!(s.next().await.unwrap().ref_id, 0);
@@ -351,7 +356,10 @@ mod test {
             },
         ];
 
-        let mut s = super::merge(stream::iter(archive_input), stream::empty());
+        let mut s = super::merge(
+            Some(stream::iter(archive_input)),
+            None::<stream::Empty<_>>,
+        );
 
         assert_eq!(s.next().await.unwrap().data.len(), 2);
 

@@ -1119,11 +1119,9 @@ live data."]
         // time for the data to also be saved in a data logger.
 
         let s_live = if need_live {
-            Either::Left(
-                ACSysSubscriptions::live_data(ctxt, &drfs, start_live).await?,
-            )
+            Some(ACSysSubscriptions::live_data(ctxt, &drfs, start_live).await?)
         } else {
-            Either::Right(tokio_stream::empty())
+            None
         };
 
         // Build up the set of streams that will return archived data.
@@ -1162,12 +1160,12 @@ live data."]
 
             // Modify incoming DataReplies by updating their ref IDs.
 
-            Either::Left(tokio_stream::StreamExt::map(streams, |mut v| {
+            Some(tokio_stream::StreamExt::map(streams, |mut v| {
                 v.1.ref_id = v.0;
                 v.1
             }))
         } else {
-            Either::Right(tokio_stream::empty())
+            None
         };
 
         Ok(Box::pin(datastream::end_stream_at(
