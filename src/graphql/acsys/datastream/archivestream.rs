@@ -15,8 +15,7 @@ pub struct ArchiveStream<S>
 where
     S: Stream<Item = global::DataReply> + Send + 'static + Unpin,
 {
-    archived: S,
-    done: bool,
+    inner: Option<S>,
 }
 
 impl<S> ArchiveStream<S>
@@ -25,8 +24,7 @@ where
 {
     pub fn new(archived: S) -> Self {
         ArchiveStream {
-            archived,
-            done: false,
+            inner: Some(archived),
         }
     }
 }
@@ -50,17 +48,17 @@ where
     fn poll_next(
         mut self: Pin<&mut Self>, ctxt: &mut std::task::Context<'_>,
     ) -> Poll<Option<Self::Item>> {
-        // If the stream is marked "done", close it.
+        let Some(ref mut inner) = self.inner else {
+            return Poll::Ready(None);
+        };
 
-        if self.done {
-            Poll::Ready(None)
-        } else {
-            let mut reply = self.archived.poll_next_unpin(ctxt);
+        let reply = inner.poll_next_unpin(ctxt);
 
-            if let Poll::Ready(Some(ref mut packet)) = reply {
-                self.done = packet.data.is_empty();
+        if let Poll::Ready(Some(ref packet)) = reply {
+            if packet.data.is_empty() {
+                self.inner = None;
             }
-            reply
         }
+        reply
     }
 }
