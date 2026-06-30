@@ -27,6 +27,7 @@ pub mod proto {
         pub mod aclk {
             tonic::include_proto!("services.clock_event");
         }
+        #[cfg(feature = "alarms")]
         pub mod alarms {
             tonic::include_proto!("services.alarm_commands");
             tonic::include_proto!("services.alarm_groups");
@@ -39,15 +40,21 @@ pub mod proto {
         pub mod tlg_placement {
             tonic::include_proto!("services.tlg_placement");
         }
+        pub mod devdb {
+            tonic::include_proto!("services.devdb");
+        }
     }
 }
 
+#[cfg(feature = "alarms")]
+mod connection_utils;
+
+#[cfg(feature = "alarms")]
 pub mod alarms_db;
+#[cfg(feature = "alarms")]
 pub mod alarms_svc;
 pub mod clock;
 pub mod devdb;
 pub mod dpm;
 pub mod tlg;
 pub mod wscan;
-
-mod connection_utils;

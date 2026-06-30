@@ -1,12 +1,13 @@
 use crate::g_rpc::{
-    dpm,
+    devdb, dpm,
     proto::services::daq::{self, reading_reply},
+    proto::services::devdb::{PlotConfigResult, plot_config_result},
 };
 
 use async_graphql::*;
 use futures::future::{self, Either};
 use futures_util::{Stream, StreamExt, stream};
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use std::{collections::HashSet, pin::Pin, sync::Arc};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio_util::io::StreamReader;
@@ -20,12 +21,7 @@ use super::types as global;
 // Pull in our local types.
 
 mod datastream;
-mod plotconfigdb;
 pub mod types;
-
-pub fn new_context() -> plotconfigdb::T {
-    plotconfigdb::T::new()
-}
 
 use crate::g_rpc::dpm::Connection;
 
@@ -43,13 +39,13 @@ fn now() -> f64 {
 // Converts a gRPC proto::ReadingReply structure into a GraphQL
 // global::DataReply object.
 
-fn reading_to_reply(rdg: &daq::ReadingReply) -> global::DataReply {
-    match &rdg.value {
+fn reading_to_reply(rdg: daq::ReadingReply) -> global::DataReply {
+    match rdg.value {
         Some(reading_reply::Value::Readings(rdgs)) => global::DataReply {
             ref_id: rdg.index as i32,
             data: rdgs
                 .reading
-                .iter()
+                .into_iter()
                 .map(|v| global::DataInfo {
                     timestamp: v
                         .timestamp
@@ -57,12 +53,7 @@ fn reading_to_reply(rdg: &daq::ReadingReply) -> global::DataReply {
                             v.seconds as f64 + v.nanos as f64 / 1_000_000_000.0
                         })
                         .unwrap(),
-                    result: v
-                        .data
-                        .as_ref()
-                        .map(|v| v.try_into())
-                        .unwrap()
-                        .unwrap(),
+                    result: v.data.map(|v| v.try_into()).unwrap().unwrap(),
                 })
                 .collect(),
         },
@@ -82,7 +73,7 @@ fn reading_to_reply(rdg: &daq::ReadingReply) -> global::DataReply {
 
 fn xlat_reply(e: Result<daq::ReadingReply, Status>) -> global::DataReply {
     match e {
-        Ok(e) => reading_to_reply(&e),
+        Ok(e) => reading_to_reply(e),
         Err(e) => {
             warn!("channel error: {}", &e);
             global::DataReply {
@@ -158,7 +149,7 @@ immediately or after a delay."]
                 Ok(reply) => {
                     let index = reply.index as usize;
 
-                    results[index] = reading_to_reply(&reply);
+                    results[index] = reading_to_reply(reply);
 
                     remaining.remove(&index);
                     if remaining.is_empty() {
@@ -177,13 +168,39 @@ Returns a plot configuration associated with the specified ID. If the \
 ID is `null`, all configurations are returned. Both style of requests \
 return an array result -- it's just that specifying an ID will return \
 an array with 0 or 1 element."]
-    #[instrument(skip(self, ctxt))]
+    #[instrument(skip(self))]
     async fn plot_configuration(
-        &self, ctxt: &Context<'_>, configuration_id: Option<usize>,
-    ) -> Vec<Arc<types::PlotConfigurationSnapshot>> {
-        ctxt.data_unchecked::<plotconfigdb::T>()
-            .find(configuration_id)
-            .await
+        &self, id: Option<u32>,
+    ) -> Result<Vec<types::PlotConfig>> {
+        info!("returning plot configuration(s)");
+
+        match devdb::get_plot_config(id).await {
+            Ok(PlotConfigResult {
+                result: Some(plot_config_result::Result::Config(config)),
+            }) => Ok(config
+                .data
+                .into_iter()
+                .map(|v| types::PlotConfig {
+                    config_id: v.id as usize,
+                    config_name: v.name.into(),
+                    config: v.config.into(),
+                })
+                .collect()),
+            Ok(PlotConfigResult {
+                result: Some(plot_config_result::Result::ErrMsg(msg)),
+            }) => {
+                warn!("{}", msg);
+                Err(Error::new(msg))
+            }
+            Ok(PlotConfigResult { .. }) => {
+                warn!("unexpected gRPC reply --- missing result");
+                Err(Error::new("unexpected gRPC reply: missing result"))
+            }
+            Err(e) => {
+                warn!("unexpected gRPC reply: {e}");
+                Err(Error::new(e.to_string()))
+            }
+        }
     }
 
     #[doc = "Obtain the user's last configuration.
@@ -191,27 +208,17 @@ an array with 0 or 1 element."]
 If the application saved the user's last plot configuration, this query \
 will return it. If there is no configuration for the user, `null` is \
 returned. The user's account is retrieved from the authentication token \
-that is included in the request.
-
-TEMPORARY: The `user` parameter can be used to retrieve a user's last \
-configuration. The convention is to prepend an underscore to the account \
-name. Once we use the new authentication method, we'll be able to look-up \
-the username and this parameter will be removed."]
+that is included in the request."]
     #[instrument(skip(self, ctxt))]
     async fn users_last_configuration(
-        &self, ctxt: &Context<'_>, user: Option<String>,
-    ) -> Option<Arc<types::PlotConfigurationSnapshot>> {
+        &self, ctxt: &Context<'_>,
+    ) -> Option<Arc<str>> {
         if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
             // TEMPORARY: If there isn't a JWT, use the account
             // specified by the caller.
 
-            if let Some(account) = auth.unsafe_account().or(user) {
+            if let Some(account) = auth.unsafe_account() {
                 info!("using account: {:?}", &account);
-
-                return ctxt
-                    .data_unchecked::<plotconfigdb::T>()
-                    .find_user(&account)
-                    .await;
             }
         }
         warn!("unable to determine user : no config returned");
@@ -230,7 +237,7 @@ Not all devices can be set -- most are read-only. To be able to set a \
 device, your SSO account must be associated with every device you may \
 want to set."]
     #[instrument(skip(self, _ctxt, _value))]
-    async fn _set_device(
+    async fn set_device(
         &self, _ctxt: &Context<'_>,
         #[graphql(
             desc = "The device to be set. This parameter should be expressed \
@@ -245,6 +252,7 @@ want to set."]
         {
             if let Ok(auth) = _ctxt.data::<global::AuthInfo>() {
                 // TEMPORARY: If there isn't a JWT, use the account
+
                 // specified by the caller.
 
                 if let Some(account) = auth.unsafe_account() {
@@ -277,25 +285,37 @@ want to set."]
         })
     }
 
-    #[instrument(skip(self, ctxt))]
+    #[doc = "Add/Update a plot configuration"]
+    #[instrument(skip(self))]
     async fn update_plot_configuration(
-        &self, ctxt: &Context<'_>, config: types::PlotConfigurationSnapshot,
-    ) -> Option<usize> {
-        info!("updating config");
-        ctxt.data_unchecked::<plotconfigdb::T>()
-            .update(config)
-            .await
+        &self, id: Option<usize>, name: String, config: String,
+    ) -> Result<usize> {
+        match devdb::save_plot_config(id, name, config).await {
+            Ok(id) => Ok(id),
+            Err(e) => Err(Error::new(e.to_string())),
+        }
     }
 
-    #[instrument(skip(self, ctxt))]
+    #[doc = "Delete a plot configuration"]
+    #[instrument(skip(self))]
     async fn delete_plot_configuration(
-        &self, ctxt: &Context<'_>, configuration_id: usize,
-    ) -> global::StatusReply {
-        info!("deleting config");
-        ctxt.data_unchecked::<plotconfigdb::T>()
-            .remove(&configuration_id)
-            .await;
-        global::StatusReply { status: 0 }
+        &self, configuration_id: i32,
+    ) -> Result<global::StatusReply> {
+        info!("deleting plot configuration {}", configuration_id);
+
+        match devdb::delete_plot_config(configuration_id).await {
+            Ok(PlotConfigResult {
+                result: Some(plot_config_result::Result::ErrMsg(msg)),
+            }) => {
+                warn!("{}", msg);
+                Err(Error::new(msg))
+            }
+            Ok(_) => Ok(global::StatusReply { status: 0 }),
+            Err(e) => {
+                warn!("unexpected gRPC reply: {e}");
+                Err(Error::new(e.to_string()))
+            }
+        }
     }
 
     #[doc = "Sets the user's default configuration.
@@ -303,28 +323,14 @@ want to set."]
 The content of the configuration are used to set the default \
 configuration for the user. All fields, except the ID and name \
 fields, are used. The user's account name is obtained from the \
-authentication token that accompanies the request.
-
-TEMPORARY: The `user` parameter can be used to specify the user \
-account with which to associate the configuration. The convention \
-is to prepend an underscore to the account name. Once we use the \
-new authentication method, we'll be able to look-up the username \
-and this parameter will be removed."]
-    #[instrument(skip(self, ctxt, config))]
+authentication token that accompanies the request."]
+    #[instrument(skip(self, ctxt))]
     async fn users_configuration(
-        &self, ctxt: &Context<'_>, user: Option<String>,
-        config: types::PlotConfigurationSnapshot,
+        &self, ctxt: &Context<'_>, _config: Arc<str>,
     ) -> Result<global::StatusReply> {
         if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
-            // TEMPORARY: If there isn't a JWT, use the username
-            // specified by the caller.
-
-            if let Some(account) = auth.unsafe_account().or(user) {
+            if let Some(account) = auth.unsafe_account() {
                 info!("using account: {:?}", &account);
-
-                ctxt.data_unchecked::<plotconfigdb::T>()
-                    .update_user(&account, config)
-                    .await;
                 Ok(global::StatusReply { status: 0 })
             } else {
                 Err(Error::new("unable to verify user credentials"))
@@ -381,6 +387,10 @@ fn add_event(
     move |device| format!("{device}@{}", event)
 }
 
+// These type aliases are used for the public Subscription API.
+// The streams use Either combinators internally to avoid heap allocations,
+// but these are boxed at the public API boundary since async_graphql
+// requires concrete trait object types.
 type DataStream = Pin<Box<dyn Stream<Item = global::DataReply> + Send>>;
 type PlotStream = Pin<Box<dyn Stream<Item = types::PlotReplyData> + Send>>;
 
@@ -391,25 +401,97 @@ struct TimeBounds {
 
 // Represents a single PV data point (event)
 
+/// Custom deserializer that converts JSON values directly to Vec<f64> or a
+/// scalar, avoiding intermediate Value allocations. This allows us to parse
+/// arrays directly to f64 without heap overhead from Value enum wrappers.
+fn deserialize_archiver_value<'de, D>(
+    deserializer: D,
+) -> Result<ArchiverValue, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use serde::de::{self, Visitor};
+
+    struct ArchiverValueVisitor;
+
+    impl<'de> Visitor<'de> for ArchiverValueVisitor {
+        type Value = ArchiverValue;
+
+        fn expecting(
+            &self, formatter: &mut std::fmt::Formatter,
+        ) -> std::fmt::Result {
+            formatter.write_str("a number or array of numbers")
+        }
+
+        fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(ArchiverValue::Scalar(v as f64))
+        }
+
+        fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(ArchiverValue::Scalar(v as f64))
+        }
+
+        fn visit_f64<E>(self, v: f64) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(ArchiverValue::Scalar(v))
+        }
+
+        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: de::SeqAccess<'de>,
+        {
+            let mut array = Vec::new();
+            while let Some(val) = seq.next_element::<serde_json::Number>()? {
+                if let Some(f) = val.as_f64() {
+                    array.push(f);
+                }
+            }
+            Ok(ArchiverValue::Array(array))
+        }
+    }
+
+    deserializer.deserialize_any(ArchiverValueVisitor)
+}
+
+/// Optimized representation of archiver event values.
+/// Stores either a scalar f64 or an array of f64s, avoiding Value enum overhead.
+#[derive(Debug)]
+enum ArchiverValue {
+    Scalar(f64),
+    Array(Vec<f64>),
+}
+
 #[derive(Debug, Deserialize)]
 struct ArchiverEvent {
     pub secs: i64,
     pub nanos: u32,
-    pub val: serde_json::Value,
+    #[serde(deserialize_with = "deserialize_archiver_value")]
+    pub val: ArchiverValue,
 }
 
 #[derive(Default)]
 pub struct ACSysSubscriptions;
 
-// Converts an f64 representing time since the epoch into a an RFC
+// Converts an f64 representing time since the epoch into an RFC
 // 3339 string.
 
 fn to_iso(timestamp_f64: f64) -> String {
     use chrono::{TimeZone, Utc};
 
     let seconds = timestamp_f64.trunc() as i64;
-    let nanoseconds =
-        ((timestamp_f64.fract() * 1_000_000_000.0).round()) as u32;
+    let nanoseconds = {
+        let nanos = (timestamp_f64.fract() * 1_000_000_000.0).round() as i64;
+        let nanos = nanos.clamp(0, 999_999_999);
+        nanos as u32
+    };
     let datetime_utc = Utc
         .timestamp_opt(seconds, nanoseconds)
         .earliest()
@@ -420,28 +502,19 @@ fn to_iso(timestamp_f64: f64) -> String {
     datetime_utc.format("%Y-%m-%dT%H:%M:%S.%fZ").to_string()
 }
 
-fn transform_event(event: &ArchiverEvent) -> global::DataReply {
+fn transform_event(event: ArchiverEvent) -> global::DataReply {
     let timestamp = event.secs as f64 + (event.nanos as f64 / 1_000_000_000.0);
-    let result = match &event.val {
-        serde_json::Value::Array(arr) => {
+    let result = match event.val {
+        ArchiverValue::Array(arr) => {
             global::DataType::ScalarArray(global::ScalarArray {
-                scalar_array_value: arr
-                    .iter()
-                    .filter_map(|v| match v {
-                        serde_json::Value::Number(n) => {
-                            Some(n.as_f64().unwrap())
-                        }
-                        _ => None,
-                    })
-                    .collect(),
+                scalar_array_value: arr,
             })
         }
-        serde_json::Value::Number(n) => {
+        ArchiverValue::Scalar(scalar) => {
             global::DataType::Scalar(global::Scalar {
-                scalar_value: n.as_f64().unwrap(),
+                scalar_value: scalar,
             })
         }
-        _ => global::DataType::Scalar(global::Scalar { scalar_value: 0.0 }),
     };
 
     global::DataReply {
@@ -491,7 +564,7 @@ impl<'ctx> ACSysSubscriptions {
                     Some(reply)
                 }
             })),
-            Err(e) => Err(Error::new(format!("{}", e).as_str())),
+            Err(e) => Err(Error::new(format!("{}", e))),
         }
     }
 
@@ -587,7 +660,7 @@ impl<'ctx> ACSysSubscriptions {
     ) -> Result<impl Stream<Item = global::DataReply> + Send + 'static + Unpin>
     {
         const BASE_URL: &str =
-            "http://archiverdev.fnal.gov:17668/retrieval/data/getData.json";
+            "http://archiver1.fnal.gov:17668/retrieval/data/getData.json";
 
         let request_url = format!(
             "{}?pv={}&from={}&to={}",
@@ -616,12 +689,17 @@ impl<'ctx> ACSysSubscriptions {
 
                 match Self::extract_next_object(&mut r).await {
                     Ok(Some(bytes)) => {
-                        if let Ok(item) =
-                            serde_json::from_slice::<ArchiverEvent>(&bytes)
-                        {
-                            Some((transform_event(&item), (r, true)))
-                        } else {
-                            None
+                        match serde_json::from_slice::<ArchiverEvent>(&bytes) {
+                            Ok(item) => {
+                                Some((transform_event(item), (r, true)))
+                            }
+                            Err(e) => {
+                                error!(
+				    "failed to deserialize archiver data: {e}, offending bytes: {}",
+				    String::from_utf8_lossy(&bytes)
+				);
+                                None
+                            }
                         }
                     }
                     _ => None,
@@ -637,7 +715,8 @@ impl<'ctx> ACSysSubscriptions {
     #[instrument(name = "ACNET_ARCH", skip(ctxt, device, start_time, end_time))]
     async fn archived_data(
         ctxt: &Context<'ctx>, device: &str, start_time: f64, end_time: f64,
-    ) -> Result<DataStream> {
+    ) -> Result<impl Stream<Item = global::DataReply> + Send + 'static + Unpin>
+    {
         use tokio_stream::StreamExt;
 
         // If the device has a subscript, then the client wants
@@ -671,10 +750,10 @@ impl<'ctx> ACSysSubscriptions {
         )
         .await
         {
-            Ok(s) => Ok(datastream::as_archive_stream(
-                Box::pin(StreamExt::map(s.into_inner(), xlat_reply))
-                    as DataStream,
-            )),
+            Ok(s) => Ok(datastream::as_archive_stream(StreamExt::map(
+                s.into_inner(),
+                xlat_reply,
+            ))),
             Err(e) => Err(Error::new(format!("{}", e).as_str())),
         }
     }
@@ -1040,11 +1119,9 @@ live data."]
         // time for the data to also be saved in a data logger.
 
         let s_live = if need_live {
-            Either::Left(
-                ACSysSubscriptions::live_data(ctxt, &drfs, start_live).await?,
-            )
+            Some(ACSysSubscriptions::live_data(ctxt, &drfs, start_live).await?)
         } else {
-            Either::Right(tokio_stream::empty())
+            None
         };
 
         // Build up the set of streams that will return archived data.
@@ -1057,24 +1134,25 @@ live data."]
             // correct ref ID with the stream.
 
             for (ref_id, drf) in drfs.into_iter().enumerate() {
-                let strms = tokio::join!(
-                    ACSysSubscriptions::epics_archived_data(
-                        &drf,
-                        st,
-                        archived_end,
-                    ),
-                    ACSysSubscriptions::archived_data(
-                        ctxt,
-                        &drf,
-                        st,
-                        archived_end,
-                    )
-                );
+                let epics_result = ACSysSubscriptions::epics_archived_data(
+                    &drf,
+                    st,
+                    archived_end,
+                )
+                .await;
+                let actual = match epics_result {
+                    Ok(epics) => Either::Left(epics),
+                    Err(_) => {
+                        let acnet = ACSysSubscriptions::archived_data(
+                            ctxt,
+                            &drf,
+                            st,
+                            archived_end,
+                        )
+                        .await?;
 
-                let actual = match strms {
-                    (Ok(epics), _) => Either::Left(epics),
-                    (_, Ok(acnet)) => Either::Right(acnet),
-                    (_, err @ Err(_)) => return err,
+                        Either::Right(acnet)
+                    }
                 };
 
                 streams.insert(ref_id as i32, actual);
@@ -1082,16 +1160,16 @@ live data."]
 
             // Modify incoming DataReplies by updating their ref IDs.
 
-            Either::Left(tokio_stream::StreamExt::map(streams, |mut v| {
+            Some(tokio_stream::StreamExt::map(streams, |mut v| {
                 v.1.ref_id = v.0;
                 v.1
             }))
         } else {
-            Either::Right(tokio_stream::empty())
+            None
         };
 
         Ok(Box::pin(datastream::end_stream_at(
-            datastream::filter_dupes(datastream::merge(s_archived, s_live)),
+            datastream::merge(s_archived, s_live),
             total,
             end_time,
         )) as DataStream)
@@ -1152,6 +1230,7 @@ correlated, all the devices are collected on the same event."]
         _x_max: Option<f64>,
         start_time: Option<f64>, end_time: Option<f64>,
         _sample_on_event: Option<u8>, _ch_x_axis: Option<String>,
+        _waveform_duration: Option<f64>,
     ) -> Result<PlotStream> {
         // Add the periodic rate to each of the device names after stripping
         // any event specifier.

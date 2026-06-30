@@ -25,6 +25,7 @@ where
     }
 }
 
+#[inline(never)]
 pub fn end_stream_at(
     s: impl Stream<Item = global::DataReply> + Send + 'static + Unpin,
     total: i32, end_date: Option<f64>,
@@ -57,7 +58,7 @@ where
 
                     // Remove any readings that have already been sent.
 
-                    v.data.drain(start_index..);
+                    v.data.truncate(start_index);
 
                     // If the data is empty, then we need to remove the
                     // ref ID from our set to mark that device as complete.

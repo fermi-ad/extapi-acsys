@@ -1,4 +1,4 @@
-use super::{DataStream, global};
+use super::global;
 use futures::Stream;
 use futures_util::StreamExt;
 use std::{pin::Pin, task::Poll};
@@ -11,41 +11,54 @@ use std::{pin::Pin, task::Poll};
 // per stream. This wrapper Stream, once it sees and returns the empty
 // array, will close the stream.
 
-pub struct ArchiveStream {
-    archived: DataStream,
-    done: bool,
+pub struct ArchiveStream<S>
+where
+    S: Stream<Item = global::DataReply> + Send + 'static + Unpin,
+{
+    inner: Option<S>,
 }
 
-impl ArchiveStream {
-    pub fn new(archived: DataStream) -> Self {
+impl<S> ArchiveStream<S>
+where
+    S: Stream<Item = global::DataReply> + Send + 'static + Unpin,
+{
+    pub fn new(archived: S) -> Self {
         ArchiveStream {
-            archived,
-            done: false,
+            inner: Some(archived),
         }
     }
 }
 
-pub fn as_archive_stream(s: DataStream) -> DataStream {
-    Box::pin(ArchiveStream::new(s)) as DataStream
+#[inline(never)]
+pub fn as_archive_stream<S>(
+    s: S,
+) -> impl Stream<Item = global::DataReply> + Send + 'static + Unpin
+where
+    S: Stream<Item = global::DataReply> + Send + 'static + Unpin,
+{
+    ArchiveStream::new(s)
 }
 
-impl Stream for ArchiveStream {
+impl<S> Stream for ArchiveStream<S>
+where
+    S: Stream<Item = global::DataReply> + Send + 'static + Unpin,
+{
     type Item = global::DataReply;
 
     fn poll_next(
         mut self: Pin<&mut Self>, ctxt: &mut std::task::Context<'_>,
     ) -> Poll<Option<Self::Item>> {
-        // If the stream is marked "done", close it.
+        let Some(ref mut inner) = self.inner else {
+            return Poll::Ready(None);
+        };
 
-        if self.done {
-            Poll::Ready(None)
-        } else {
-            let mut reply = self.archived.poll_next_unpin(ctxt);
+        let reply = inner.poll_next_unpin(ctxt);
 
-            if let Poll::Ready(Some(ref mut packet)) = reply {
-                self.done = packet.data.is_empty();
-            }
-            reply
+        if let Poll::Ready(Some(ref packet)) = reply
+            && packet.data.is_empty()
+        {
+            self.inner = None;
         }
+        reply
     }
 }

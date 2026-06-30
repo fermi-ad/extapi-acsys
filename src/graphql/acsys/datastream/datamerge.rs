@@ -1,4 +1,4 @@
-use super::{DataChannel, global};
+use super::{DataChannel, datachannel::BufferResult, global};
 use futures::Stream;
 use futures_util::StreamExt;
 use std::{
@@ -23,19 +23,23 @@ where
     SA: Stream<Item = global::DataReply> + Send + 'static + Unpin,
     SL: Stream<Item = global::DataReply> + Send + 'static + Unpin,
 {
-    archived: SA,
-    archived_done: bool,
-    live: SL,
-    live_done: bool,
-    pending: HashMap<i32, DataChannel>,
+    archived: Option<SA>,
+    live: Option<SL>,
+    pending: HashMap<i32, (DataChannel, f64)>,
 }
 
 // Useful combinator that assembles the internal stream type.
+// This uses a closure to create a type-erased stream that composes
+// different stream implementations without boxing.
 
-pub fn merge(
-    archived: impl Stream<Item = global::DataReply> + Send + 'static + Unpin,
-    live: impl Stream<Item = global::DataReply> + Send + 'static + Unpin,
-) -> impl Stream<Item = global::DataReply> + Send + 'static + Unpin {
+#[inline(never)]
+pub fn merge<SA, SL>(
+    archived: Option<SA>, live: Option<SL>,
+) -> impl Stream<Item = global::DataReply> + Send + 'static + Unpin
+where
+    SA: Stream<Item = global::DataReply> + Send + 'static + Unpin,
+    SL: Stream<Item = global::DataReply> + Send + 'static + Unpin,
+{
     DataMerge::new(archived, live)
 }
 
@@ -44,14 +48,37 @@ where
     SA: Stream<Item = global::DataReply> + Send + 'static + Unpin,
     SL: Stream<Item = global::DataReply> + Send + 'static + Unpin,
 {
-    pub fn new(archived: SA, live: SL) -> Self {
+    pub fn new(archived: Option<SA>, live: Option<SL>) -> Self {
         DataMerge {
             archived,
-            archived_done: false,
             live,
-            live_done: false,
             pending: HashMap::new(),
         }
+    }
+
+    /// Filters out data points that have already been seen based on the
+    /// `latest` timestamp and updates `latest` with the newest timestamp in
+    /// the batch. Returns true if there is data left to emit.
+    fn filter_and_update_latest(
+        data: &mut Vec<global::DataInfo>, latest: &mut f64,
+    ) -> bool {
+        if data.is_empty() {
+            return false;
+        }
+
+        let start = data.partition_point(|info| info.timestamp <= *latest);
+
+        // Remember the latest timestamp we've seen.
+
+        *latest = (*latest).max(data.last().unwrap().timestamp);
+
+        // Throw away any data points we've already seen.
+
+        if start > 0 {
+            data.drain(0..start);
+        }
+
+        !data.is_empty()
     }
 }
 
@@ -65,142 +92,98 @@ where
     fn poll_next(
         mut self: Pin<&mut Self>, ctxt: &mut Context<'_>,
     ) -> Poll<Option<Self::Item>> {
+        let this = &mut *self;
         loop {
             // See if there's any archive data to process. If so, pass it
             // through the associated data channel.
 
-            if !self.archived_done {
-                match self.archived.poll_next_unpin(ctxt) {
+            if let Some(ref mut archived) = this.archived {
+                match archived.poll_next_unpin(ctxt) {
                     Poll::Ready(Some(global::DataReply { ref_id, data })) => {
-                        let buf = self
+                        let (chan, latest) = this
                             .pending
                             .entry(ref_id)
-                            .or_insert_with(DataChannel::new);
-                        let data = buf.process_archive_data(data);
+                            .or_insert_with(|| (DataChannel::new(), 0.0));
 
-                        // If there's no data in this packet, then this
-                        // channel's archive data is done. We don't forward
-                        // empty data packets, so we need to loop and let
-                        // the archive stream have a chance to return more
-                        // data or register a Waker.
-
-                        if data.is_empty() {
-                            continue;
+                        if let Some(mut data) = chan.process_archive_data(data)
+                            && Self::filter_and_update_latest(&mut data, latest)
+                        {
+                            return Poll::Ready(Some(global::DataReply {
+                                ref_id,
+                                data,
+                            }));
                         }
+                        continue;
+                    }
+                    Poll::Ready(None) => this.archived = None,
+                    Poll::Pending => (),
+                }
+            }
 
-                        // TEMP: Log any error status. This won't
-                        // be in the final product!
+            if let Some(ref mut live) = this.live {
+                match live.poll_next_unpin(ctxt) {
+                    Poll::Ready(Some(global::DataReply { ref_id, data }))
+                        if !data.is_empty() =>
+                    {
+                        let (chan, latest) = this
+                            .pending
+                            .entry(ref_id)
+                            .or_insert_with(|| (DataChannel::new(), 0.0));
 
-                        for point in &data {
-                            if let global::DataInfo {
-                                result:
-                                    global::DataType::StatusReply(
-                                        global::StatusReply { status },
-                                    ),
-                                ..
-                            } = point
-                            {
-                                warn!(
-                                    "ref {} returned status [{} {}]",
-                                    ref_id,
-                                    status & 255,
-                                    status / 256
-                                )
+                        match chan
+                            .process_live_data(data, this.archived.is_none())
+                        {
+                            BufferResult::Data(None) => {}
+                            BufferResult::Data(Some(mut data)) => {
+                                if Self::filter_and_update_latest(
+                                    &mut data, latest,
+                                ) {
+                                    return Poll::Ready(Some(
+                                        global::DataReply { ref_id, data },
+                                    ));
+                                }
+                            }
+                            BufferResult::Overflow => {
+                                warn!("buffer overflow for ref_id {ref_id}");
+                                return Poll::Ready(None);
                             }
                         }
+                        continue;
+                    }
+                    Poll::Ready(Some(global::DataReply { ref_id, .. })) => {
+                        warn!(
+                            "received empty live data packet for ref_id {ref_id}"
+                        );
+                    }
+                    Poll::Ready(None) => this.live = None,
+                    Poll::Pending => {}
+                }
+            }
 
-                        // Return the data (either archive data or buffered
-                        // live data).
+            // Both, archive and live stream, are done. Flush any pending data
+            // in the channels before shutting down the stream.
 
+            if this.archived.is_none() && this.live.is_none() {
+                if let Some(&ref_id) = this.pending.keys().next() {
+                    let (mut chan, mut latest) =
+                        this.pending.remove(&ref_id).unwrap();
+                    if let Some(mut data) = chan.get_buffer()
+                        && Self::filter_and_update_latest(
+                            &mut data,
+                            &mut latest,
+                        )
+                    {
                         return Poll::Ready(Some(global::DataReply {
                             ref_id,
                             data,
                         }));
                     }
-                    Poll::Ready(None) => self.archived_done = true,
-                    Poll::Pending => (),
+                    continue;
                 }
+                return Poll::Ready(None);
             }
 
-            // If we receive live data, we need to buffer it. We could
-            // let the gRPC socket do the buffering. But a large archiver
-            // request could take a while to send over and we don't want
-            // DPM to get tired of us not acknowledging live data.
-
-            if !self.live_done {
-                match self.live.poll_next_unpin(ctxt) {
-                    Poll::Ready(Some(global::DataReply { ref_id, data })) => {
-                        // Grab multiple references inside `Self`.
-
-                        let DataMerge {
-                            ref mut pending,
-                            ref archived_done,
-                            ..
-                        } = *self;
-
-                        // Look-up the data channel associated with the
-                        // `ref_id`. If it doesn't exist, insert a new one.
-
-                        let buf = pending
-                            .entry(ref_id)
-                            .or_insert_with(DataChannel::new);
-
-                        if let Some(data) =
-                            buf.process_live_data(data, *archived_done)
-                        {
-                            if data.is_empty() {
-                                warn!("received empty data packet");
-                            } else {
-                                // TEMP: Log any error status. This won't
-                                // be in the final product!
-
-                                for point in &data {
-                                    if let global::DataInfo {
-                                        result:
-                                            global::DataType::StatusReply(
-                                                global::StatusReply { status },
-                                            ),
-                                        ..
-                                    } = point
-                                    {
-                                        warn!(
-                                            "ref {} returned status [{} {}]",
-                                            ref_id,
-                                            status & 255,
-                                            status / 256
-                                        )
-                                    }
-                                }
-
-                                return Poll::Ready(Some(global::DataReply {
-                                    ref_id,
-                                    data,
-                                }));
-                            }
-                        }
-                        continue;
-                    }
-                    Poll::Ready(None) => self.live_done = true,
-                    Poll::Pending => {}
-                }
-            }
-
-            return if self.archived_done && self.live_done {
-                // If both streams are exhausted, check to see if there's
-                // any pending data to be sent.
-
-                for (ref_id, buf) in self.pending.iter_mut() {
-                    if let Some(data) = buf.get_buffer() {
-                        return Poll::Ready(Some(global::DataReply {
-                            ref_id: *ref_id,
-                            data,
-                        }));
-                    }
-                }
-                Poll::Ready(None)
-            } else {
-                Poll::Pending
-            };
+            return Poll::Pending;
         }
     }
 }
@@ -222,7 +205,7 @@ mod test {
     async fn test_merge_with_only_live() {
         use futures::stream::{self, StreamExt};
 
-        let live_input = &[
+        let live_input = [
             global::DataReply {
                 ref_id: 0,
                 data: vec![data_info(120.0)],
@@ -232,8 +215,10 @@ mod test {
                 data: vec![data_info(130.0)],
             },
         ];
-        let mut s =
-            super::merge(stream::empty(), stream::iter(live_input.clone()));
+        let mut s = super::merge(
+            None::<stream::Empty<_>>,
+            Some(stream::iter(live_input)),
+        );
 
         assert_eq!(
             s.next().await.unwrap(),
@@ -256,7 +241,7 @@ mod test {
     async fn test_merge_archive_with_live() {
         use futures::stream::{self, StreamExt};
 
-        let archive_input = &[
+        let archive_input = [
             global::DataReply {
                 ref_id: 0,
                 data: vec![data_info(100.0), data_info(110.0)],
@@ -266,7 +251,7 @@ mod test {
                 data: vec![],
             },
         ];
-        let live_input = &[
+        let live_input = [
             global::DataReply {
                 ref_id: 0,
                 data: vec![data_info(120.0)],
@@ -277,8 +262,8 @@ mod test {
             },
         ];
         let mut s = super::merge(
-            stream::iter(archive_input.clone()),
-            stream::iter(live_input.clone()),
+            Some(stream::iter(archive_input)),
+            Some(stream::iter(live_input)),
         );
 
         assert_eq!(
@@ -302,6 +287,84 @@ mod test {
                 data: vec![data_info(130.0)],
             },
         );
+        assert!(s.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_merge_multiple_ref_ids_dedupe() {
+        use futures::stream::{self, StreamExt};
+
+        let archive_input = [
+            global::DataReply {
+                ref_id: 0,
+                data: vec![data_info(100.0), data_info(110.0)],
+            },
+            global::DataReply {
+                ref_id: 1,
+                data: vec![data_info(200.0), data_info(210.0)],
+            },
+            global::DataReply {
+                ref_id: 0,
+                data: vec![], // End archive for 0
+            },
+        ];
+        let live_input = [
+            global::DataReply {
+                ref_id: 0,
+                data: vec![data_info(110.0), data_info(120.0)], // 110 is dupe
+            },
+            global::DataReply {
+                ref_id: 1,
+                data: vec![data_info(210.0), data_info(220.0)], // 210 is dupe
+            },
+        ];
+
+        let mut s = super::merge(
+            Some(stream::iter(archive_input)),
+            Some(stream::iter(live_input)),
+        );
+
+        // Expect archive data for ref 0 and 1
+        assert_eq!(s.next().await.unwrap().ref_id, 0);
+        assert_eq!(s.next().await.unwrap().ref_id, 1);
+
+        // Live ref 0 should have 110 filtered out
+        let r = s.next().await.unwrap();
+        assert_eq!(r.ref_id, 0);
+        assert_eq!(r.data, vec![data_info(120.0)]);
+
+        // Live ref 1 should have 210 filtered out
+        let r = s.next().await.unwrap();
+        assert_eq!(r.ref_id, 1);
+        assert_eq!(r.data, vec![data_info(220.0)]);
+
+        assert!(s.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_merge_decreasing_timestamps() {
+        use futures::stream::{self, StreamExt};
+
+        let archive_input = [
+            global::DataReply {
+                ref_id: 0,
+                data: vec![data_info(100.0), data_info(110.0)],
+            },
+            global::DataReply {
+                ref_id: 0,
+                data: vec![data_info(105.0), data_info(115.0)], // 105 should be filtered
+            },
+        ];
+
+        let mut s = super::merge(
+            Some(stream::iter(archive_input)),
+            None::<stream::Empty<_>>,
+        );
+
+        assert_eq!(s.next().await.unwrap().data.len(), 2);
+
+        let r = s.next().await.unwrap();
+        assert_eq!(r.data, vec![data_info(115.0)]);
         assert!(s.next().await.is_none());
     }
 }

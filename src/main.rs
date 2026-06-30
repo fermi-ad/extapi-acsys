@@ -1,13 +1,27 @@
-use tracing::{info, subscriber};
+use clap::Parser;
+use tokio_rustls as _;
+use tracing::{error, info, subscriber};
 use tracing_subscriber::{
     Registry, filter::EnvFilter, fmt::layer, layer::SubscriberExt,
 };
 mod g_rpc;
 mod graphql;
+
+#[cfg(feature = "alarms")]
 mod pubsub;
+
+#[derive(Parser)]
+#[command(about = "GraphQL API server")]
+struct Args {
+    /// Port the GraphQL web server listens on
+    #[arg(short = 'p', long, default_value_t = 443)]
+    port: u16,
+}
 
 #[tokio::main]
 async fn main() {
+    let args = Args::parse();
+
     // Set up logging.
     let fmt_layer = layer()
         .with_target(false)
@@ -21,11 +35,14 @@ async fn main() {
     subscriber::set_global_default(subscriber)
         .expect("Unable to set global default subscriber");
 
-    let _ = rustls::crypto::ring::default_provider().install_default();
-
-    info!("starting");
-
-    // Start the web server.
-
-    graphql::start_service().await;
+    match rustls::crypto::ring::default_provider().install_default() {
+        Ok(_) => {
+            info!("starting");
+            graphql::start_service(args.port).await;
+        }
+        Err(e) => {
+            error!("failed to install default crypto provider: {:?}", e);
+            return;
+        }
+    }
 }

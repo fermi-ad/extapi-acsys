@@ -3,24 +3,17 @@ use async_graphql::{ComplexObject, InputObject, SimpleObject, Union};
 use base64::{Engine, engine::general_purpose::STANDARD_NO_PAD};
 use chrono::{DateTime, Duration, Utc};
 use serde_json::{self, Value};
-use std::collections::HashMap;
 
 #[derive(Debug)]
 pub struct AuthInfo {
     bearer_token: Option<String>,
 }
+
 impl AuthInfo {
     pub fn new(info: Option<String>) -> Self {
         AuthInfo {
-            bearer_token: info.and_then(|v| {
-                if let ["Bearer", token] =
-                    v.split(' ').collect::<Vec<&str>>()[..]
-                {
-                    Some(token.to_string())
-                } else {
-                    None
-                }
-            }),
+            bearer_token: info
+                .and_then(|v| v.strip_prefix("Bearer ").map(String::from)),
         }
     }
 
@@ -34,18 +27,15 @@ impl AuthInfo {
     }
 
     pub fn unsafe_account(&self) -> Option<String> {
-        self.bearer_token.as_ref().and_then(|token| {
-            if let [_, body, _] = token.split('.').collect::<Vec<&str>>()[..]
-                && let Ok(json) = STANDARD_NO_PAD.decode(body)
-                && let Ok(result) =
-                    serde_json::from_slice::<HashMap<String, Value>>(&json)
-                && let Some(Value::String(user)) =
-                    result.get("preferred_username")
-            {
-                Some(user.clone())
-            } else {
-                None
-            }
+        self.bearer_token.as_deref().and_then(|token| {
+            let body = token.split('.').nth(1)?;
+            let json = STANDARD_NO_PAD.decode(body).ok()?;
+            let result: Value = serde_json::from_slice(&json).ok()?;
+
+            result
+                .get("preferred_username")
+                .and_then(Value::as_str)
+                .map(String::from)
         })
     }
 }
@@ -198,6 +188,7 @@ pub struct DevValue {
 // `proto::Data` type.
 
 impl From<DevValue> for device::Value {
+    #[inline(never)]
     fn from(val: DevValue) -> Self {
         match val {
             // TODO: Need to make an integer a valid device type.
@@ -285,6 +276,7 @@ impl From<DevValue> for device::Value {
 impl TryFrom<device::Value> for DataType {
     type Error = std::io::Error;
 
+    #[inline(never)]
     fn try_from(val: device::Value) -> Result<Self, Self::Error> {
         match val.value {
             Some(device::value::Value::Scalar(v)) => {
@@ -295,51 +287,15 @@ impl TryFrom<device::Value> for DataType {
                     scalar_array_value: v.value,
                 }))
             }
-            Some(device::value::Value::Raw(v)) => Ok(DataType::Raw(Raw {
-                raw_value: v.clone(),
-            })),
+            Some(device::value::Value::Raw(v)) => {
+                Ok(DataType::Raw(Raw { raw_value: v }))
+            }
             Some(device::value::Value::Text(v)) => {
                 Ok(DataType::Text(Text { text_value: v }))
             }
             Some(device::value::Value::TextArr(v)) => {
                 Ok(DataType::TextArray(TextArray {
-                    text_array_value: v.value.clone(),
-                }))
-            }
-            Some(_) => Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "received a device type we don't yet translate",
-            )),
-            _ => Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "received a device type that is not recognized",
-            )),
-        }
-    }
-}
-
-impl TryFrom<&device::Value> for DataType {
-    type Error = std::io::Error;
-
-    fn try_from(val: &device::Value) -> Result<Self, Self::Error> {
-        match &val.value {
-            Some(device::value::Value::Scalar(v)) => {
-                Ok(DataType::Scalar(Scalar { scalar_value: *v }))
-            }
-            Some(device::value::Value::ScalarArr(v)) => {
-                Ok(DataType::ScalarArray(ScalarArray {
-                    scalar_array_value: v.value.clone(),
-                }))
-            }
-            Some(device::value::Value::Raw(v)) => Ok(DataType::Raw(Raw {
-                raw_value: v.clone(),
-            })),
-            Some(device::value::Value::Text(v)) => Ok(DataType::Text(Text {
-                text_value: v.clone(),
-            })),
-            Some(device::value::Value::TextArr(v)) => {
-                Ok(DataType::TextArray(TextArray {
-                    text_array_value: v.value.clone(),
+                    text_array_value: v.value,
                 }))
             }
             Some(_) => Err(std::io::Error::new(

@@ -5,26 +5,41 @@ use super::proto::{
         daq_client::DaqClient,
     },
 };
-use rust_env_var_lib::env_var;
 use tokio::time::{Duration, timeout};
-use tonic::transport::{Channel, Error};
+use tonic::transport::{Channel, Endpoint, Error};
 use tracing::{error, info, instrument, warn};
 
 pub struct Connection(DaqClient<Channel>);
 
 type TonicStreamResult<T> =
     Result<tonic::Response<tonic::Streaming<T>>, tonic::Status>;
-type TonicQueryResult<T> = Result<T, tonic::Status>;
-
-const DPM_HOST: &str = "DPM_GRPC_HOST";
+type _TonicQueryResult<T> = Result<T, tonic::Status>;
 
 // Builds a sharable connection to the DPM pool. All instances will use the
 // same connection.
 
 pub async fn build_connection() -> Result<Connection, Error> {
-    let host: String = env_var::expect(DPM_HOST);
+    const HOSTS: [&str; 14] = [
+        "http://dce01:50051",
+        "http://dce02:50051",
+        "http://dce03:50051",
+        "http://dce04:50051",
+        "http://dce05:50051",
+        "http://dce06:50051",
+        "http://dce07:50051",
+        "http://dce08:50051",
+        "http://dce09:50051",
+        "http://dce10:50051",
+        "http://dce11:50051",
+        "http://dce12:50051",
+        "http://dce13:50051",
+        "http://dce14:50051",
+    ];
 
-    Ok(Connection(DaqClient::connect(host).await?))
+    let endpoints = HOSTS.iter().map(|h| Endpoint::from_static(h));
+    let channel = Channel::balance_list(endpoints);
+
+    Ok(Connection(DaqClient::new(channel)))
 }
 
 #[instrument(skip(conn, jwt, devices))]
@@ -71,7 +86,7 @@ pub async fn acquire_devices(
 pub async fn _set_device(
     conn: &Connection, session_id: Option<String>, device: String,
     value: device::Value,
-) -> TonicQueryResult<Vec<i32>> {
+) -> _TonicQueryResult<Vec<i32>> {
     use tonic::{IntoRequest, metadata::MetadataValue};
 
     info!("setting to {:?}", &value);
@@ -108,6 +123,6 @@ pub async fn _set_device(
             }
         }
     } else {
-        Err(tonic::Status::internal("not authorized"))
+        Ok(vec![7 + -59 * 256])
     }
 }

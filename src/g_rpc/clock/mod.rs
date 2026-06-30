@@ -13,7 +13,10 @@ pub async fn subscribe(
     let host: String = env_var::expect(CLOCK_HOST);
     let endpoint = Endpoint::from_shared(host)
         .map_err(|e| {
-            tonic::Status::invalid_argument(format!("Invalid host URI: {}", e))
+            tonic::Status::invalid_argument(format!(
+                "Invalid host URI: {}, use https://host:port format",
+                e
+            ))
         })?
         .connect_timeout(Duration::from_secs(2));
     let channel = endpoint

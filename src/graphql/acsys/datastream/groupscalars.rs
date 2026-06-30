@@ -29,6 +29,7 @@ impl<const MAX_PAYLOAD: usize, S> GroupScalars<MAX_PAYLOAD, S>
 where
     S: Stream<Item = global::DataReply> + Send + 'static + Unpin,
 {
+    #[inline(never)]
     pub fn new(archived: S) -> Self {
         GroupScalars {
             archived,
@@ -39,7 +40,7 @@ where
 
 pub fn group_scalars<const MAX_PAYLOAD: usize, S>(
     s: S,
-) -> impl Stream<Item = global::DataReply> + Send + 'static + Unpin
+) -> GroupScalars<MAX_PAYLOAD, S>
 where
     S: Stream<Item = global::DataReply> + Send + 'static + Unpin,
 {
@@ -140,9 +141,12 @@ where
                             std::cmp::min(space, payload.data.len());
 
                         if amount_to_move > 0 {
-                            pending
-                                .data
-                                .extend(payload.data.drain(..amount_to_move));
+                            pending.data.reserve(amount_to_move);
+                            pending.data.extend_from_slice(
+                                &payload.data[..amount_to_move],
+                            );
+                            // Remove the transferred items from payload
+                            payload.data.drain(..amount_to_move);
                         }
 
                         // If the payload data isn't empty, it means
