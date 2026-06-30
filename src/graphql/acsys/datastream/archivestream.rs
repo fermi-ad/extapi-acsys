@@ -54,10 +54,10 @@ where
 
         let reply = inner.poll_next_unpin(ctxt);
 
-        if let Poll::Ready(Some(ref packet)) = reply {
-            if packet.data.is_empty() {
-                self.inner = None;
-            }
+        if let Poll::Ready(Some(ref packet)) = reply
+            && packet.data.is_empty()
+        {
+            self.inner = None;
         }
         reply
     }
