@@ -51,7 +51,7 @@ fn alarm_try_from_message() {
             }}
         "#
     );
-    let message = Message::new(None, text.to_string());
+    let message = StringMessage::new(None, text);
 
     let output = Alarm::try_from(message).unwrap();
     assert_eq!(output.device, "M:BEAM");

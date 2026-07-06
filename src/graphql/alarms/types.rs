@@ -15,10 +15,10 @@ use crate::{
         },
     },
     graphql::alarms::utils,
-    pubsub::Message,
 };
 use async_graphql::SimpleObject;
 use chrono::{DateTime, Utc};
+use rust_pubsub_lib::{Message, StringMessage};
 
 #[cfg(test)]
 mod tests;
@@ -55,11 +55,11 @@ impl From<Status> for Alarm {
     }
 }
 
-impl TryFrom<Message> for Alarm {
+impl TryFrom<StringMessage> for Alarm {
     type Error = serde_json::Error;
 
-    fn try_from(value: Message) -> Result<Self, Self::Error> {
-        serde_json::from_str::<Status>(&value.value).map(Alarm::from)
+    fn try_from(value: StringMessage) -> Result<Self, Self::Error> {
+        serde_json::from_str::<Status>(value.value_ref()).map(Alarm::from)
     }
 }
 
