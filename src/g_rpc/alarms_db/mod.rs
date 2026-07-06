@@ -16,10 +16,7 @@ use crate::g_rpc::{
 };
 use std::sync::LazyLock;
 use tokio::try_join;
-use tonic::{
-    async_trait,
-    transport::{Channel, Error},
-};
+use tonic::transport::{Channel, Error};
 
 /// The environment variable name to use when requesting the location of the alarms DB service.
 const GRPC_ALARMS_DB_HOST: &str = "GRPC_ALARMS_DB_HOST";
@@ -36,7 +33,6 @@ struct AlarmsDbConnectionAdapter {
     pub layouts_conn: UserLayoutsServiceClient<Channel>,
     pub timers_conn: AlarmTimerServiceClient<Channel>,
 }
-#[async_trait]
 impl ConnectionAdapter for AlarmsDbConnectionAdapter {
     async fn new(host: String) -> Result<Self, Error> {
         let (groups_conn, layouts_conn, timers_conn) = try_join!(

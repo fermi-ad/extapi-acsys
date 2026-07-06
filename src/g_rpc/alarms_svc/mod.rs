@@ -17,7 +17,7 @@ use crate::g_rpc::{
 use chrono::{DateTime, Timelike, Utc};
 use std::sync::LazyLock;
 use tonic::{
-    Response, Status, async_trait,
+    Response, Status,
     transport::{Channel, Error},
 };
 
@@ -109,7 +109,6 @@ async fn do_snapshot_request(
 struct AlarmsServiceConnectionAdapter {
     pub conn: AlarmCommandsClient<Channel>,
 }
-#[async_trait]
 impl ConnectionAdapter for AlarmsServiceConnectionAdapter {
     async fn new(host: String) -> Result<Self, Error> {
         let conn = AlarmCommandsClient::connect(host).await?;
