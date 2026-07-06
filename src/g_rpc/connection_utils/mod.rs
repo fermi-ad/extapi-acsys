@@ -17,7 +17,7 @@ pub trait ConnectionAdapter: Clone + Sized {
     ///
     /// This function is `async` to allow the connection to be made as part of the initialization process.
     /// The return value is a [`Result`] to allow an [`Error`] to propagate to the calling code.
-    fn new(host: String) -> impl Future<Output = Result<Self, Error>>;
+    async fn new(host: String) -> Result<Self, Error>;
 }
 
 /// A structure to hold a lock on the inner [`ConnectionAdapter`] and safely run several requests to the same remote host at once.
