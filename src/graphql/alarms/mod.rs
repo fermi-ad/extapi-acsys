@@ -5,11 +5,10 @@
 use crate::{
     g_rpc::{alarms_db, alarms_svc},
     graphql::alarms::types::Alarm,
-    pubsub::{Subscriber, kafka_impl::KafkaSubscriber},
 };
 use async_graphql::{Error, Object, Subscription};
 use chrono::{DateTime, Utc};
-use rust_env_var_lib::env_var;
+use rust_pubsub_lib::{KafkaSubscriber, StringMessage, Subscriber};
 use tokio_stream::{Stream, StreamExt};
 use tonic::{Code, Status};
 use tracing::error;
@@ -190,37 +189,37 @@ impl AlarmsQueries {
 
 /// Describes long-lived data streams for alarms.
 #[derive(Default)]
-pub struct AlarmsSubscriptions;
+pub struct AlarmsSubscriptions {
+    host: String,
+    topic: String,
+}
+
+impl AlarmsSubscriptions {
+    pub fn new(host: String, topic: String) -> Self {
+        Self { host, topic }
+    }
+}
 
 #[Subscription]
 impl AlarmsSubscriptions {
     /// Streams back all alarms from the alarms topic.
     async fn alarms(&self) -> Result<impl Stream<Item = Alarm>, Error> {
-        KafkaSubscriber::subscribe(get_host(), get_topic())
-            .await
-            .map(|stream| {
-                stream.filter_map(|stream_item| match stream_item {
-                    Err(e) => {
-                        error!("{e:?}");
-                        None
-                    }
-                    Ok(message) => Alarm::try_from(message)
-                        .inspect_err(|e| error!("{e:?}"))
-                        .ok(),
-                })
-            })
-            .map_err(|e| Error::new(format!("{e}")))
+        let stream =
+            KafkaSubscriber::new(self.host.clone(), self.topic.clone())
+                .get_stream::<StringMessage>()
+                .await
+                .map_err(|e| Error::new(format!("{e}")))?;
+
+        Ok(stream.filter_map(|stream_item| match stream_item {
+            Err(e) => {
+                error!("{e:?}");
+                None
+            }
+            Ok(message) => Alarm::try_from(message)
+                .inspect_err(|e| error!("{e:?}"))
+                .ok(),
+        }))
     }
-}
-
-const ALARMS_KAFKA_HOST: &str = "ALARMS_KAFKA_HOST";
-fn get_host() -> String {
-    env_var::expect(ALARMS_KAFKA_HOST)
-}
-
-const ALARMS_KAFKA_TOPIC: &str = "ALARMS_KAFKA_TOPIC";
-fn get_topic() -> String {
-    env_var::expect(ALARMS_KAFKA_TOPIC)
 }
 
 fn handle_error<T>(e: Status, gerund: &str) -> Result<T, Error> {
@@ -238,13 +237,26 @@ fn handle_error<T>(e: Status, gerund: &str) -> Result<T, Error> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::time::Duration;
+
     use async_graphql::Schema;
+    use rust_pubsub_lib::{
+        KafkaPublisher, KafkaTestHarness, Message, Publisher,
+    };
+    use serde_json::json;
+    use tokio::time::timeout;
+
+    use crate::g_rpc::proto::common::alarm::status::{Severity, Source, State};
+
+    use super::*;
 
     async fn test_query_returns_err(gql_query: &str, err_msg: &str) {
-        let schema =
-            Schema::build(AlarmsQueries, AlarmsMutations, AlarmsSubscriptions)
-                .finish();
+        let schema = Schema::build(
+            AlarmsQueries,
+            AlarmsMutations,
+            AlarmsSubscriptions::default(),
+        )
+        .finish();
         let result = schema.execute(gql_query).await;
         let err = result.errors.first().unwrap();
         println!("{err}");
@@ -459,5 +471,76 @@ mod tests {
             "Error updating alarm timer. See server logs for details. (Error ID: ",
         )
         .await;
+    }
+
+    #[tokio::test]
+    async fn alarms_subscription_integration_test() {
+        let (harness, topic) = KafkaTestHarness::with_new_topic("alarms").await;
+        let host = harness.host().await;
+
+        let schema = Schema::build(
+            AlarmsQueries,
+            AlarmsMutations,
+            AlarmsSubscriptions::new(host.clone(), topic.clone()),
+        )
+        .finish();
+        let mut stream = schema.execute_stream(
+            r#"
+            subscription {
+                alarms {
+                    device,
+                    source,
+                    state,
+                }
+            }
+        "#,
+        );
+
+        let status = format!(
+            r#"{{
+            "device": "G:TEST",
+            "source": {},
+            "state": {},
+            "severity": {},
+            "user": "",
+            "epics_type": "",
+            "acknowledgeable": false
+        }}"#,
+            Source::Analog as i32,
+            State::Ok as i32,
+            Severity::Unknown as i32
+        );
+
+        let message =
+            StringMessage::new(Some("G:TEST#Analog".to_string()), status);
+        KafkaPublisher::new(host, topic)
+            .publish(message)
+            .await
+            .expect("message should be sent successfully");
+
+        let stream_content =
+            timeout(Duration::from_millis(5000), stream.next())
+                .await
+                .expect("Message should arrive in reasonable time")
+                .expect("The requested data should be provided");
+
+        assert!(
+            stream_content.is_ok(),
+            "GraphQL errors: {:?}",
+            stream_content.errors
+        );
+
+        let extracted_data = serde_json::to_value(&stream_content.data)
+            .expect("GQL response data is deserializable");
+        assert_eq!(
+            extracted_data,
+            json!({
+                "alarms": {
+                    "device": "G:TEST",
+                    "source": "ANALOG",
+                    "state": "OK"
+                }
+            })
+        );
     }
 }

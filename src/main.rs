@@ -1,14 +1,11 @@
 use clap::Parser;
-use tokio_rustls as _;
 use tracing::{error, info, subscriber};
 use tracing_subscriber::{
     Registry, filter::EnvFilter, fmt::layer, layer::SubscriberExt,
 };
+
 mod g_rpc;
 mod graphql;
-
-#[cfg(feature = "alarms")]
-mod pubsub;
 
 #[derive(Parser)]
 #[command(about = "GraphQL API server")]

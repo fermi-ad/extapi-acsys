@@ -18,13 +18,13 @@ use axum::{
     routing::get,
 };
 use http::{Method, header};
+use rust_env_var_lib::env_var;
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use tower_http::cors::{Any, CorsLayer};
 use tracing::{info, instrument};
 use types::AuthInfo;
 
 mod acsys;
-#[cfg(feature = "alarms")]
 mod alarms;
 mod bbm;
 mod devdb;
@@ -115,7 +115,6 @@ async fn create_acsys_router() -> Router {
         .route_service(S_ENDPOINT, GraphQLSubscription::new(schema))
 }
 
-#[cfg(feature = "alarms")]
 fn create_alarms_router() -> Router {
     const Q_ENDPOINT: &str = "/alarms";
     const S_ENDPOINT: &str = "/alarms/s";
@@ -123,7 +122,7 @@ fn create_alarms_router() -> Router {
     let schema = Schema::build(
         alarms::AlarmsQueries,
         alarms::AlarmsMutations,
-        alarms::AlarmsSubscriptions,
+        alarms::AlarmsSubscriptions::new(get_alarms_host(), get_alarms_topic()),
     )
     .finish();
     let graphiql = axum::response::Html(
@@ -266,7 +265,6 @@ async fn create_site() -> Router {
         .route("/", get(base_page))
         .merge(create_acsys_router().await);
 
-    #[cfg(feature = "alarms")]
     let router = router.merge(create_alarms_router());
 
     router
@@ -319,6 +317,16 @@ pub async fn start_service(port: u16) {
         .serve(app.into_make_service())
         .await
         .unwrap();
+}
+
+const ALARMS_KAFKA_HOST: &str = "ALARMS_KAFKA_HOST";
+fn get_alarms_host() -> String {
+    env_var::expect(ALARMS_KAFKA_HOST)
+}
+
+const ALARMS_KAFKA_TOPIC: &str = "ALARMS_KAFKA_TOPIC";
+fn get_alarms_topic() -> String {
+    env_var::expect(ALARMS_KAFKA_TOPIC)
 }
 
 #[cfg(test)]
