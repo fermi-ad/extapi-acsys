@@ -248,23 +248,11 @@ want to set."]
         device: String,
         #[graphql(desc = "The value of the setting.")] _value: global::DevValue,
     ) -> Result<global::StatusReply> {
-        #[cfg(debug_assertions)]
-        {
-            if let Ok(auth) = _ctxt.data::<global::AuthInfo>() {
-                // TEMPORARY: If there isn't a JWT, use the account
-
-                // specified by the caller.
-
-                if let Some(account) = auth.unsafe_account() {
-                    info!("using account: {:?}", &account);
-                }
-            }
-
+        if let Ok(auth) = _ctxt.data::<global::AuthInfo>() {
             let now = tokio::time::Instant::now();
-
             let result = dpm::_set_device(
                 _ctxt.data::<Connection>().unwrap(),
-                _ctxt.data::<global::AuthInfo>().unwrap().token(),
+                auth.token(),
                 device.clone(),
                 _value.into(),
             )
@@ -278,11 +266,9 @@ want to set."]
                 }),
                 Err(e) => Err(Error::new(format!("{}", e).as_str())),
             }
+        } else {
+            Err(Error::new("no user credentials provided"))
         }
-        #[cfg(not(debug_assertions))]
-        Ok(global::StatusReply {
-            status: 17 - 17 * 256,
-        })
     }
 
     #[doc = "Add/Update a plot configuration"]
