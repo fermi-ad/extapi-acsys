@@ -12,7 +12,7 @@ async-graphql = { version = "7", features = ["chrono"] }
 async-graphql-axum = "7"
 async-stream = "0.3"
 axum = { version = "0.8", features = ["ws"] }
-axum-server = { version = "0.7", features = ["tls-rustls-no-provider"] }
+axum-server = { version = "0.8", features = ["tls-rustls"] }
 base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4", features = ["derive", "env"] }
@@ -20,8 +20,7 @@ futures = "0.3"
 futures-util = "0.3"
 http = "1"
 prost = "0.14"
-reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls", "rustls-tls-webpki-roots", "json"] }
-rustls = { version = "0.23", default-features = false, features = ["ring"] }
+reqwest = { version = "0.13", default-features = false, features = ["stream", "rustls", "json"] }
 rust-env-var-lib = { git = "https://github.com/fermi-ad/rust-env-var-lib", tag = "v1.2.0" }
 rust-pubsub-lib = { git = "https://github.com/fermi-ad/rust-pubsub-lib", tag = "v9.0.0", features = ["kafka"] }
 serde = { version = "1", features = ["derive"] }
@@ -29,9 +28,9 @@ serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-util = "0.7"
-tonic = { version = "0.14", features = ["tls-ring"] }
+tonic = { version = "0.14", features = ["tls-aws-lc"] }
 tonic-prost = "0.14"
-tower-http = { version = "0.6", features = ["cors", "compression-deflate", "decompression-deflate"] }
+tower-http = { version = "0.7", features = ["cors", "compression-deflate", "decompression-deflate"] }
 tracing = { version = "0.1", features = ["log"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4"] }

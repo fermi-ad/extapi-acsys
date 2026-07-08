@@ -1,5 +1,5 @@
 use clap::Parser;
-use tracing::{error, info, subscriber};
+use tracing::{info, subscriber};
 use tracing_subscriber::{
     Registry, filter::EnvFilter, fmt::layer, layer::SubscriberExt,
 };
@@ -32,14 +32,6 @@ async fn main() {
     subscriber::set_global_default(subscriber)
         .expect("Unable to set global default subscriber");
 
-    match rustls::crypto::ring::default_provider().install_default() {
-        Ok(_) => {
-            info!("starting");
-            graphql::start_service(args.port).await;
-        }
-        Err(e) => {
-            error!("failed to install default crypto provider: {:?}", e);
-            return;
-        }
-    }
+    info!("starting");
+    graphql::start_service(args.port).await;
 }

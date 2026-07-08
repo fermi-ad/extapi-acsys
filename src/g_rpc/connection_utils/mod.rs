@@ -5,14 +5,13 @@
 
 use rust_env_var_lib::env_var;
 use tokio::sync::RwLock;
-use tonic::{Response, Status, async_trait, transport::Error};
+use tonic::{Response, Status, transport::Error};
 use tracing::error;
 use uuid::Uuid;
 
 /// The trait to be implemented by wrapped objects within [`ConnectionPort`]. The idea is this will house an inner gRPC client
 /// backed by [`tonic::transport::Channel`]. `Channel` offers a lightweight implementation of [`Clone`] that multiplexes an HTTPS connection
 /// to the host server. This allows multiple threads to share the connection simultaneously.
-#[async_trait]
 pub trait ConnectionAdapter: Clone + Sized {
     /// Creates an instance of the adapter.
     ///
