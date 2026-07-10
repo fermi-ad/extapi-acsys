@@ -203,22 +203,17 @@ impl AlarmsSubscriptions {
 #[Subscription]
 impl AlarmsSubscriptions {
     /// Streams back all alarms from the alarms topic.
-    async fn alarms(&self) -> Result<impl Stream<Item = Alarm>, Error> {
+    async fn alarms(&self) -> impl Stream<Item = Alarm> {
         let stream =
             KafkaSubscriber::new(self.host.clone(), self.topic.clone())
                 .get_stream::<StringMessage>()
-                .await
-                .map_err(|e| Error::new(format!("{e}")))?;
+                .await;
 
-        Ok(stream.filter_map(|stream_item| match stream_item {
-            Err(e) => {
-                error!("{e:?}");
-                None
-            }
-            Ok(message) => Alarm::try_from(message)
+        stream.filter_map(|message| {
+            Alarm::try_from(message)
                 .inspect_err(|e| error!("{e:?}"))
-                .ok(),
-        }))
+                .ok()
+        })
     }
 }
 
