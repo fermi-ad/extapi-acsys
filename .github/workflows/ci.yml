@@ -9,11 +9,11 @@ env:
 
 jobs:
   check:
-    uses: fermi-ad/.github/.github/workflows/rust-integration.yaml@f5b1570438803675367730e055d4a3e1983be9d1
+    uses: fermi-ad/.github/.github/workflows/rust-integration.yaml@v1
     secrets: inherit
     permissions:
       contents: write
       pull-requests: write
     with:
       pull-git-submodules: true
-      static-dependencies: libcurl4-openssl-dev libsasl2-dev
+      static-dependencies: libcurl4-openssl-dev
