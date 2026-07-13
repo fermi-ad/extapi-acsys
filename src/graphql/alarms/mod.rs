@@ -6,9 +6,13 @@ use crate::{
     g_rpc::{alarms_db, alarms_svc},
     graphql::alarms::types::Alarm,
 };
-use async_graphql::{Error, Object, Subscription};
+#[cfg(feature = "kafka")]
+use async_graphql::Subscription;
+use async_graphql::{Error, Object};
 use chrono::{DateTime, Utc};
+#[cfg(feature = "kafka")]
 use rust_pubsub_lib::{KafkaSubscriber, StringMessage, Subscriber};
+#[cfg(feature = "kafka")]
 use tokio_stream::{Stream, StreamExt};
 use tonic::{Code, Status};
 use tracing::error;
@@ -188,18 +192,21 @@ impl AlarmsQueries {
 }
 
 /// Describes long-lived data streams for alarms.
+#[cfg(feature = "kafka")]
 #[derive(Default)]
 pub struct AlarmsSubscriptions {
     host: String,
     topic: String,
 }
 
+#[cfg(feature = "kafka")]
 impl AlarmsSubscriptions {
     pub fn new(host: String, topic: String) -> Self {
         Self { host, topic }
     }
 }
 
+#[cfg(feature = "kafka")]
 #[Subscription]
 impl AlarmsSubscriptions {
     /// Streams back all alarms from the alarms topic.
@@ -232,26 +239,33 @@ fn handle_error<T>(e: Status, gerund: &str) -> Result<T, Error> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "kafka")]
     use std::time::Duration;
 
-    use async_graphql::Schema;
+    use async_graphql::{EmptySubscription, Schema};
+    #[cfg(feature = "kafka")]
     use rust_pubsub_lib::{
         KafkaPublisher, KafkaTestHarness, Message, Publisher,
     };
+    #[cfg(feature = "kafka")]
     use serde_json::json;
+    #[cfg(feature = "kafka")]
     use tokio::time::timeout;
 
+    #[cfg(feature = "kafka")]
     use crate::g_rpc::proto::common::alarm::status::{Severity, Source, State};
 
     use super::*;
 
     async fn test_query_returns_err(gql_query: &str, err_msg: &str) {
-        let schema = Schema::build(
-            AlarmsQueries,
-            AlarmsMutations,
-            AlarmsSubscriptions::default(),
-        )
-        .finish();
+        #[cfg(feature = "kafka")]
+        let subscription = AlarmsSubscriptions::default();
+        #[cfg(not(feature = "kafka"))]
+        let subscription = EmptySubscription;
+
+        let schema =
+            Schema::build(AlarmsQueries, AlarmsMutations, subscription)
+                .finish();
         let result = schema.execute(gql_query).await;
         let err = result.errors.first().unwrap();
         println!("{err}");
@@ -468,6 +482,7 @@ mod tests {
         .await;
     }
 
+    #[cfg(feature = "kafka")]
     #[tokio::test]
     async fn alarms_subscription_integration_test() {
         let (harness, topic) = KafkaTestHarness::with_new_topic("alarms").await;
