@@ -108,21 +108,20 @@ pub async fn _set_device(
         match MetadataValue::try_from(format!("Bearer {token}")) {
             Ok(val) => {
                 req.metadata_mut().insert("authorization", val);
-
-                let SettingReply { status } =
-                    conn.0.clone().set(req).await?.into_inner();
-
-                Ok(status
-                    .iter()
-                    .map(|v| v.facility_code + v.status_code * 256)
-                    .collect())
             }
             Err(err) => {
                 error!("unable to pass credentials : {}", &err);
-                Err(tonic::Status::internal("couldn't add credentials"))
+                return Err(tonic::Status::internal(
+                    "couldn't add credentials",
+                ));
             }
         }
-    } else {
-        Ok(vec![7 + -59 * 256])
     }
+
+    let SettingReply { status } = conn.0.clone().set(req).await?.into_inner();
+
+    Ok(status
+        .iter()
+        .map(|v| v.facility_code + v.status_code * 256)
+        .collect())
 }
