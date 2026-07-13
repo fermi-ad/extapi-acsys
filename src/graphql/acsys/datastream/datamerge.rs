@@ -59,11 +59,31 @@ where
     /// Filters out data points that have already been seen based on the
     /// `latest` timestamp and updates `latest` with the newest timestamp in
     /// the batch. Returns true if there is data left to emit.
+    ///
+    /// Status replies are passed through without updating the `latest`
+    /// watermark. Their timestamps are synthetic (wall-clock `now()`) and
+    /// have no relation to the device's actual data timeline; advancing
+    /// `latest` past them would cause subsequent real data points -- whose
+    /// hardware timestamps predate the synthetic one -- to be silently
+    /// discarded.
     fn filter_and_update_latest(
         data: &mut Vec<global::DataInfo>, latest: &mut f64,
     ) -> bool {
         if data.is_empty() {
             return false;
+        }
+
+        // If this packet is a single status reply, pass it through without
+        // touching the timestamp watermark.
+
+        if let [
+            global::DataInfo {
+                result: global::DataType::StatusReply(_),
+                ..
+            },
+        ] = data.as_slice()
+        {
+            return true;
         }
 
         let start = data.partition_point(|info| info.timestamp <= *latest);
@@ -337,6 +357,57 @@ mod test {
         let r = s.next().await.unwrap();
         assert_eq!(r.ref_id, 1);
         assert_eq!(r.data, vec![data_info(220.0)]);
+
+        assert!(s.next().await.is_none());
+    }
+
+    fn status_info(ts: f64) -> global::DataInfo {
+        global::DataInfo {
+            timestamp: ts,
+            result: global::DataType::StatusReply(global::StatusReply {
+                status: -1,
+            }),
+        }
+    }
+
+    // Regression test: DPM sends a PEND status reply (with a synthetic
+    // wall-clock timestamp) before it sends the actual device data (whose
+    // hardware timestamp predates the synthetic one). The status packet must
+    // NOT advance the `latest` watermark, otherwise the subsequent real data
+    // points are silently discarded as "already seen".
+    #[tokio::test]
+    async fn test_status_reply_does_not_advance_watermark() {
+        use futures::stream::{self, StreamExt};
+
+        // Simulate: PEND status arrives at wall-clock time 1000.0, then
+        // real data arrives with a hardware timestamp of 120.0 (which is
+        // less than 1000.0 and would be filtered if the watermark were
+        // incorrectly advanced).
+        let live_input = [
+            global::DataReply {
+                ref_id: 0,
+                data: vec![status_info(1000.0)], // synthetic "now()" timestamp
+            },
+            global::DataReply {
+                ref_id: 0,
+                data: vec![data_info(120.0)], // real hardware timestamp
+            },
+        ];
+
+        let mut s = super::merge(
+            None::<stream::Empty<_>>,
+            Some(stream::iter(live_input)),
+        );
+
+        // The status reply must come through.
+        let r = s.next().await.unwrap();
+        assert_eq!(r.ref_id, 0);
+        assert_eq!(r.data, vec![status_info(1000.0)]);
+
+        // The real data must NOT be swallowed by the watermark.
+        let r = s.next().await.unwrap();
+        assert_eq!(r.ref_id, 0);
+        assert_eq!(r.data, vec![data_info(120.0)]);
 
         assert!(s.next().await.is_none());
     }
