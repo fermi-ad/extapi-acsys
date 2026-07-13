@@ -869,6 +869,10 @@ impl<'ctx> ACSysSubscriptions {
                 .channel_data
                 .extend(out_chan.channel_data.drain(idx..));
 
+            out_chan.channel_data.retain(|v| {
+                !matches!(v.result, global::DataType::StatusReply(_))
+            });
+
             for out_data in out_chan.channel_data.iter_mut() {
                 out_data.timestamp -= ev_ts;
             }
@@ -1463,6 +1467,123 @@ mod test {
             ],
         );
         assert_eq!(rem.data[0].channel_data, &POINT_DATA[3..]);
+
+        buf = rem.clone();
+
+        ACSysSubscriptions::prep_outgoing(&mut rem, &mut buf, 0.5, 10.0);
+
+        assert_eq!(buf.trigger_timestamp, Some(0.5));
+        assert_eq!(
+            buf.data[0].channel_data,
+            &[
+                global::DataInfo {
+                    timestamp: 3.5,
+                    result: global::DataType::Scalar(global::Scalar {
+                        scalar_value: 13.0,
+                    }),
+                },
+                global::DataInfo {
+                    timestamp: 4.5,
+                    result: global::DataType::Scalar(global::Scalar {
+                        scalar_value: 14.0,
+                    }),
+                },
+            ]
+        );
+        assert!(rem.data[0].channel_data.is_empty());
+    }
+
+    #[test]
+    fn test_partitioning_with_status() {
+        const POINT_DATA: &[global::DataInfo] = &[
+            global::DataInfo {
+                timestamp: 0.75,
+                result: global::DataType::StatusReply(global::StatusReply {
+                    status: -17 * 256 + 17,
+                }),
+            },
+            global::DataInfo {
+                timestamp: 1.0,
+                result: global::DataType::Scalar(global::Scalar {
+                    scalar_value: 10.0,
+                }),
+            },
+            global::DataInfo {
+                timestamp: 2.0,
+                result: global::DataType::Scalar(global::Scalar {
+                    scalar_value: 11.0,
+                }),
+            },
+            global::DataInfo {
+                timestamp: 3.0,
+                result: global::DataType::Scalar(global::Scalar {
+                    scalar_value: 12.0,
+                }),
+            },
+            global::DataInfo {
+                timestamp: 4.0,
+                result: global::DataType::Scalar(global::Scalar {
+                    scalar_value: 13.0,
+                }),
+            },
+            global::DataInfo {
+                timestamp: 5.0,
+                result: global::DataType::Scalar(global::Scalar {
+                    scalar_value: 14.0,
+                }),
+            },
+        ];
+
+        let mut buf = types::PlotReplyData {
+            plot_id: "test".to_owned(),
+            timestamp: 0.0,
+            trigger_timestamp: None,
+            data: vec![types::PlotChannelData {
+                channel_rate: "Unknown".into(),
+                channel_units: "V".to_owned(),
+                status_string: None,
+                channel_status: 0,
+                channel_data: POINT_DATA.to_owned(),
+            }],
+        };
+
+        let mut rem = buf.clone();
+
+        ACSysSubscriptions::prep_outgoing(&mut rem, &mut buf, 0.5, 0.0);
+
+        assert!(buf.data[0].channel_data.is_empty());
+        assert_eq!(buf.trigger_timestamp, Some(0.5));
+        assert_eq!(rem.data[0].channel_data, POINT_DATA);
+
+        buf = rem.clone();
+
+        ACSysSubscriptions::prep_outgoing(&mut rem, &mut buf, 0.5, 3.5);
+
+        assert_eq!(buf.trigger_timestamp, Some(0.5));
+        assert_eq!(
+            buf.data[0].channel_data,
+            &[
+                global::DataInfo {
+                    timestamp: 0.5,
+                    result: global::DataType::Scalar(global::Scalar {
+                        scalar_value: 10.0,
+                    }),
+                },
+                global::DataInfo {
+                    timestamp: 1.5,
+                    result: global::DataType::Scalar(global::Scalar {
+                        scalar_value: 11.0,
+                    }),
+                },
+                global::DataInfo {
+                    timestamp: 2.5,
+                    result: global::DataType::Scalar(global::Scalar {
+                        scalar_value: 12.0,
+                    }),
+                }
+            ],
+        );
+        assert_eq!(rem.data[0].channel_data, &POINT_DATA[4..]);
 
         buf = rem.clone();
 
