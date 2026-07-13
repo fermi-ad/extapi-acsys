@@ -149,6 +149,9 @@ mod test {
         }
     }
 
+    // -----------------------------------------------------------------------
+    // Original integration test (kept intact)
+
     #[test]
     fn test_data_channel() {
         let mut chan = DataChannel::new();
@@ -213,5 +216,251 @@ mod test {
             }
             _ => panic!("unexpected result"),
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // DataChannel::new / initial state
+
+    #[test]
+    fn test_new_channel_is_buffering() {
+        let chan = DataChannel::new();
+        assert!(matches!(chan, DataChannel::Buffering { .. }));
+    }
+
+    // -----------------------------------------------------------------------
+    // get_buffer tests
+
+    // A fresh channel has an empty buffer → get_buffer returns None.
+    #[test]
+    fn test_get_buffer_on_empty_buffering_channel_returns_none() {
+        let mut chan = DataChannel::new();
+        assert_eq!(chan.get_buffer(), None);
+        // Channel must still be in Buffering state.
+        assert!(matches!(chan, DataChannel::Buffering { .. }));
+    }
+
+    // After buffering live data, get_buffer returns it and clears the buffer.
+    #[test]
+    fn test_get_buffer_returns_buffered_data_and_clears() {
+        let mut chan = DataChannel::new();
+        chan.process_live_data(vec![data_info(1.0), data_info(2.0)], false);
+
+        let buf = chan.get_buffer();
+        assert_eq!(buf, Some(vec![data_info(1.0), data_info(2.0)]));
+
+        // Buffer must now be empty.
+        assert_eq!(chan.get_buffer(), None);
+    }
+
+    // get_buffer on a FeedThrough channel always returns None.
+    #[test]
+    fn test_get_buffer_on_feedthrough_returns_none() {
+        let mut chan = DataChannel::new();
+        // Transition to FeedThrough via the empty-archive sentinel.
+        chan.process_archive_data(vec![]);
+        assert!(matches!(chan, DataChannel::FeedThrough));
+        assert_eq!(chan.get_buffer(), None);
+    }
+
+    // -----------------------------------------------------------------------
+    // process_archive_data tests
+
+    // Non-empty archive data in Buffering mode is returned as-is.
+    #[test]
+    fn test_process_archive_data_nonempty_in_buffering_returns_data() {
+        let mut chan = DataChannel::new();
+        let result =
+            chan.process_archive_data(vec![data_info(10.0), data_info(20.0)]);
+        assert_eq!(result, Some(vec![data_info(10.0), data_info(20.0)]));
+        // Still in Buffering mode.
+        assert!(matches!(chan, DataChannel::Buffering { .. }));
+    }
+
+    // Empty archive sentinel with no buffered live data → None, switches to
+    // FeedThrough.
+    #[test]
+    fn test_process_archive_sentinel_with_empty_buffer_returns_none() {
+        let mut chan = DataChannel::new();
+        let result = chan.process_archive_data(vec![]);
+        assert_eq!(result, None);
+        assert!(matches!(chan, DataChannel::FeedThrough));
+    }
+
+    // Empty archive sentinel with buffered live data → returns the buffer,
+    // switches to FeedThrough.
+    #[test]
+    fn test_process_archive_sentinel_with_buffered_data_returns_buffer() {
+        let mut chan = DataChannel::new();
+        chan.process_live_data(vec![data_info(50.0), data_info(60.0)], false);
+
+        let result = chan.process_archive_data(vec![]);
+        assert_eq!(result, Some(vec![data_info(50.0), data_info(60.0)]));
+        assert!(matches!(chan, DataChannel::FeedThrough));
+    }
+
+    // Non-empty archive data in FeedThrough mode is returned (with a warning).
+    #[test]
+    fn test_process_archive_data_nonempty_in_feedthrough_returns_data() {
+        let mut chan = DataChannel::new();
+        chan.process_archive_data(vec![]); // → FeedThrough
+        let result = chan.process_archive_data(vec![data_info(99.0)]);
+        assert_eq!(result, Some(vec![data_info(99.0)]));
+    }
+
+    // Empty archive data in FeedThrough mode returns None (with a warning).
+    #[test]
+    fn test_process_archive_sentinel_in_feedthrough_returns_none() {
+        let mut chan = DataChannel::new();
+        chan.process_archive_data(vec![]); // → FeedThrough
+        let result = chan.process_archive_data(vec![]);
+        assert_eq!(result, None);
+    }
+
+    // -----------------------------------------------------------------------
+    // process_live_data tests
+
+    // Empty live data in Buffering mode returns Data(None) without changing
+    // state (the guard branch).
+    #[test]
+    fn test_process_live_data_empty_in_buffering_returns_none() {
+        let mut chan = DataChannel::new();
+        assert_eq!(
+            chan.process_live_data(vec![], false),
+            BufferResult::Data(None)
+        );
+        // Buffer must still be empty.
+        assert_eq!(chan.get_buffer(), None);
+    }
+
+    // Empty live data in FeedThrough mode also returns Data(None).
+    #[test]
+    fn test_process_live_data_empty_in_feedthrough_returns_none() {
+        let mut chan = DataChannel::new();
+        chan.process_archive_data(vec![]); // → FeedThrough
+        assert_eq!(
+            chan.process_live_data(vec![], false),
+            BufferResult::Data(None)
+        );
+    }
+
+    // Live data in Buffering mode with archive_done=false is buffered.
+    #[test]
+    fn test_process_live_data_buffering_archive_not_done_buffers_data() {
+        let mut chan = DataChannel::new();
+        let result =
+            chan.process_live_data(vec![data_info(1.0), data_info(2.0)], false);
+        assert_eq!(result, BufferResult::Data(None));
+        // Data must be in the buffer.
+        assert_eq!(
+            chan.get_buffer(),
+            Some(vec![data_info(1.0), data_info(2.0)])
+        );
+    }
+
+    // Multiple live packets accumulate in the buffer.
+    #[test]
+    fn test_process_live_data_multiple_packets_accumulate() {
+        let mut chan = DataChannel::new();
+        chan.process_live_data(vec![data_info(1.0)], false);
+        chan.process_live_data(vec![data_info(2.0)], false);
+        chan.process_live_data(vec![data_info(3.0)], false);
+
+        assert_eq!(
+            chan.get_buffer(),
+            Some(vec![data_info(1.0), data_info(2.0), data_info(3.0)])
+        );
+    }
+
+    // Live data in Buffering mode with archive_done=true and an empty buffer
+    // → returns the live data directly (no prepend), transitions to FeedThrough.
+    #[test]
+    fn test_process_live_data_archive_done_empty_buffer_returns_live() {
+        let mut chan = DataChannel::new();
+        let result = chan
+            .process_live_data(vec![data_info(10.0), data_info(20.0)], true);
+        assert_eq!(
+            result,
+            BufferResult::Data(Some(vec![data_info(10.0), data_info(20.0)]))
+        );
+        assert!(matches!(chan, DataChannel::FeedThrough));
+    }
+
+    // Live data in Buffering mode with archive_done=true and a non-empty buffer
+    // → prepends the buffer to the live data, transitions to FeedThrough.
+    #[test]
+    fn test_process_live_data_archive_done_nonempty_buffer_prepends() {
+        let mut chan = DataChannel::new();
+        // Buffer two items first.
+        chan.process_live_data(vec![data_info(1.0), data_info(2.0)], false);
+
+        // Now archive is done; live data arrives.
+        let result =
+            chan.process_live_data(vec![data_info(3.0), data_info(4.0)], true);
+        assert_eq!(
+            result,
+            BufferResult::Data(Some(vec![
+                data_info(1.0),
+                data_info(2.0),
+                data_info(3.0),
+                data_info(4.0),
+            ]))
+        );
+        assert!(matches!(chan, DataChannel::FeedThrough));
+    }
+
+    // Live data in FeedThrough mode is passed through regardless of
+    // archive_done.
+    #[test]
+    fn test_process_live_data_feedthrough_passes_through() {
+        let mut chan = DataChannel::new();
+        chan.process_archive_data(vec![]); // → FeedThrough
+
+        let result =
+            chan.process_live_data(vec![data_info(5.0), data_info(6.0)], false);
+        assert_eq!(
+            result,
+            BufferResult::Data(Some(vec![data_info(5.0), data_info(6.0)]))
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Buffer overflow tests
+
+    // Exactly 1000 items in the buffer is still accepted (boundary).
+    #[test]
+    fn test_process_live_data_buffer_at_capacity_is_accepted() {
+        let mut chan = DataChannel::new();
+        // Fill the buffer to exactly 1000 items across two packets.
+        let first: Vec<_> = (0..500).map(|i| data_info(i as f64)).collect();
+        let second: Vec<_> = (500..1000).map(|i| data_info(i as f64)).collect();
+
+        assert_eq!(
+            chan.process_live_data(first, false),
+            BufferResult::Data(None)
+        );
+        assert_eq!(
+            chan.process_live_data(second, false),
+            BufferResult::Data(None)
+        );
+
+        // Buffer must hold all 1000 items.
+        let buf = chan.get_buffer().expect("buffer should not be empty");
+        assert_eq!(buf.len(), 1000);
+    }
+
+    // Adding one more item beyond 1000 triggers Overflow and clears the buffer.
+    #[test]
+    fn test_process_live_data_overflow_clears_buffer_and_returns_overflow() {
+        let mut chan = DataChannel::new();
+        // Fill to 1000.
+        let first: Vec<_> = (0..1000).map(|i| data_info(i as f64)).collect();
+        chan.process_live_data(first, false);
+
+        // One more item pushes it over the limit.
+        let result = chan.process_live_data(vec![data_info(9999.0)], false);
+        assert_eq!(result, BufferResult::Overflow);
+
+        // Buffer must have been cleared.
+        assert_eq!(chan.get_buffer(), None);
     }
 }
