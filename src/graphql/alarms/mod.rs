@@ -239,16 +239,15 @@ fn handle_error<T>(e: Status, gerund: &str) -> Result<T, Error> {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "kafka")]
-    use std::time::Duration;
-
-    use async_graphql::{EmptySubscription, Schema};
+    use async_graphql::Schema;
     #[cfg(feature = "kafka")]
     use rust_pubsub_lib::{
         KafkaPublisher, KafkaTestHarness, Message, Publisher,
     };
     #[cfg(feature = "kafka")]
     use serde_json::json;
+    #[cfg(feature = "kafka")]
+    use std::time::Duration;
     #[cfg(feature = "kafka")]
     use tokio::time::timeout;
 

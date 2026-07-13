@@ -138,14 +138,15 @@ fn create_alarms_router() -> Router {
                 .subscription_endpoint(S_ENDPOINT)
                 .finish(),
         );
-        return Router::new()
+
+        Router::new()
             .route(
                 Q_ENDPOINT,
                 get(graphiql)
                     .post(graphql_handler)
                     .with_state(schema.clone()),
             )
-            .route_service(S_ENDPOINT, GraphQLSubscription::new(schema));
+            .route_service(S_ENDPOINT, GraphQLSubscription::new(schema))
     }
 
     #[cfg(not(feature = "kafka"))]
