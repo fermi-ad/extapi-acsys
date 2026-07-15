@@ -61,7 +61,7 @@ pub async fn save_plot_config(
         }
         Err(_) => Err(tonic::Status::unavailable(format!(
             "DevDB service ({}) unavailable",
-            &host
+            host
         ))),
     }
 }
@@ -82,7 +82,7 @@ pub async fn get_plot_config(
         }
         Err(e) => Err(tonic::Status::unavailable(format!(
             "DevDB service ({}) unavailable: {}",
-            &host, e
+            host, e
         ))),
     }
 }
@@ -105,7 +105,7 @@ pub async fn delete_plot_config(
         }
         Err(e) => Err(tonic::Status::unavailable(format!(
             "DevDB service ({}) unavailable: {}",
-            &host, e
+            host, e
         ))),
     }
 }

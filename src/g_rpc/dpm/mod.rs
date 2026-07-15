@@ -19,22 +19,7 @@ type _TonicQueryResult<T> = Result<T, tonic::Status>;
 // same connection.
 
 pub async fn build_connection() -> Result<Connection, Error> {
-    const HOSTS: [&str; 14] = [
-        "http://dce01:50051",
-        "http://dce02:50051",
-        "http://dce03:50051",
-        "http://dce04:50051",
-        "http://dce05:50051",
-        "http://dce06:50051",
-        "http://dce07:50051",
-        "http://dce08:50051",
-        "http://dce09:50051",
-        "http://dce10:50051",
-        "http://dce11:50051",
-        "http://dce12:50051",
-        "http://dce13:50051",
-        "http://dce14:50051",
-    ];
+    const HOSTS: [&str; 1] = ["http://dce15:50051"];
 
     let endpoints = HOSTS.iter().map(|h| Endpoint::from_static(h));
     let channel = Channel::balance_list(endpoints);
