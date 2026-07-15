@@ -89,8 +89,6 @@ pub async fn set_device(
 ) -> _TonicQueryResult<Vec<i32>> {
     use tonic::{IntoRequest, metadata::MetadataValue};
 
-    info!("setting to {:?}", &value);
-
     // Build the setting request. This function only sets one device, so the
     // request only has a 1-element array containing the setting.
 
@@ -116,6 +114,8 @@ pub async fn set_device(
                 ));
             }
         }
+    } else {
+	warn!("request lacks credentials ... setting has been blocked");
     }
 
     let SettingReply { status } = conn.0.clone().set(req).await?.into_inner();
