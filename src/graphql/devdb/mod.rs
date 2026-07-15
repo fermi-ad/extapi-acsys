@@ -156,7 +156,7 @@ impl DevDBQueries {
         let reply = match result {
             Ok(s) => s.into_inner().set.iter().map(to_info_result).collect(),
             Err(e) => {
-                let err_msg = format!("{}", &e);
+                let err_msg = format!("{}", e);
 
                 devices
                     .iter()
