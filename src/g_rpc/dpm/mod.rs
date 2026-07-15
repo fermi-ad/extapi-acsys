@@ -115,7 +115,7 @@ pub async fn set_device(
             }
         }
     } else {
-	warn!("request lacks credentials ... setting has been blocked");
+        warn!("request lacks credentials ... setting has been blocked");
     }
 
     let SettingReply { status } = conn.0.clone().set(req).await?.into_inner();
