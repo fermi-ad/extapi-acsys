@@ -260,7 +260,7 @@ mod tests {
         #[cfg(feature = "kafka")]
         let subscription = AlarmsSubscriptions::default();
         #[cfg(not(feature = "kafka"))]
-        let subscription = EmptySubscription;
+        let subscription = async_graphql::EmptySubscription;
 
         let schema =
             Schema::build(AlarmsQueries, AlarmsMutations, subscription)
