@@ -18,6 +18,7 @@ use axum::{
     routing::get,
 };
 use http::{Method, header};
+#[cfg(feature = "kafka")]
 use rust_env_var_lib::env_var;
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use tower_http::cors::{Any, CorsLayer};
@@ -117,28 +118,57 @@ async fn create_acsys_router() -> Router {
 
 fn create_alarms_router() -> Router {
     const Q_ENDPOINT: &str = "/alarms";
-    const S_ENDPOINT: &str = "/alarms/s";
 
-    let schema = Schema::build(
-        alarms::AlarmsQueries,
-        alarms::AlarmsMutations,
-        alarms::AlarmsSubscriptions::new(get_alarms_host(), get_alarms_topic()),
-    )
-    .finish();
-    let graphiql = axum::response::Html(
-        async_graphql::http::GraphiQLSource::build()
-            .endpoint(Q_ENDPOINT)
-            .subscription_endpoint(S_ENDPOINT)
-            .finish(),
-    );
-    Router::new()
-        .route(
+    #[cfg(feature = "kafka")]
+    {
+        const S_ENDPOINT: &str = "/alarms/s";
+
+        let schema = Schema::build(
+            alarms::AlarmsQueries,
+            alarms::AlarmsMutations,
+            alarms::AlarmsSubscriptions::new(
+                get_alarms_host(),
+                get_alarms_topic(),
+            ),
+        )
+        .finish();
+        let graphiql = axum::response::Html(
+            async_graphql::http::GraphiQLSource::build()
+                .endpoint(Q_ENDPOINT)
+                .subscription_endpoint(S_ENDPOINT)
+                .finish(),
+        );
+
+        Router::new()
+            .route(
+                Q_ENDPOINT,
+                get(graphiql)
+                    .post(graphql_handler)
+                    .with_state(schema.clone()),
+            )
+            .route_service(S_ENDPOINT, GraphQLSubscription::new(schema))
+    }
+
+    #[cfg(not(feature = "kafka"))]
+    {
+        let schema = Schema::build(
+            alarms::AlarmsQueries,
+            alarms::AlarmsMutations,
+            EmptySubscription,
+        )
+        .finish();
+        let graphiql = axum::response::Html(
+            async_graphql::http::GraphiQLSource::build()
+                .endpoint(Q_ENDPOINT)
+                .finish(),
+        );
+        Router::new().route(
             Q_ENDPOINT,
             get(graphiql)
                 .post(graphql_handler)
                 .with_state(schema.clone()),
         )
-        .route_service(S_ENDPOINT, GraphQLSubscription::new(schema))
+    }
 }
 
 // Creates the portion of the site map that handles the Beam Budget
@@ -319,12 +349,16 @@ pub async fn start_service(port: u16) {
         .unwrap();
 }
 
+#[cfg(feature = "kafka")]
 const ALARMS_KAFKA_HOST: &str = "ALARMS_KAFKA_HOST";
+#[cfg(feature = "kafka")]
 fn get_alarms_host() -> String {
     env_var::expect(ALARMS_KAFKA_HOST)
 }
 
+#[cfg(feature = "kafka")]
 const ALARMS_KAFKA_TOPIC: &str = "ALARMS_KAFKA_TOPIC";
+#[cfg(feature = "kafka")]
 fn get_alarms_topic() -> String {
     env_var::expect(ALARMS_KAFKA_TOPIC)
 }

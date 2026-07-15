@@ -83,13 +83,11 @@ pub async fn acquire_devices(
 // This function wraps the logic needed to make the `ApplySettings()`
 // gRPC transaction.
 
-pub async fn _set_device(
+pub async fn set_device(
     conn: &Connection, session_id: Option<String>, device: String,
     value: device::Value,
 ) -> _TonicQueryResult<Vec<i32>> {
     use tonic::{IntoRequest, metadata::MetadataValue};
-
-    info!("setting to {:?}", &value);
 
     // Build the setting request. This function only sets one device, so the
     // request only has a 1-element array containing the setting.
@@ -108,21 +106,22 @@ pub async fn _set_device(
         match MetadataValue::try_from(format!("Bearer {token}")) {
             Ok(val) => {
                 req.metadata_mut().insert("authorization", val);
-
-                let SettingReply { status } =
-                    conn.0.clone().set(req).await?.into_inner();
-
-                Ok(status
-                    .iter()
-                    .map(|v| v.facility_code + v.status_code * 256)
-                    .collect())
             }
             Err(err) => {
                 error!("unable to pass credentials : {}", &err);
-                Err(tonic::Status::internal("couldn't add credentials"))
+                return Err(tonic::Status::internal(
+                    "couldn't add credentials",
+                ));
             }
         }
     } else {
-        Ok(vec![7 + -59 * 256])
+        warn!("request lacks credentials ... setting has been blocked");
     }
+
+    let SettingReply { status } = conn.0.clone().set(req).await?.into_inner();
+
+    Ok(status
+        .iter()
+        .map(|v| v.facility_code + v.status_code * 256)
+        .collect())
 }
