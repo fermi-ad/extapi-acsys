@@ -250,7 +250,7 @@ want to set."]
     ) -> Result<global::StatusReply> {
         if let Ok(auth) = _ctxt.data::<global::AuthInfo>() {
             let now = tokio::time::Instant::now();
-            let result = dpm::_set_device(
+            let result = dpm::set_device(
                 _ctxt.data::<Connection>().unwrap(),
                 auth.token(),
                 device.clone(),
