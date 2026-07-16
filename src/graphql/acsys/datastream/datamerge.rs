@@ -56,49 +56,56 @@ where
         }
     }
 
-    /// Filters out data points that have already been seen based on the
-    /// `latest` timestamp and updates `latest` with the newest timestamp in
-    /// the batch. Returns true if there is data left to emit.
+    /// Consumes an iterator of data points, filters out stale entries, and
+    /// returns the surviving items as a `Vec`. Updates `latest` with the
+    /// highest real-data timestamp seen.
     ///
-    /// Status replies are passed through without updating the `latest`
-    /// watermark. Their timestamps are synthetic (wall-clock `now()`) and
-    /// have no relation to the device's actual data timeline; advancing
-    /// `latest` past them would cause subsequent real data points -- whose
-    /// hardware timestamps predate the synthetic one -- to be silently
-    /// discarded.
+    /// The single pass applies these rules to each item in order:
+    ///
+    /// - **Stale data** (`timestamp <= latest`): silently discarded.
+    /// - **Fatal status** (negative `status`): emitted, watermark advanced to
+    ///   its timestamp, iteration stops — everything after it is dropped.
+    /// - **Warning status** (positive `status`): emitted as-is; the watermark
+    ///   is NOT advanced because the timestamp is a synthetic wall-clock value
+    ///   unrelated to the device's data timeline.
+    /// - **Normal data**: emitted and the watermark is advanced.
     fn filter_and_update_latest(
-        data: &mut Vec<global::DataInfo>, latest: &mut f64,
-    ) -> bool {
-        if data.is_empty() {
-            return false;
-        }
+        iter: impl Iterator<Item = global::DataInfo>, latest: &mut f64,
+    ) -> Vec<global::DataInfo> {
+        let mut done = false;
 
-        // If this packet is a single status reply, pass it through without
-        // touching the timestamp watermark.
-
-        if let [
-            global::DataInfo {
-                result: global::DataType::StatusReply(_),
-                ..
-            },
-        ] = data.as_slice()
-        {
-            return true;
-        }
-
-        let start = data.partition_point(|info| info.timestamp <= *latest);
-
-        // Remember the latest timestamp we've seen.
-
-        *latest = (*latest).max(data.last().unwrap().timestamp);
-
-        // Throw away any data points we've already seen.
-
-        if start > 0 {
-            data.drain(0..start);
-        }
-
-        !data.is_empty()
+        iter.scan(&mut *latest, |watermark, item| {
+            if done {
+                return None;
+            }
+            match &item.result {
+                global::DataType::StatusReply(global::StatusReply {
+                    status,
+                }) if *status < 0 => {
+                    // Fatal: emit, advance watermark, stop.
+                    **watermark = watermark.max(item.timestamp);
+                    done = true;
+                    Some(Some(item))
+                }
+                global::DataType::StatusReply(global::StatusReply {
+                    status,
+                }) if *status > 0 => {
+                    // Warning: emit without touching the watermark.
+                    Some(Some(item))
+                }
+                _ if item.timestamp <= **watermark => {
+                    // Stale: discard.
+                    Some(None)
+                }
+                _ => {
+                    // Normal data: emit and advance watermark.
+                    **watermark = watermark.max(item.timestamp);
+                    Some(Some(item))
+                }
+            }
+        })
+        .flatten()
+        .collect()
     }
 }
 
@@ -125,13 +132,17 @@ where
                             .entry(ref_id)
                             .or_insert_with(|| (DataChannel::new(), 0.0));
 
-                        if let Some(mut data) = chan.process_archive_data(data)
-                            && Self::filter_and_update_latest(&mut data, latest)
-                        {
-                            return Poll::Ready(Some(global::DataReply {
-                                ref_id,
-                                data,
-                            }));
+                        if let Some(raw) = chan.process_archive_data(data) {
+                            let data = Self::filter_and_update_latest(
+                                raw.into_iter(),
+                                latest,
+                            );
+                            if !data.is_empty() {
+                                return Poll::Ready(Some(global::DataReply {
+                                    ref_id,
+                                    data,
+                                }));
+                            }
                         }
                         continue;
                     }
@@ -154,10 +165,12 @@ where
                             .process_live_data(data, this.archived.is_none())
                         {
                             BufferResult::Data(None) => {}
-                            BufferResult::Data(Some(mut data)) => {
-                                if Self::filter_and_update_latest(
-                                    &mut data, latest,
-                                ) {
+                            BufferResult::Data(Some(raw)) => {
+                                let data = Self::filter_and_update_latest(
+                                    raw.into_iter(),
+                                    latest,
+                                );
+                                if !data.is_empty() {
                                     return Poll::Ready(Some(
                                         global::DataReply { ref_id, data },
                                     ));
@@ -187,16 +200,17 @@ where
                 if let Some(&ref_id) = this.pending.keys().next() {
                     let (mut chan, mut latest) =
                         this.pending.remove(&ref_id).unwrap();
-                    if let Some(mut data) = chan.get_buffer()
-                        && Self::filter_and_update_latest(
-                            &mut data,
+                    if let Some(raw) = chan.get_buffer() {
+                        let data = Self::filter_and_update_latest(
+                            raw.into_iter(),
                             &mut latest,
-                        )
-                    {
-                        return Poll::Ready(Some(global::DataReply {
-                            ref_id,
-                            data,
-                        }));
+                        );
+                        if !data.is_empty() {
+                            return Poll::Ready(Some(global::DataReply {
+                                ref_id,
+                                data,
+                            }));
+                        }
                     }
                     continue;
                 }
@@ -221,7 +235,7 @@ mod test {
         }
     }
 
-    fn status_info(ts: f64) -> global::DataInfo {
+    fn bad_status_info(ts: f64) -> global::DataInfo {
         global::DataInfo {
             timestamp: ts,
             result: global::DataType::StatusReply(global::StatusReply {
@@ -230,32 +244,43 @@ mod test {
         }
     }
 
+    fn warn_status_info(ts: f64) -> global::DataInfo {
+        global::DataInfo {
+            timestamp: ts,
+            result: global::DataType::StatusReply(global::StatusReply {
+                status: 1,
+            }),
+        }
+    }
+
     // -----------------------------------------------------------------------
     // filter_and_update_latest unit tests (white-box)
 
-    // An empty vec returns false and leaves `latest` unchanged.
+    type DM = DataMerge<
+        futures::stream::Empty<global::DataReply>,
+        futures::stream::Empty<global::DataReply>,
+    >;
+
+    fn filter(
+        input: Vec<global::DataInfo>, latest: &mut f64,
+    ) -> Vec<global::DataInfo> {
+        DM::filter_and_update_latest(input.into_iter(), latest)
+    }
+
+    // An empty vec returns an empty vec and leaves `latest` unchanged.
     #[test]
     fn test_filter_empty_vec_returns_false() {
         let mut latest = 0.0_f64;
-        let mut data: Vec<global::DataInfo> = vec![];
-
-        assert!(!DataMerge::<
-            futures::stream::Empty<_>,
-            futures::stream::Empty<_>,
-        >::filter_and_update_latest(&mut data, &mut latest));
+        assert!(filter(vec![], &mut latest).is_empty());
         assert_eq!(latest, 0.0);
     }
 
-    // All data points are at or below the watermark → all filtered, returns false.
+    // All data points are at or below the watermark → all filtered, empty vec.
     #[test]
     fn test_filter_all_duplicates_returns_false() {
         let mut latest = 110.0_f64;
-        let mut data = vec![data_info(100.0), data_info(110.0)];
-
-        assert!(!DataMerge::<
-            futures::stream::Empty<_>,
-            futures::stream::Empty<_>,
-        >::filter_and_update_latest(&mut data, &mut latest));
+        let data =
+            filter(vec![data_info(100.0), data_info(110.0)], &mut latest);
         assert!(data.is_empty());
         // latest must not regress
         assert_eq!(latest, 110.0);
@@ -265,13 +290,10 @@ mod test {
     #[test]
     fn test_filter_partial_dedupe() {
         let mut latest = 105.0_f64;
-        let mut data =
-            vec![data_info(100.0), data_info(105.0), data_info(110.0)];
-
-        assert!(DataMerge::<
-            futures::stream::Empty<_>,
-            futures::stream::Empty<_>,
-        >::filter_and_update_latest(&mut data, &mut latest));
+        let data = filter(
+            vec![data_info(100.0), data_info(105.0), data_info(110.0)],
+            &mut latest,
+        );
         assert_eq!(data, vec![data_info(110.0)]);
         assert_eq!(latest, 110.0);
     }
@@ -280,12 +302,10 @@ mod test {
     #[test]
     fn test_filter_no_duplicates_advances_watermark() {
         let mut latest = 50.0_f64;
-        let mut data = vec![data_info(60.0), data_info(70.0), data_info(80.0)];
-
-        assert!(DataMerge::<
-            futures::stream::Empty<_>,
-            futures::stream::Empty<_>,
-        >::filter_and_update_latest(&mut data, &mut latest));
+        let data = filter(
+            vec![data_info(60.0), data_info(70.0), data_info(80.0)],
+            &mut latest,
+        );
         assert_eq!(
             data,
             vec![data_info(60.0), data_info(70.0), data_info(80.0)]
@@ -298,33 +318,55 @@ mod test {
     #[test]
     fn test_filter_status_reply_passes_through_without_advancing_watermark() {
         let mut latest = 50.0_f64;
-        let mut data = vec![status_info(1000.0)];
-
-        assert!(DataMerge::<
-            futures::stream::Empty<_>,
-            futures::stream::Empty<_>,
-        >::filter_and_update_latest(&mut data, &mut latest));
+        let data = filter(vec![bad_status_info(1000.0)], &mut latest);
         // Status must be preserved.
-        assert_eq!(data, vec![status_info(1000.0)]);
+        assert_eq!(data, vec![bad_status_info(1000.0)]);
         // Watermark must NOT have advanced.
-        assert_eq!(latest, 50.0);
+        assert_eq!(latest, 1000.0);
     }
 
     // A multi-element packet that happens to contain a status reply is NOT
     // treated as a pure status packet — the normal timestamp path applies.
     #[test]
     fn test_filter_multi_element_with_status_uses_normal_path() {
-        let mut latest = 0.0_f64;
-        let mut data = vec![status_info(1000.0), data_info(10.0)];
-
-        assert!(DataMerge::<
-            futures::stream::Empty<_>,
-            futures::stream::Empty<_>,
-        >::filter_and_update_latest(&mut data, &mut latest));
-        // Both elements survive (both are above the watermark of 0.0).
-        assert_eq!(data, vec![status_info(1000.0), data_info(10.0)]);
-        // Watermark advances to the last element's timestamp.
-        assert_eq!(latest, 10.0);
+        {
+            let mut latest = 0.0_f64;
+            let data = filter(
+                vec![
+                    data_info(100.0),
+                    bad_status_info(1000.0),
+                    data_info(200.0),
+                ],
+                &mut latest,
+            );
+            // data_info(100.0) and bad_status_info(1000.0) survive; fatal
+            // status truncates data_info(200.0).
+            assert_eq!(data, vec![data_info(100.0), bad_status_info(1000.0)]);
+            // Watermark advances to the fatal status's timestamp.
+            assert_eq!(latest, 1000.0);
+        }
+        {
+            let mut latest = 0.0_f64;
+            let data = filter(
+                vec![
+                    data_info(100.0),
+                    warn_status_info(1000.0),
+                    data_info(200.0),
+                ],
+                &mut latest,
+            );
+            // All three survive; warning status does not truncate.
+            assert_eq!(
+                data,
+                vec![
+                    data_info(100.0),
+                    warn_status_info(1000.0),
+                    data_info(200.0)
+                ]
+            );
+            // Watermark advances to the last real data point, not the warning.
+            assert_eq!(latest, 200.0);
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -696,7 +738,7 @@ mod test {
         let live_input = [
             global::DataReply {
                 ref_id: 0,
-                data: vec![status_info(1000.0)], // synthetic "now()" timestamp
+                data: vec![warn_status_info(1000.0)], // synthetic "now()" timestamp
             },
             global::DataReply {
                 ref_id: 0,
@@ -712,7 +754,7 @@ mod test {
         // The status reply must come through.
         let r = s.next().await.unwrap();
         assert_eq!(r.ref_id, 0);
-        assert_eq!(r.data, vec![status_info(1000.0)]);
+        assert_eq!(r.data, vec![warn_status_info(1000.0)]);
 
         // The real data must NOT be swallowed by the watermark.
         let r = s.next().await.unwrap();
@@ -790,6 +832,30 @@ mod test {
         assert_eq!(r.data, vec![data_info(300.0)]);
 
         assert!(s.next().await.is_none());
+    }
+
+    // An earlier version of the filtering function used
+    // `.partition_point()` which uses a binary search and,
+    // therefore, requires the data to be in strict ascending order.
+    // The timestamps, however, are not guaranteed to be sorted.
+    // This test ensures that the filtering function does not rely
+    // on sorted data and correctly filters out stale points even
+    // when the input is unsorted.
+    #[test]
+    fn test_filter_unsorted_stale_point_is_removed() {
+        let mut latest = 60.0_f64;
+        let data = filter(
+            vec![
+                data_info(30.0),
+                data_info(100.0),
+                data_info(50.0),
+                data_info(110.0),
+            ],
+            &mut latest,
+        );
+        // 30.0 and 50.0 are both ≤ 60.0 and must be filtered.
+        assert_eq!(data, vec![data_info(100.0), data_info(110.0)]);
+        assert_eq!(latest, 110.0);
     }
 
     // An archive stream that closes naturally (no sentinel) with no live
