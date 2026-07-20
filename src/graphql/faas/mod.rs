@@ -1,14 +1,13 @@
 use crate::info;
-use std::collections::HashMap;
 use async_graphql::*;
 use reqwest::RequestBuilder;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tracing::instrument;
 
 // Pull in global types.
 
 use super::types as global;
-
 
 #[derive(Default)]
 pub struct FaasQueries;
@@ -42,7 +41,10 @@ impl FaasQueries {
 
         if let Some(resp) = res {
             match resp.json::<ClinksUnix>().await {
-                Ok(clunx) => {info!("[ClinksToUnix] show unix value {0}", clunx.unix) ; clunx.unix},
+                Ok(clunx) => {
+                    info!("[ClinksToUnix] show unix value {0}", clunx.unix);
+                    clunx.unix
+                }
 
                 Err(er) => {
                     info!("Error: {er}");
@@ -73,7 +75,10 @@ impl FaasQueries {
 
         if let Some(resp) = res {
             match resp.json::<ClinksUnix>().await {
-                Ok(clunx) => {info!("[UnixToClinks] show clinks value {0}", clunx.clinks); Some(clunx.clinks)},
+                Ok(clunx) => {
+                    info!("[UnixToClinks] show clinks value {0}", clunx.clinks);
+                    Some(clunx.clinks)
+                }
                 Err(er) => {
                     info!("Error: {er}");
                     Some(0)
@@ -90,7 +95,7 @@ impl FaasQueries {
     async fn retrieve_systems(&self) -> HashMap<String, String> {
         use futures::TryFutureExt;
         info!("Made it to Retrieve systems");
-        
+
         let m = reqwest::get("https://ad-services.fnal.gov/faas/systems")
             .and_then(|r| r.json::<HashMap<String, String>>())
             .await
@@ -132,9 +137,14 @@ impl FaasQueries {
 
     #[doc = "Retrieve scans by Scan Id"]
     #[instrument(skip(self))]
-    async fn retrieve_scan_by_id(&self, scan_id: String) -> HashMap<String, String> {
+    async fn retrieve_scan_by_id(
+        &self, scan_id: String,
+    ) -> HashMap<String, String> {
         use futures::TryFutureExt;
-        info!("[AcsysProxy] Retrieve scans by scan id with scan id {}", scan_id);
+        info!(
+            "[AcsysProxy] Retrieve scans by scan id with scan id {}",
+            scan_id
+        );
         let m = reqwest::get(format!(
             "https://ad-services.fnal.gov/faas/scan/{}",
             scan_id
@@ -148,7 +158,9 @@ impl FaasQueries {
 
     #[doc = "Retrieve system by system id"]
     #[instrument(skip(self))]
-    async fn retrieve_system(&self, system_id: String) -> HashMap<String, String> {
+    async fn retrieve_system(
+        &self, system_id: String,
+    ) -> HashMap<String, String> {
         use futures::TryFutureExt;
 
         let m = reqwest::get(format!(
@@ -162,22 +174,43 @@ impl FaasQueries {
         m
     }
 
-    async fn retrieve_scanner_config_by_system_and_scanner_type(&self, system_id: String, scanner_type: String) {
-
+    async fn retrieve_scanner_config_by_system_id_and_scanner_type(
+        &self, system_id: String, scanner_type: String,
+    ) -> HashMap<String, String> {
+        use futures::TryFutureExt;
+        info!(
+            "[AcsysProxy] Retrieve Scanner config by system id and scanner type"
+        );
+        let m = reqwest::get(format!(
+            "https://ad-services.fnal.gov/faas/retrieve-scanner-config-by-system-and-scanner-type/{}/{}",
+            system_id, scanner_type
+        ))
+        .and_then(|r| r.json::<HashMap<String, String>>())
+        .await
+        .unwrap_or_default();
+        info!(
+            "[AcsysProxy] Retrieve Scanner Config by System id and scanner type - Lets see {:?}",
+            m
+        );
+        m
     }
 
-    async fn start_scan(&self, _ctxt: &Context<'_>, scan_id: String) -> Option<String> {
+    async fn start_scan(
+        &self, _ctxt: &Context<'_>, scan_id: String,
+    ) -> Option<String> {
         info!("[AcsysProxy] starting scan");
         //let client = reqwest::Client::new();
-        //let request_builder: RequestBuilder = 
-           // client
-           // .get("https://ad-services.fnal.gov/faas/dpm-grpc-test-rw-url-trigger"
-           // ).send();
-            //.bearer_auth(
-            //   _ctxt.data::<global::AuthInfo>().unwrap().token().unwrap(),
-            //);
-            //
-        let res = reqwest::get("https://ad-services.fnal.gov/faas/zreadset").await.ok();
+        //let request_builder: RequestBuilder =
+        // client
+        // .get("https://ad-services.fnal.gov/faas/dpm-grpc-test-rw-url-trigger"
+        // ).send();
+        //.bearer_auth(
+        //   _ctxt.data::<global::AuthInfo>().unwrap().token().unwrap(),
+        //);
+        //
+        let res = reqwest::get("https://ad-services.fnal.gov/faas/zreadset")
+            .await
+            .ok();
         //info!("[AcsysProxy] show res {}", res);
         Some(String::from("Scan Started -- adj"))
     }
