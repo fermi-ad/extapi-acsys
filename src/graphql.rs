@@ -28,6 +28,7 @@ use types::AuthInfo;
 mod acsys;
 mod alarms;
 mod bbm;
+mod compression;
 mod devdb;
 mod faas;
 mod scanner;
@@ -400,6 +401,7 @@ mod tests {
 
         Router::new()
             .route(Q_ENDPOINT, post(graphql_handler).with_state(schema))
+            .layer(compression::compression_layer())
     }
 
     // This test checks to see whether a GraphQL resolver will be able
@@ -487,57 +489,57 @@ mod tests {
             );
         }
     }
-}
 
-#[tokio::test]
-async fn test_compression() {
-    let site = mk_test_site();
-    let query = r#"{ "query" : "{ __schema { types { name } } }" }"#;
+    #[tokio::test]
+    async fn test_compression() {
+        let site = mk_test_site();
+        let query = r#"{ "query" : "{ __schema { types { name } } }" }"#;
 
-    // Helper to check compression
-    let check_compression = |encoding: &str| {
-        let mut site = site.clone();
-        let query = query.to_string();
-        let encoding = encoding.to_string();
-        async move {
-            let response = site
-                .as_service()
-                .call(
-                    Request::builder()
-                        .method("POST")
-                        .uri("/test")
-                        .header("content-type", "application/json")
-                        .header("accept-encoding", &encoding)
-                        .body(Body::from(query))
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
+        // Helper to check compression
+        let check_compression = |encoding: &str| {
+            let mut site = site.clone();
+            let query = query.to_string();
+            let encoding = encoding.to_string();
+            async move {
+                let response = site
+                    .as_service()
+                    .call(
+                        Request::builder()
+                            .method("POST")
+                            .uri("/test")
+                            .header("content-type", "application/json")
+                            .header("accept-encoding", &encoding)
+                            .body(Body::from(query))
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
 
-            assert_eq!(response.status(), StatusCode::OK);
-            let header = response.headers().get("content-encoding");
-            match encoding.as_str() {
-                "gzip" | "zstd" => {
-                    let value = header
+                assert_eq!(response.status(), StatusCode::OK);
+                let header = response.headers().get("content-encoding");
+                match encoding.as_str() {
+                    "gzip" | "zstd" => {
+                        let value = header
                             .expect("missing content-encoding header for supported encoding")
                             .to_str()
                             .expect("invalid content-encoding header value");
-                    assert_eq!(value, encoding);
-                }
-                _ => {
-                    // For unsupported encodings (e.g., deflate), we expect no compression.
-                    assert!(
-                        header.is_none(),
-                        "expected no content-encoding header for unsupported encoding {}, got {:?}",
-                        encoding,
-                        header
-                    );
+                        assert_eq!(value, encoding);
+                    }
+                    _ => {
+                        // For unsupported encodings (e.g., deflate), we expect no compression.
+                        assert!(
+                            header.is_none(),
+                            "expected no content-encoding header for unsupported encoding {}, got {:?}",
+                            encoding,
+                            header
+                        );
+                    }
                 }
             }
-        }
-    };
+        };
 
-    check_compression("gzip").await;
-    check_compression("zstd").await;
-    check_compression("deflate").await;
+        check_compression("gzip").await;
+        check_compression("zstd").await;
+        check_compression("deflate").await;
+    }
 }
