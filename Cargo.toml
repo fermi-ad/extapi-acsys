@@ -34,7 +34,7 @@ tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-util = "0.7"
 tonic = { version = "0.14", features = ["tls-aws-lc"] }
 tonic-prost = "0.14"
-tower-http = { version = "0.7", features = ["cors", "compression-deflate", "decompression-deflate"] }
+tower-http = { version = "0.7", features = ["cors", "compression-deflate", "decompression-deflate", "compression-gzip", "compression-zstd"] }
 tracing = { version = "0.1", features = ["log"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4"] }
