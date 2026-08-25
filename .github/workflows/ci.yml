@@ -16,4 +16,5 @@ jobs:
       pull-requests: write
     with:
       pull-git-submodules: true
+      references-internal-git-repo: true
       static-dependencies: libcurl4-openssl-dev

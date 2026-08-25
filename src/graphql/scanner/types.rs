@@ -1,4 +1,4 @@
-use crate::g_rpc::wscan::proto;
+use crate::g_rpc::proto::scanner::ScanProgress;
 use async_graphql::{SimpleObject, Union, types};
 
 #[derive(SimpleObject)]
@@ -39,8 +39,8 @@ pub struct ScanCurrentState {
     pub state: ScanState,
 }
 
-impl From<proto::ScanProgress> for ScanCurrentState {
-    fn from(o: proto::ScanProgress) -> Self {
+impl From<ScanProgress> for ScanCurrentState {
+    fn from(o: ScanProgress) -> Self {
         if o.message.is_empty() {
             if o.progress_percentage == 0 || o.progress_percentage == 100 {
                 ScanCurrentState {

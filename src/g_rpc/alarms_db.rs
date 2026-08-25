@@ -8,11 +8,9 @@ pub mod timers;
 
 use crate::g_rpc::{
     connection_utils::{ConnectionAdapter, ConnectionPort},
-    proto::services::alarms::{
-        alarm_group_service_client::AlarmGroupServiceClient,
-        alarm_timer_service_client::AlarmTimerServiceClient,
-        user_layouts_service_client::UserLayoutsServiceClient,
-    },
+    proto::services::alarm_groups::alarm_group_service_client::AlarmGroupServiceClient,
+    proto::services::alarm_timers::alarm_timer_service_client::AlarmTimerServiceClient,
+    proto::services::alarm_user_layouts::user_layouts_service_client::UserLayoutsServiceClient,
 };
 use std::sync::LazyLock;
 use tokio::try_join;

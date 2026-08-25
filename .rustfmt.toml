@@ -1,5 +1,5 @@
 
-edition = "2021"
+edition = "2024"
 fn_params_layout = "Compressed"
 
 newline_style = "Unix"

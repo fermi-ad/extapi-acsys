@@ -7,7 +7,7 @@ use crate::g_rpc::{
     proto::{
         common::alarm,
         google::protobuf::{Empty, Timestamp},
-        services::alarms::{
+        services::alarm_commands::{
             AcknowledgeRequest, ActivateRequest, BypassRequest,
             SnapshotResponse, SnoozeRequest,
             alarm_commands_client::AlarmCommandsClient,

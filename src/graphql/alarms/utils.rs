@@ -5,7 +5,7 @@
 //! - [`timestamp_to_datetime`] — converts a protobuf [`Timestamp`] to [`DateTime<Utc>`]
 
 use crate::g_rpc::proto::google::protobuf::Timestamp;
-use crate::g_rpc::proto::services::alarms::TimerType;
+use crate::g_rpc::proto::services::alarm_timers::TimerType;
 use chrono::{DateTime, Utc};
 
 /// Converts a protobuf [`TimerType`] integer representation to its string name.
