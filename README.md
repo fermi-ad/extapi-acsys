@@ -11,7 +11,6 @@ The middle layer of the control system uses gRPCs for communications. The GraphQ
 ### Prerequisites
 
 - [Rust >= 1.90](https://www.rust-lang.org/learn/get-started)
-- [Protocol Buffer](https://grpc.io/docs/protoc-installation/)
 
 #### Kafka (rdkafka) native dependencies
 
@@ -24,7 +23,7 @@ Debian/Ubuntu packages typically required:
 - `libsasl2-dev`
 - `libcurl4-openssl-dev`
 
-Depending on your environment, you may also need a C toolchain and build tooling (e.g. `cmake`, `pkg-config`).
+Depending on your environment, you may also need a C toolchain and build tooling (e.g. `cmake`, `pkg-config`). The associated [`dev container`](.devcontainer/devcontainer.json) comes prepackaged with all the development tools necessary to build this project.
 
 ### Environment variables
 The following variables exist for configuring the service at runtime:
@@ -51,7 +50,7 @@ To debug an issue reported by a client:
 ### Check out the project:
 
 ```shell
-$ git clone  --recurse-submodules https://github.com/fermi-ad/extapi-acsys.git
+$ git clone https://github.com/fermi-ad/extapi-acsys.git
 $ cd extapi-acsys
 ```
 

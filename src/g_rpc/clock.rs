@@ -1,4 +1,4 @@
-use crate::g_rpc::proto::services::aclk::{
+use crate::g_rpc::proto::services::clock_event::{
     EventInfo, SubscribeReq, clock_event_client::ClockEventClient,
 };
 use rust_env_var_lib::env_var;

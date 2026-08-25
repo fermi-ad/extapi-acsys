@@ -8,10 +8,13 @@ use crate::{
             Status,
             status::{Severity, Source, State},
         },
-        services::alarms::{
-            AlarmGroup as ProtoAlarmGroup,
-            AlarmGroupMetadatum as ProtoGroupMetadatum,
-            AlarmTimer as ProtoAlarmTimer, UserLayout as ProtoUserLayout,
+        services::{
+            alarm_groups::{
+                AlarmGroup as ProtoAlarmGroup,
+                AlarmGroupMetadatum as ProtoGroupMetadatum,
+            },
+            alarm_timers::AlarmTimer as ProtoAlarmTimer,
+            alarm_user_layouts::UserLayout as ProtoUserLayout,
         },
     },
     graphql::alarms::utils,

@@ -4,7 +4,9 @@
 
 use crate::g_rpc::{
     alarms_db::AlarmsDbConnectionAdapter,
-    proto::{google::protobuf::Empty, services::alarms::UserLayouts},
+    proto::{
+        google::protobuf::Empty, services::alarm_user_layouts::UserLayouts,
+    },
 };
 use tonic::{Response, Status};
 
