@@ -43,6 +43,10 @@ pub mod proto {
         pub mod devdb {
             tonic::include_proto!("services.devdb");
         }
+        pub mod unr {
+            tonic::include_proto!("services.base_info");
+            tonic::include_proto!("services.relationship_info");
+        }
     }
 }
 
@@ -54,4 +58,5 @@ pub mod clock;
 pub mod devdb;
 pub mod dpm;
 pub mod tlg;
+pub mod unr;
 pub mod wscan;

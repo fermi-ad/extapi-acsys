@@ -1,0 +1,138 @@
+//! UNR gRPC Module
+//!
+//! Contains the logic for making calls to the UNR gRPC service, covering both
+//! the BaseInfo and RelationshipInfo APIs. Both clients share the same
+//! underlying [`tonic::transport::Channel`] via [`UnrConnectionAdapter`].
+
+use crate::g_rpc::{
+    connection_utils::{ConnectionAdapter, ConnectionPort},
+    proto::{
+        google::protobuf::Empty,
+        services::unr::{
+            base_info_service_client::BaseInfoServiceClient,
+            relationship_info_service_client::RelationshipInfoServiceClient,
+            BaseInfo, BaseRequest, BaseResponse, RelationshipInfo,
+            RelationshipRequest, RelationshipResponse,
+        },
+    },
+};
+use std::sync::LazyLock;
+use tokio::try_join;
+use tonic::{
+    transport::{Channel, Error},
+    Response, Status,
+};
+
+/// The environment variable name to use when requesting the location of the UNR gRPC service.
+const UNR_GRPC_HOST: &str = "UNR_GRPC_HOST";
+
+/// A static instance of [`ConnectionPort`] wrapping [`UnrConnectionAdapter`].
+/// Utilizes [`LazyLock`] to only instantiate upon the first reference to this field.
+static UNR_CLIENT: LazyLock<ConnectionPort<UnrConnectionAdapter>> =
+    LazyLock::new(|| ConnectionPort::new(UNR_GRPC_HOST));
+
+/// Makes a request to the UNR gRPC service to create a new `BaseInfo` record.
+pub async fn create_base_info(base_info: BaseInfo) -> Result<Empty, Status> {
+    let do_create = |mut client: UnrConnectionAdapter| async move {
+        client.base_info_conn.create(base_info).await
+    };
+    UNR_CLIENT.run_with_client(do_create).await
+}
+
+/// Makes a request to the UNR gRPC service to read `BaseInfo` records for the given device names.
+/// If `device_names` is empty, the service returns all rows.
+pub async fn read_base_info(
+    device_names: Vec<String>,
+) -> Result<BaseResponse, Status> {
+    let request = BaseRequest { device_names };
+    let do_read = |mut client: UnrConnectionAdapter| async move {
+        client.base_info_conn.read(request).await
+    };
+    UNR_CLIENT.run_with_client(do_read).await
+}
+
+/// Makes a request to the UNR gRPC service to update an existing `BaseInfo` record.
+pub async fn update_base_info(base_info: BaseInfo) -> Result<Empty, Status> {
+    let do_update = |mut client: UnrConnectionAdapter| async move {
+        client.base_info_conn.update(base_info).await
+    };
+    UNR_CLIENT.run_with_client(do_update).await
+}
+
+/// Makes a request to the UNR gRPC service to delete `BaseInfo` records for the given device names.
+pub async fn delete_base_info(
+    device_names: Vec<String>,
+) -> Result<Empty, Status> {
+    let request = BaseRequest { device_names };
+    let do_delete = |mut client: UnrConnectionAdapter| async move {
+        client.base_info_conn.delete(request).await
+    };
+    UNR_CLIENT.run_with_client(do_delete).await
+}
+
+/// Makes a request to the UNR gRPC service to create a new `RelationshipInfo` record.
+pub async fn create_relationship(
+    relationship_info: RelationshipInfo,
+) -> Result<Empty, Status> {
+    let do_create = |mut client: UnrConnectionAdapter| async move {
+        client
+            .relationship_info_conn
+            .create(relationship_info)
+            .await
+    };
+    UNR_CLIENT.run_with_client(do_create).await
+}
+
+/// Makes a request to the UNR gRPC service to read `RelationshipInfo` records for the given parent name.
+pub async fn read_relationship(
+    parent_name: String,
+) -> Result<RelationshipResponse, Status> {
+    let request = RelationshipRequest { parent_name };
+    let do_read = |mut client: UnrConnectionAdapter| async move {
+        client.relationship_info_conn.read(request).await
+    };
+    UNR_CLIENT.run_with_client(do_read).await
+}
+
+/// Makes a request to the UNR gRPC service to update an existing `RelationshipInfo` record.
+pub async fn update_relationship(
+    relationship_info: RelationshipInfo,
+) -> Result<Empty, Status> {
+    let do_update = |mut client: UnrConnectionAdapter| async move {
+        client
+            .relationship_info_conn
+            .update(relationship_info)
+            .await
+    };
+    UNR_CLIENT.run_with_client(do_update).await
+}
+
+/// Makes a request to the UNR gRPC service to delete `RelationshipInfo` records for the given parent name.
+pub async fn delete_relationship(parent_name: String) -> Result<Empty, Status> {
+    let request = RelationshipRequest { parent_name };
+    let do_delete = |mut client: UnrConnectionAdapter| async move {
+        client.relationship_info_conn.delete(request).await
+    };
+    UNR_CLIENT.run_with_client(do_delete).await
+}
+
+/// Implementation of [`ConnectionAdapter`] to hold the clients that invoke the gRPC endpoints
+/// supplied by the UNR service. Both clients share the same [`Channel`].
+#[derive(Clone)]
+struct UnrConnectionAdapter {
+    pub base_info_conn: BaseInfoServiceClient<Channel>,
+    pub relationship_info_conn: RelationshipInfoServiceClient<Channel>,
+}
+impl ConnectionAdapter for UnrConnectionAdapter {
+    async fn new(host: String) -> Result<Self, Error> {
+        let (base_info_conn, relationship_info_conn) = try_join!(
+            BaseInfoServiceClient::connect(host.clone()),
+            RelationshipInfoServiceClient::connect(host)
+        )?;
+
+        Ok(Self {
+            base_info_conn,
+            relationship_info_conn,
+        })
+    }
+}
