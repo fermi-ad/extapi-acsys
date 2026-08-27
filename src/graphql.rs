@@ -33,6 +33,7 @@ mod faas;
 mod scanner;
 mod tlg;
 mod types;
+mod unr;
 
 // Generic function which adds `AuthInfo` to the context. This
 // function can be used for all the GraphQL schemas.
@@ -73,6 +74,7 @@ async fn base_page() -> Html<&'static str> {
       <li><a href="/devdb">Device Database</a></li>
       <li><a href="/faas">Functions as a Service</a></li>
       <li><a href="/tlg">Timeline Generator placement</a></li>
+      <li><a href="/unr">UNR</a> (device graph)</li>
       <li><a href="/wscan">Wire Scanner</a> (WIP)</li>
     </ul>
   </body>
@@ -220,6 +222,27 @@ fn create_devdb_router() -> Router {
     )
 }
 
+fn create_unr_router() -> Router {
+    const Q_ENDPOINT: &str = "/unr";
+
+    let schema =
+        Schema::build(unr::UnrQueries, unr::UnrMutations, EmptySubscription)
+            .finish();
+
+    let graphiql = axum::response::Html(
+        async_graphql::http::GraphiQLSource::build()
+            .endpoint(Q_ENDPOINT)
+            .finish(),
+    );
+
+    Router::new().route(
+        Q_ENDPOINT,
+        get(graphiql)
+            .post(graphql_handler)
+            .with_state(schema.clone()),
+    )
+}
+
 fn create_faas_router() -> Router {
     const Q_ENDPOINT: &str = "/faas";
 
@@ -302,6 +325,7 @@ async fn create_site() -> Router {
         .merge(create_devdb_router())
         .merge(create_faas_router())
         .merge(create_tlg_router())
+        .merge(create_unr_router())
         .merge(create_wscan_router())
         .layer(
             CorsLayer::new()
