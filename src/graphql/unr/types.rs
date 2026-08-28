@@ -35,5 +35,4 @@ pub struct NotFound {
 pub enum DeviceQueryResult {
     Device(super::Device),
     NotFound(NotFound),
-    ErrorReply(global::ErrorReply),
 }
