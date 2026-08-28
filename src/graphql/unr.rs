@@ -115,11 +115,8 @@ impl Device {
             .await
             .map_err(|e| handle_error(e, "reading relationship"))?;
 
-        // Service returns repeated RelationshipInfo; we expect at most one for a parent.
         let children = resp
             .relationship_info
-            .into_iter()
-            .find(|ri| ri.parent_name == self.name)
             .map(|ri| ri.children_names)
             .unwrap_or_default();
 
