@@ -6,6 +6,7 @@
 use crate::g_rpc::dpm::build_connection;
 use async_graphql::{
     EmptyMutation, EmptySubscription, ObjectType, Schema, SubscriptionType,
+    dataloader::{DataLoader, HashMapCache},
 };
 use async_graphql_axum::{
     GraphQLRequest, GraphQLResponse, GraphQLSubscription,
@@ -227,6 +228,11 @@ fn create_unr_router() -> Router {
 
     let schema =
         Schema::build(unr::UnrQueries, unr::UnrMutations, EmptySubscription)
+            .data(DataLoader::with_cache(
+                unr::loader::UnrBaseInfoLoader::default(),
+                tokio::spawn,
+                HashMapCache::default(),
+            ))
             .finish();
 
     let graphiql = axum::response::Html(

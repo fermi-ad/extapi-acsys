@@ -6,11 +6,8 @@ use async_graphql::InputObject;
 #[derive(Clone, Debug)]
 pub struct Device {
     pub name: String,
-    /// Nullable because UNR may not have base info for a device.
     pub address: Option<String>,
-    /// Nullable because UNR may not have base info for a device.
     pub r#type: Option<String>,
-    /// Nullable because UNR may not have base info for a device.
     pub protocol: Option<String>,
 }
 
@@ -26,7 +23,7 @@ pub struct CreateDeviceInput {
 
 /// Input for updating a device.
 ///
-/// `children` is intentionally ommitted to avoid accidental relationship
+/// `children` is intentionally omitted to avoid accidental relationship
 /// clobbering during updates.
 #[derive(Clone, Debug, InputObject)]
 pub struct UpdateDeviceInput {

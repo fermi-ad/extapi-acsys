@@ -3,11 +3,15 @@
 //! Provides a resource/graph-oriented GraphQL schema for UNR data.
 
 use crate::g_rpc::{proto::services::unr::BaseInfo, unr};
-use async_graphql::{Error, Object, Result, SimpleObject};
+use async_graphql::{
+    Context, Error, Object, Result, SimpleObject,
+    dataloader::{DataLoader, HashMapCache},
+};
 use tonic::{Code, Status};
 use tracing::error;
 use uuid::Uuid;
 
+pub mod loader;
 pub mod types;
 
 fn handle_error(e: Status, gerund: &str) -> Error {
@@ -32,52 +36,62 @@ async fn set_children_impl(
             children_names: children,
         };
 
-    // Prefer update; if NotFound, fall back to create.
-    match unr::update_relationship(relationship_info.clone()).await {
-        Ok(_) => Ok(Device::new(parent)),
-        Err(e) if e.code() == Code::NotFound => {
-            unr::create_relationship(relationship_info)
-                .await
-                .map_err(|e| handle_error(e, "setting children"))?;
-            Ok(Device::new(parent))
-        }
-        Err(e) => Err(handle_error(e, "setting children")),
-    }
+    unr::update_relationship(relationship_info)
+        .await
+        .map(|_| Device::new(parent))
+        .map_err(|e| handle_error(e, "setting children"))
 }
 
 #[derive(Clone, Debug, SimpleObject)]
 #[graphql(complex)]
 pub struct Device {
     pub name: String,
-    pub address: Option<String>,
-    pub r#type: Option<String>,
-    pub protocol: Option<String>,
-}
-
-impl From<types::Device> for Device {
-    fn from(v: types::Device) -> Self {
-        Self {
-            name: v.name,
-            address: v.address,
-            r#type: v.r#type,
-            protocol: v.protocol,
-        }
-    }
 }
 
 impl Device {
     fn new(name: String) -> Self {
-        Self {
-            name,
-            address: None,
-            r#type: None,
-            protocol: None,
-        }
+        Self { name }
     }
 }
 
 #[async_graphql::ComplexObject]
 impl Device {
+    async fn address(&self, ctx: &Context<'_>) -> Result<Option<String>> {
+        let loader = ctx.data_unchecked::<DataLoader<loader::UnrBaseInfoLoader, HashMapCache>>();
+        let base_info = loader
+            .load_one(self.name.clone())
+            .await
+            .map_err(|_e| Error::new("Error reading base info."))?;
+
+        Ok(base_info.and_then(|base_info| {
+            (!base_info.address.is_empty()).then(|| base_info.address)
+        }))
+    }
+
+    async fn r#type(&self, ctx: &Context<'_>) -> Result<Option<String>> {
+        let loader = ctx.data_unchecked::<DataLoader<loader::UnrBaseInfoLoader, HashMapCache>>();
+        let base_info = loader
+            .load_one(self.name.clone())
+            .await
+            .map_err(|_e| Error::new("Error reading base info."))?;
+
+        Ok(base_info.and_then(|base_info| {
+            (!base_info.r#type.is_empty()).then(|| base_info.r#type)
+        }))
+    }
+
+    async fn protocol(&self, ctx: &Context<'_>) -> Result<Option<String>> {
+        let loader = ctx.data_unchecked::<DataLoader<loader::UnrBaseInfoLoader, HashMapCache>>();
+        let base_info = loader
+            .load_one(self.name.clone())
+            .await
+            .map_err(|_e| Error::new("Error reading base info."))?;
+
+        Ok(base_info.and_then(|base_info| {
+            (!base_info.protocol.is_empty()).then(|| base_info.protocol)
+        }))
+    }
+
     async fn children(&self) -> Result<Vec<Device>> {
         let resp = unr::read_relationship(self.name.clone())
             .await
@@ -100,43 +114,51 @@ pub struct UnrQueries;
 
 #[Object]
 impl UnrQueries {
-    async fn device(&self, name: String) -> Result<Option<Device>> {
+    async fn device(
+        &self, ctx: &Context<'_>, name: String,
+    ) -> Result<Option<Device>> {
+        // Validate existence by checking BaseInfo.
+        // Also prime the DataLoader cache so subsequent field resolvers don't re-fetch.
         let resp = unr::read_base_info(vec![name.clone()])
             .await
             .map_err(|e| handle_error(e, "reading base info"))?;
 
-        let bi = resp.base_info.into_iter().find(|bi| bi.device_name == name);
+        let mut it = resp.base_info.into_iter();
+        let base_info = it.find(|base_info| base_info.device_name == name);
 
-        Ok(bi.map(|bi| Device {
-            name: bi.device_name,
-            address: (!bi.address.is_empty()).then(|| bi.address),
-            r#type: (!bi.r#type.is_empty()).then(|| bi.r#type),
-            protocol: (!bi.protocol.is_empty()).then(|| bi.protocol),
-        }))
+        if let Some(base_info) = base_info {
+            let loader = ctx.data_unchecked::<DataLoader<loader::UnrBaseInfoLoader, HashMapCache>>();
+            loader.feed_one(name.clone(), base_info).await;
+            Ok(Some(Device::new(name)))
+        } else {
+            Ok(None)
+        }
     }
 
-    async fn devices(&self, names: Vec<String>) -> Result<Vec<Device>> {
+    async fn devices(
+        &self, ctx: &Context<'_>, names: Vec<String>,
+    ) -> Result<Vec<Device>> {
+        // Validate existence by checking BaseInfo in a single batched call.
+        // Also prime the DataLoader cache for all returned devices.
         let resp = unr::read_base_info(names.clone())
             .await
             .map_err(|e| handle_error(e, "reading base info"))?;
 
-        // Preserve request order; omit names that have no BaseInfo row.
-        let mut by_name = std::collections::HashMap::new();
-        for bi in resp.base_info {
-            by_name.insert(
-                bi.device_name.clone(),
-                Device {
-                    name: bi.device_name,
-                    address: (!bi.address.is_empty()).then(|| bi.address),
-                    r#type: (!bi.r#type.is_empty()).then(|| bi.r#type),
-                    protocol: (!bi.protocol.is_empty()).then(|| bi.protocol),
-                },
-            );
+        let loader = ctx.data_unchecked::<DataLoader<loader::UnrBaseInfoLoader, HashMapCache>>();
+
+        let mut present: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+        for base_info in resp.base_info {
+            present.insert(base_info.device_name.clone());
+            loader
+                .feed_one(base_info.device_name.clone(), base_info)
+                .await;
         }
 
         Ok(names
             .into_iter()
-            .filter_map(|n| by_name.remove(&n))
+            .filter(|n| present.contains(n))
+            .map(Device::new)
             .collect())
     }
 }
@@ -147,7 +169,7 @@ pub struct UnrMutations;
 #[Object]
 impl UnrMutations {
     async fn create_device(
-        &self, input: types::CreateDeviceInput,
+        &self, ctx: &Context<'_>, input: types::CreateDeviceInput,
     ) -> Result<Device> {
         let children = input.children.clone();
         let device_name = input.name.clone();
@@ -159,9 +181,13 @@ impl UnrMutations {
             protocol: input.protocol,
         };
 
-        unr::create_base_info(base_info)
+        unr::create_base_info(base_info.clone())
             .await
             .map_err(|e| handle_error(e, "creating device"))?;
+
+        // Read-your-writes: prime/overwrite BaseInfo cache for this request.
+        let loader = ctx.data_unchecked::<DataLoader<loader::UnrBaseInfoLoader, HashMapCache>>();
+        loader.feed_one(device_name.clone(), base_info).await;
 
         if let Some(children) = children {
             // Replace adjacency list.
@@ -172,7 +198,7 @@ impl UnrMutations {
     }
 
     async fn update_device(
-        &self, input: types::UpdateDeviceInput,
+        &self, ctx: &Context<'_>, input: types::UpdateDeviceInput,
     ) -> Result<Device> {
         let device_name = input.name.clone();
 
@@ -183,9 +209,13 @@ impl UnrMutations {
             protocol: input.protocol,
         };
 
-        unr::update_base_info(base_info)
+        unr::update_base_info(base_info.clone())
             .await
             .map_err(|e| handle_error(e, "updating device"))?;
+
+        // Read-your-writes: prime/overwrite BaseInfo cache for this request.
+        let loader = ctx.data_unchecked::<DataLoader<loader::UnrBaseInfoLoader, HashMapCache>>();
+        loader.feed_one(device_name.clone(), base_info).await;
 
         Ok(Device::new(device_name))
     }
@@ -198,8 +228,15 @@ impl UnrMutations {
     }
 
     async fn set_children(
-        &self, parent: String, children: Vec<String>,
+        &self, ctx: &Context<'_>, parent: String, children: Vec<String>,
     ) -> Result<Device> {
+        // Relationship mutation doesn't change BaseInfo, but we still want
+        // read-your-writes for BaseInfo fields if the client requests them.
+        // Ensure the loader has at least the parent cached if it exists.
+        // (No-op if it doesn't.)
+        let loader = ctx.data_unchecked::<DataLoader<loader::UnrBaseInfoLoader, HashMapCache>>();
+        let _ = loader.load_one(parent.clone()).await;
+
         set_children_impl(parent, children).await
     }
 }
@@ -212,13 +249,24 @@ mod tests {
     #[test]
     fn schema_builds() {
         let _schema =
-            Schema::build(UnrQueries, UnrMutations, EmptySubscription).finish();
+            Schema::build(UnrQueries, UnrMutations, EmptySubscription)
+                .data(DataLoader::with_cache(
+                    loader::UnrBaseInfoLoader::default(),
+                    tokio::spawn,
+                    HashMapCache::default(),
+                ))
+                .finish();
     }
 
     #[tokio::test]
     async fn mutation_returns_err_on_bad_connection() {
-        let schema =
-            Schema::build(UnrQueries, UnrMutations, EmptySubscription).finish();
+        let schema = Schema::build(UnrQueries, UnrMutations, EmptySubscription)
+            .data(DataLoader::with_cache(
+                loader::UnrBaseInfoLoader::default(),
+                tokio::spawn,
+                HashMapCache::default(),
+            ))
+            .finish();
 
         let result = schema
             .execute(
@@ -236,5 +284,33 @@ mod tests {
                 .message
                 .starts_with("Error creating device.")
         );
+    }
+
+    #[tokio::test]
+    async fn read_your_writes_is_implemented_via_feed_one() {
+        // This is a unit-level regression test that validates our chosen mechanism
+        // for read-your-writes: mutations call `DataLoader::feed_one()`.
+        //
+        // We can't fully integration-test read-your-writes without a mock UNR gRPC
+        // service, because the mutation must succeed to return BaseInfo-backed fields.
+        //
+        // So we assert the behavior at the DataLoader layer directly.
+        let loader = DataLoader::with_cache(
+            loader::UnrBaseInfoLoader::default(),
+            tokio::spawn,
+            HashMapCache::default(),
+        );
+
+        let base_info = BaseInfo {
+            device_name: "D".to_string(),
+            address: "ADDR".to_string(),
+            r#type: "TYPE".to_string(),
+            protocol: "PROTO".to_string(),
+        };
+
+        loader.feed_one("D".to_string(), base_info.clone()).await;
+
+        let got = loader.load_one("D".to_string()).await.unwrap();
+        assert_eq!(got, Some(base_info));
     }
 }
