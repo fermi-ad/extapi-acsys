@@ -183,6 +183,31 @@ impl UnrQueries {
             })
             .collect())
     }
+
+    /// Reads all devices known to UNR.
+    ///
+    /// This is intentionally a dedicated query (rather than overloading `devices(names: [])`)
+    /// to avoid accidentally triggering an unbounded fetch.
+    async fn all_devices(&self, ctx: &Context<'_>) -> Result<Vec<Device>> {
+        let resp = unr::read_base_info(vec![])
+            .await
+            .map_err(|e| handle_error(e, "reading base info"))?;
+
+        let base_infos = resp.base_info;
+
+        // Prime the DataLoader cache so subsequent field resolvers don't re-fetch.
+        let loader = ctx.data_unchecked::<DataLoader<loader::UnrBaseInfoLoader, HashMapCache>>();
+        for base_info in &base_infos {
+            loader
+                .feed_one(base_info.device_name.clone(), base_info.clone())
+                .await;
+        }
+
+        Ok(base_infos
+            .into_iter()
+            .map(|bi| Device::new(bi.device_name))
+            .collect())
+    }
 }
 
 #[derive(Default)]
@@ -305,6 +330,34 @@ mod tests {
             result.errors[0]
                 .message
                 .starts_with("Error creating device.")
+        );
+    }
+
+    #[tokio::test]
+    async fn all_devices_returns_err_on_bad_connection() {
+        let schema = Schema::build(UnrQueries, UnrMutations, EmptySubscription)
+            .data(DataLoader::with_cache(
+                loader::UnrBaseInfoLoader,
+                tokio::spawn,
+                HashMapCache::default(),
+            ))
+            .finish();
+
+        let result = schema
+            .execute(
+                r#"
+                query {
+                  allDevices { name }
+                }
+                "#,
+            )
+            .await;
+
+        assert!(!result.errors.is_empty());
+        assert!(
+            result.errors[0]
+                .message
+                .starts_with("Error reading base info.")
         );
     }
 
