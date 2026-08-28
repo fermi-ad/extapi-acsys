@@ -79,40 +79,35 @@ impl Device {
 
 #[async_graphql::ComplexObject]
 impl Device {
-    async fn address(&self, ctx: &Context<'_>) -> Result<Option<String>> {
+    #[graphql(skip)]
+    fn non_empty(s: String) -> Option<String> {
+        (!s.is_empty()).then_some(s)
+    }
+
+    #[graphql(skip)]
+    async fn load_base_info(
+        &self, ctx: &Context<'_>,
+    ) -> Result<Option<BaseInfo>> {
         let loader = ctx.data_unchecked::<DataLoader<loader::UnrBaseInfoLoader, HashMapCache>>();
-        let base_info = loader
+        loader
             .load_one(self.name.clone())
             .await
-            .map_err(|_e| Error::new("Error reading base info."))?;
+            .map_err(|_e| Error::new("Error reading base info."))
+    }
 
-        Ok(base_info.and_then(|base_info| {
-            (!base_info.address.is_empty()).then_some(base_info.address)
-        }))
+    async fn address(&self, ctx: &Context<'_>) -> Result<Option<String>> {
+        let base_info = self.load_base_info(ctx).await?;
+        Ok(base_info.and_then(|base_info| Self::non_empty(base_info.address)))
     }
 
     async fn r#type(&self, ctx: &Context<'_>) -> Result<Option<String>> {
-        let loader = ctx.data_unchecked::<DataLoader<loader::UnrBaseInfoLoader, HashMapCache>>();
-        let base_info = loader
-            .load_one(self.name.clone())
-            .await
-            .map_err(|_e| Error::new("Error reading base info."))?;
-
-        Ok(base_info.and_then(|base_info| {
-            (!base_info.r#type.is_empty()).then_some(base_info.r#type)
-        }))
+        let base_info = self.load_base_info(ctx).await?;
+        Ok(base_info.and_then(|base_info| Self::non_empty(base_info.r#type)))
     }
 
     async fn protocol(&self, ctx: &Context<'_>) -> Result<Option<String>> {
-        let loader = ctx.data_unchecked::<DataLoader<loader::UnrBaseInfoLoader, HashMapCache>>();
-        let base_info = loader
-            .load_one(self.name.clone())
-            .await
-            .map_err(|_e| Error::new("Error reading base info."))?;
-
-        Ok(base_info.and_then(|base_info| {
-            (!base_info.protocol.is_empty()).then_some(base_info.protocol)
-        }))
+        let base_info = self.load_base_info(ctx).await?;
+        Ok(base_info.and_then(|base_info| Self::non_empty(base_info.protocol)))
     }
 
     async fn children(&self) -> Result<Vec<Device>> {
