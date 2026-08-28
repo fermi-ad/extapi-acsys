@@ -1,7 +1,5 @@
 use async_graphql::{InputObject, SimpleObject, Union};
 
-use crate::graphql::types as global;
-
 /// Input for creating a device.
 #[derive(Clone, Debug, InputObject)]
 pub struct CreateDeviceInput {
