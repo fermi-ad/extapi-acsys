@@ -229,7 +229,7 @@ fn create_unr_router() -> Router {
     let schema =
         Schema::build(unr::UnrQueries, unr::UnrMutations, EmptySubscription)
             .data(DataLoader::with_cache(
-                unr::loader::UnrBaseInfoLoader::default(),
+                unr::loader::UnrBaseInfoLoader,
                 tokio::spawn,
                 HashMapCache::default(),
             ))

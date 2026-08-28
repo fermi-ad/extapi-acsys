@@ -87,7 +87,7 @@ impl Device {
             .map_err(|_e| Error::new("Error reading base info."))?;
 
         Ok(base_info.and_then(|base_info| {
-            (!base_info.address.is_empty()).then(|| base_info.address)
+            (!base_info.address.is_empty()).then_some(base_info.address)
         }))
     }
 
@@ -99,7 +99,7 @@ impl Device {
             .map_err(|_e| Error::new("Error reading base info."))?;
 
         Ok(base_info.and_then(|base_info| {
-            (!base_info.r#type.is_empty()).then(|| base_info.r#type)
+            (!base_info.r#type.is_empty()).then_some(base_info.r#type)
         }))
     }
 
@@ -111,7 +111,7 @@ impl Device {
             .map_err(|_e| Error::new("Error reading base info."))?;
 
         Ok(base_info.and_then(|base_info| {
-            (!base_info.protocol.is_empty()).then(|| base_info.protocol)
+            (!base_info.protocol.is_empty()).then_some(base_info.protocol)
         }))
     }
 
@@ -146,8 +146,8 @@ impl UnrQueries {
             .await
             .map_err(|e| handle_error(e, "reading base info"))?;
 
-        let mut it = resp.base_info.into_iter();
-        let base_info = it.find(|base_info| base_info.device_name == name);
+        let mut iter = resp.base_info.into_iter();
+        let base_info = iter.find(|base_info| base_info.device_name == name);
 
         if let Some(base_info) = base_info {
             let loader = ctx.data_unchecked::<DataLoader<loader::UnrBaseInfoLoader, HashMapCache>>();
@@ -274,7 +274,7 @@ mod tests {
         let _schema =
             Schema::build(UnrQueries, UnrMutations, EmptySubscription)
                 .data(DataLoader::with_cache(
-                    loader::UnrBaseInfoLoader::default(),
+                    loader::UnrBaseInfoLoader,
                     tokio::spawn,
                     HashMapCache::default(),
                 ))
@@ -285,7 +285,7 @@ mod tests {
     async fn mutation_returns_err_on_bad_connection() {
         let schema = Schema::build(UnrQueries, UnrMutations, EmptySubscription)
             .data(DataLoader::with_cache(
-                loader::UnrBaseInfoLoader::default(),
+                loader::UnrBaseInfoLoader,
                 tokio::spawn,
                 HashMapCache::default(),
             ))
@@ -319,7 +319,7 @@ mod tests {
         //
         // So we assert the behavior at the DataLoader layer directly.
         let loader = DataLoader::with_cache(
-            loader::UnrBaseInfoLoader::default(),
+            loader::UnrBaseInfoLoader,
             tokio::spawn,
             HashMapCache::default(),
         );
