@@ -129,37 +129,42 @@ pub struct UnrQueries;
 
 #[Object]
 impl UnrQueries {
-    async fn device(
-        &self, ctx: &Context<'_>, name: String,
-    ) -> Result<Option<Device>> {
-        // Validate existence by checking BaseInfo.
-        // Also prime the DataLoader cache so subsequent field resolvers don't re-fetch.
-        let resp = unr::read_base_info(vec![name.clone()])
-            .await
-            .map_err(|e| handle_error(e, "reading base info"))?;
-
-        let mut iter = resp.base_info.into_iter();
-        let base_info = iter.find(|base_info| base_info.device_name == name);
-
-        if let Some(base_info) = base_info {
-            let loader = ctx.data_unchecked::<DataLoader<loader::UnrBaseInfoLoader, HashMapCache>>();
-            loader.feed_one(name.clone(), base_info).await;
-            Ok(Some(Device::new(name)))
-        } else {
-            Ok(None)
-        }
-    }
-
     async fn devices(
-        &self, ctx: &Context<'_>, names: Vec<String>,
+        &self, ctx: &Context<'_>, names: Option<Vec<String>>,
     ) -> Result<Vec<types::DeviceQueryResult>> {
+        let names = names.unwrap_or_default();
+
         // Validate existence by checking BaseInfo in a single batched call.
         // Also prime the DataLoader cache for all returned devices.
+        //
+        // UNR semantics: empty `device_names` means "return all rows".
         let resp = unr::read_base_info(names.clone())
             .await
             .map_err(|e| handle_error(e, "reading base info"))?;
 
         let loader = ctx.data_unchecked::<DataLoader<loader::UnrBaseInfoLoader, HashMapCache>>();
+
+        // If the client requested specific names, we return a per-name union
+        // (Device | NotFound). If they omitted `names`, we return all devices.
+        if names.is_empty() {
+            // Prime the DataLoader cache for all returned devices.
+            for base_info in &resp.base_info {
+                loader
+                    .feed_one(base_info.device_name.clone(), base_info.clone())
+                    .await;
+            }
+
+            // Return all devices (no NotFound entries).
+            return Ok(resp
+                .base_info
+                .into_iter()
+                .map(|bi| {
+                    types::DeviceQueryResult::Device(Device::new(
+                        bi.device_name,
+                    ))
+                })
+                .collect());
+        }
 
         let mut present: std::collections::HashSet<String> =
             std::collections::HashSet::new();
@@ -181,31 +186,6 @@ impl UnrQueries {
                     })
                 }
             })
-            .collect())
-    }
-
-    /// Reads all devices known to UNR.
-    ///
-    /// This is intentionally a dedicated query (rather than overloading `devices(names: [])`)
-    /// to avoid accidentally triggering an unbounded fetch.
-    async fn all_devices(&self, ctx: &Context<'_>) -> Result<Vec<Device>> {
-        let resp = unr::read_base_info(vec![])
-            .await
-            .map_err(|e| handle_error(e, "reading base info"))?;
-
-        let base_infos = resp.base_info;
-
-        // Prime the DataLoader cache so subsequent field resolvers don't re-fetch.
-        let loader = ctx.data_unchecked::<DataLoader<loader::UnrBaseInfoLoader, HashMapCache>>();
-        for base_info in &base_infos {
-            loader
-                .feed_one(base_info.device_name.clone(), base_info.clone())
-                .await;
-        }
-
-        Ok(base_infos
-            .into_iter()
-            .map(|bi| Device::new(bi.device_name))
             .collect())
     }
 }
@@ -330,34 +310,6 @@ mod tests {
             result.errors[0]
                 .message
                 .starts_with("Error creating device.")
-        );
-    }
-
-    #[tokio::test]
-    async fn all_devices_returns_err_on_bad_connection() {
-        let schema = Schema::build(UnrQueries, UnrMutations, EmptySubscription)
-            .data(DataLoader::with_cache(
-                loader::UnrBaseInfoLoader,
-                tokio::spawn,
-                HashMapCache::default(),
-            ))
-            .finish();
-
-        let result = schema
-            .execute(
-                r#"
-                query {
-                  allDevices { name }
-                }
-                "#,
-            )
-            .await;
-
-        assert!(!result.errors.is_empty());
-        assert!(
-            result.errors[0]
-                .message
-                .starts_with("Error reading base info.")
         );
     }
 

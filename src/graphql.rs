@@ -226,8 +226,11 @@ fn create_devdb_router() -> Router {
 fn create_unr_router() -> Router {
     const Q_ENDPOINT: &str = "/unr";
 
-    let schema =
-        Schema::build(unr::UnrQueries, unr::UnrMutations, EmptySubscription)
+    let schema = Schema::build(unr::UnrQueries, unr::UnrMutations, EmptySubscription)
+            // UNR can be queried recursively via `Device.children`; cap depth/complexity
+            // to prevent expensive full-graph traversals.
+            .limit_depth(4)
+            .limit_complexity(200)
             .data(DataLoader::with_cache(
                 unr::loader::UnrBaseInfoLoader,
                 tokio::spawn,
