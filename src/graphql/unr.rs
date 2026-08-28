@@ -2,7 +2,10 @@
 //!
 //! Provides a resource/graph-oriented GraphQL schema for UNR data.
 
-use crate::g_rpc::{proto::services::unr::BaseInfo, unr};
+use crate::g_rpc::proto::services::unr::BaseInfo;
+use std::sync::Arc;
+
+use self::api::UnrApi;
 use async_graphql::{
     Context, Error, Object, Result, SimpleObject,
     dataloader::{DataLoader, HashMapCache},
@@ -11,8 +14,12 @@ use tonic::{Code, Status};
 use tracing::error;
 use uuid::Uuid;
 
+pub mod api;
 pub mod loader;
 pub mod types;
+
+#[cfg(test)]
+mod tests;
 
 fn handle_error(e: Status, gerund: &str) -> Error {
     let err_id = Uuid::new_v4();
@@ -28,13 +35,13 @@ fn handle_error(e: Status, gerund: &str) -> Error {
 }
 
 async fn set_children_impl(
-    parent: String, children: Vec<String>,
+    api: &dyn UnrApi, parent: String, children: Vec<String>,
 ) -> Result<Device> {
     // Setting children to empty means "remove the relationship row".
     if children.is_empty() {
         // Delete is idempotent from the GraphQL perspective: if it doesn't exist,
         // treat it as success.
-        return match unr::delete_relationship(parent.clone()).await {
+        return match api.delete_relationship(parent.clone()).await {
             Ok(_) => Ok(Device::new(parent)),
             Err(e) if e.code() == Code::NotFound => Ok(Device::new(parent)),
             Err(e) => Err(handle_error(e, "setting children")),
@@ -53,14 +60,13 @@ async fn set_children_impl(
     // - update if it already exists
     //
     // We implement this as create-then-fallback-to-update on AlreadyExists.
-    match unr::create_relationship(relationship_info.clone()).await {
+    match api.create_relationship(relationship_info.clone()).await {
         Ok(_) => Ok(Device::new(parent)),
-        Err(e) if e.code() == Code::AlreadyExists => {
-            unr::update_relationship(relationship_info)
-                .await
-                .map(|_| Device::new(parent))
-                .map_err(|e| handle_error(e, "setting children"))
-        }
+        Err(e) if e.code() == Code::AlreadyExists => api
+            .update_relationship(relationship_info)
+            .await
+            .map(|_| Device::new(parent))
+            .map_err(|e| handle_error(e, "setting children")),
         Err(e) => Err(handle_error(e, "setting children")),
     }
 }
@@ -110,8 +116,10 @@ impl Device {
         Ok(base_info.and_then(|base_info| Self::non_empty(base_info.protocol)))
     }
 
-    async fn children(&self) -> Result<Vec<Device>> {
-        let resp = unr::read_relationship(self.name.clone())
+    async fn children(&self, ctx: &Context<'_>) -> Result<Vec<Device>> {
+        let api = ctx.data_unchecked::<Arc<dyn UnrApi>>();
+        let resp = api
+            .read_relationship(self.name.clone())
             .await
             .map_err(|e| handle_error(e, "reading relationship"))?;
 
@@ -138,7 +146,9 @@ impl UnrQueries {
         // Also prime the DataLoader cache for all returned devices.
         //
         // UNR semantics: empty `device_names` means "return all rows".
-        let resp = unr::read_base_info(names.clone())
+        let api = ctx.data_unchecked::<Arc<dyn UnrApi>>();
+        let resp = api
+            .read_base_info(names.clone())
             .await
             .map_err(|e| handle_error(e, "reading base info"))?;
 
@@ -208,7 +218,8 @@ impl UnrMutations {
             protocol: input.protocol,
         };
 
-        unr::create_base_info(base_info.clone())
+        let api = ctx.data_unchecked::<Arc<dyn UnrApi>>();
+        api.create_base_info(base_info.clone())
             .await
             .map_err(|e| handle_error(e, "creating device"))?;
 
@@ -218,7 +229,8 @@ impl UnrMutations {
 
         if let Some(children) = children {
             // Replace adjacency list.
-            set_children_impl(device_name.clone(), children).await?;
+            set_children_impl(api.as_ref(), device_name.clone(), children)
+                .await?;
         }
 
         Ok(Device::new(device_name))
@@ -236,7 +248,8 @@ impl UnrMutations {
             protocol: input.protocol,
         };
 
-        unr::update_base_info(base_info.clone())
+        let api = ctx.data_unchecked::<Arc<dyn UnrApi>>();
+        api.update_base_info(base_info.clone())
             .await
             .map_err(|e| handle_error(e, "updating device"))?;
 
@@ -247,8 +260,11 @@ impl UnrMutations {
         Ok(Device::new(device_name))
     }
 
-    async fn delete_devices(&self, names: Vec<String>) -> Result<Vec<String>> {
-        unr::delete_base_info(names.clone())
+    async fn delete_devices(
+        &self, ctx: &Context<'_>, names: Vec<String>,
+    ) -> Result<Vec<String>> {
+        let api = ctx.data_unchecked::<Arc<dyn UnrApi>>();
+        api.delete_base_info(names.clone())
             .await
             .map_err(|e| handle_error(e, "deleting devices"))?;
         Ok(names)
@@ -264,80 +280,7 @@ impl UnrMutations {
         let loader = ctx.data_unchecked::<DataLoader<loader::UnrBaseInfoLoader, HashMapCache>>();
         let _ = loader.load_one(parent.clone()).await;
 
-        set_children_impl(parent, children).await
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use async_graphql::{EmptySubscription, Schema};
-
-    #[test]
-    fn schema_builds() {
-        let _schema =
-            Schema::build(UnrQueries, UnrMutations, EmptySubscription)
-                .data(DataLoader::with_cache(
-                    loader::UnrBaseInfoLoader,
-                    tokio::spawn,
-                    HashMapCache::default(),
-                ))
-                .finish();
-    }
-
-    #[tokio::test]
-    async fn mutation_returns_err_on_bad_connection() {
-        let schema = Schema::build(UnrQueries, UnrMutations, EmptySubscription)
-            .data(DataLoader::with_cache(
-                loader::UnrBaseInfoLoader,
-                tokio::spawn,
-                HashMapCache::default(),
-            ))
-            .finish();
-
-        let result = schema
-            .execute(
-                r#"
-                mutation {
-                  createDevice(input: { name: "X", address: "A", type: "T", protocol: "P" }) { name }
-                }
-                "#,
-            )
-            .await;
-
-        assert!(!result.errors.is_empty());
-        assert!(
-            result.errors[0]
-                .message
-                .starts_with("Error creating device.")
-        );
-    }
-
-    #[tokio::test]
-    async fn read_your_writes_is_implemented_via_feed_one() {
-        // This is a unit-level regression test that validates our chosen mechanism
-        // for read-your-writes: mutations call `DataLoader::feed_one()`.
-        //
-        // We can't fully integration-test read-your-writes without a mock UNR gRPC
-        // service, because the mutation must succeed to return BaseInfo-backed fields.
-        //
-        // So we assert the behavior at the DataLoader layer directly.
-        let loader = DataLoader::with_cache(
-            loader::UnrBaseInfoLoader,
-            tokio::spawn,
-            HashMapCache::default(),
-        );
-
-        let base_info = BaseInfo {
-            device_name: "D".to_string(),
-            address: "ADDR".to_string(),
-            r#type: "TYPE".to_string(),
-            protocol: "PROTO".to_string(),
-        };
-
-        loader.feed_one("D".to_string(), base_info.clone()).await;
-
-        let got = loader.load_one("D".to_string()).await.unwrap();
-        assert_eq!(got, Some(base_info));
+        let api = ctx.data_unchecked::<Arc<dyn UnrApi>>();
+        set_children_impl(api.as_ref(), parent, children).await
     }
 }

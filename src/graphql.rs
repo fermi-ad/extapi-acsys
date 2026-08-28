@@ -226,17 +226,21 @@ fn create_devdb_router() -> Router {
 fn create_unr_router() -> Router {
     const Q_ENDPOINT: &str = "/unr";
 
+    let api: std::sync::Arc<dyn unr::api::UnrApi> =
+        std::sync::Arc::new(unr::api::GrpcUnrApi);
+
     let schema = Schema::build(unr::UnrQueries, unr::UnrMutations, EmptySubscription)
-            // UNR can be queried recursively via `Device.children`; cap depth/complexity
-            // to prevent expensive full-graph traversals.
-            .limit_depth(4)
-            .limit_complexity(200)
-            .data(DataLoader::with_cache(
-                unr::loader::UnrBaseInfoLoader,
-                tokio::spawn,
-                HashMapCache::default(),
-            ))
-            .finish();
+        // UNR can be queried recursively via `Device.children`; cap depth/complexity
+        // to prevent expensive full-graph traversals.
+        .limit_depth(4)
+        .limit_complexity(200)
+        .data(api.clone())
+        .data(DataLoader::with_cache(
+            unr::loader::UnrBaseInfoLoader::new(api),
+            tokio::spawn,
+            HashMapCache::default(),
+        ))
+        .finish();
 
     let graphiql = axum::response::Html(
         async_graphql::http::GraphiQLSource::build()

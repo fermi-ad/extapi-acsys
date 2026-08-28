@@ -1,12 +1,22 @@
-use crate::g_rpc::{proto::services::unr::BaseInfo, unr};
+use crate::g_rpc::proto::services::unr::BaseInfo;
 use async_graphql::dataloader::Loader;
-use std::{collections::HashMap, convert::Infallible};
+use std::{collections::HashMap, convert::Infallible, sync::Arc};
+
+use crate::graphql::unr::api::UnrApi;
 
 /// Batch loader for UNR BaseInfo records.
 ///
 /// Keys are UNR device names.
-#[derive(Clone, Default)]
-pub struct UnrBaseInfoLoader;
+#[derive(Clone)]
+pub struct UnrBaseInfoLoader {
+    pub api: Arc<dyn UnrApi>,
+}
+
+impl UnrBaseInfoLoader {
+    pub fn new(api: Arc<dyn UnrApi>) -> Self {
+        Self { api }
+    }
+}
 
 impl Loader<String> for UnrBaseInfoLoader {
     type Value = BaseInfo;
@@ -27,7 +37,7 @@ impl Loader<String> for UnrBaseInfoLoader {
 
         // UNR returns BaseInfo rows for the requested names.
         // Missing devices are simply absent from the response.
-        let resp = unr::read_base_info(uniq).await;
+        let resp = self.api.read_base_info(uniq).await;
 
         // DataLoader's Loader::Error must be Clone; tonic::Status isn't.
         // We treat transport/service errors as "no values" and let callers
