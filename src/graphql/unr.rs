@@ -1,4 +1,4 @@
-//! UNR GraphQL Module
+//! GraphQL Module for the Universal Name Registry service
 //!
 //! Provides a resource/graph-oriented GraphQL schema for UNR data.
 
@@ -30,16 +30,39 @@ fn handle_error(e: Status, gerund: &str) -> Error {
 async fn set_children_impl(
     parent: String, children: Vec<String>,
 ) -> Result<Device> {
+    // Setting children to empty means "remove the relationship row".
+    if children.is_empty() {
+        // Delete is idempotent from the GraphQL perspective: if it doesn't exist,
+        // treat it as success.
+        return match unr::delete_relationship(parent.clone()).await {
+            Ok(_) => Ok(Device::new(parent)),
+            Err(e) if e.code() == Code::NotFound => Ok(Device::new(parent)),
+            Err(e) => Err(handle_error(e, "setting children")),
+        };
+    }
+
     let relationship_info =
         crate::g_rpc::proto::services::unr::RelationshipInfo {
             parent_name: parent.clone(),
             children_names: children,
         };
 
-    unr::update_relationship(relationship_info)
-        .await
-        .map(|_| Device::new(parent))
-        .map_err(|e| handle_error(e, "setting children"))
+    // RelationshipInfo has distinct create/update endpoints.
+    // For "set children" semantics we want:
+    // - create if the relationship row doesn't exist yet
+    // - update if it already exists
+    //
+    // We implement this as create-then-fallback-to-update on AlreadyExists.
+    match unr::create_relationship(relationship_info.clone()).await {
+        Ok(_) => Ok(Device::new(parent)),
+        Err(e) if e.code() == Code::AlreadyExists => {
+            unr::update_relationship(relationship_info)
+                .await
+                .map(|_| Device::new(parent))
+                .map_err(|e| handle_error(e, "setting children"))
+        }
+        Err(e) => Err(handle_error(e, "setting children")),
+    }
 }
 
 #[derive(Clone, Debug, SimpleObject)]

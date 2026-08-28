@@ -1,16 +1,5 @@
 use async_graphql::InputObject;
 
-/// GraphQL-visible representation of a UNR device node.
-///
-/// Note: `children` is resolved in [`crate::graphql::unr`](crate::graphql::unr).
-#[derive(Clone, Debug)]
-pub struct Device {
-    pub name: String,
-    pub address: Option<String>,
-    pub r#type: Option<String>,
-    pub protocol: Option<String>,
-}
-
 /// Input for creating a device.
 #[derive(Clone, Debug, InputObject)]
 pub struct CreateDeviceInput {

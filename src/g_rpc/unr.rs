@@ -9,18 +9,18 @@ use crate::g_rpc::{
     proto::{
         google::protobuf::Empty,
         services::unr::{
-            base_info_service_client::BaseInfoServiceClient,
-            relationship_info_service_client::RelationshipInfoServiceClient,
             BaseInfo, BaseRequest, BaseResponse, RelationshipInfo,
             RelationshipRequest, RelationshipResponse,
+            base_info_service_client::BaseInfoServiceClient,
+            relationship_info_service_client::RelationshipInfoServiceClient,
         },
     },
 };
 use std::sync::LazyLock;
 use tokio::try_join;
 use tonic::{
+    Status,
     transport::{Channel, Error},
-    Response, Status,
 };
 
 /// The environment variable name to use when requesting the location of the UNR gRPC service.
