@@ -160,7 +160,7 @@ impl UnrQueries {
 
     async fn devices(
         &self, ctx: &Context<'_>, names: Vec<String>,
-    ) -> Result<Vec<Device>> {
+    ) -> Result<Vec<types::DeviceQueryResult>> {
         // Validate existence by checking BaseInfo in a single batched call.
         // Also prime the DataLoader cache for all returned devices.
         let resp = unr::read_base_info(names.clone())
@@ -180,8 +180,15 @@ impl UnrQueries {
 
         Ok(names
             .into_iter()
-            .filter(|n| present.contains(n))
-            .map(Device::new)
+            .map(|n| {
+                if present.contains(&n) {
+                    types::DeviceQueryResult::Device(Device::new(n))
+                } else {
+                    types::DeviceQueryResult::NotFound(types::NotFound {
+                        name: n,
+                    })
+                }
+            })
             .collect())
     }
 }
