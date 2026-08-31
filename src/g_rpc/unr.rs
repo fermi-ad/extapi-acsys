@@ -202,82 +202,84 @@ pub async fn delete_base_info(
     UNR_CLIENT.run_with_client(do_delete).await
 }
 
-async fn create_relationship_with(
+async fn create_relationships_with(
     client: &mut dyn UnrRelationshipClient, relationship_info: RelationshipInfo,
 ) -> Result<Empty, Status> {
     client.create(relationship_info).await
 }
 
-async fn read_relationship_with(
+async fn read_relationships_with(
     client: &mut dyn UnrRelationshipClient, parent_name: String,
 ) -> Result<RelationshipResponse, Status> {
     client.read(RelationshipRequest { parent_name }).await
 }
 
-async fn update_relationship_with(
+async fn update_relationships_with(
     client: &mut dyn UnrRelationshipClient, relationship_info: RelationshipInfo,
 ) -> Result<Empty, Status> {
     client.update(relationship_info).await
 }
 
-async fn delete_relationship_with(
+async fn delete_relationships_with(
     client: &mut dyn UnrRelationshipClient, parent_name: String,
 ) -> Result<Empty, Status> {
     client.delete(RelationshipRequest { parent_name }).await
 }
 
-/// Makes a request to the UNR gRPC service to create a new `RelationshipInfo` record.
-pub async fn create_relationship(
+/// Makes a request to the UNR gRPC service to add a set of children to a parent's relationship list.
+pub async fn create_relationships(
     relationship_info: RelationshipInfo,
 ) -> Result<Empty, Status> {
     let do_create = |client: UnrConnectionAdapter| async move {
         let mut rel = TonicUnrRelationshipClient {
             inner: client.relationship_info_conn,
         };
-        create_relationship_with(&mut rel, relationship_info)
+        create_relationships_with(&mut rel, relationship_info)
             .await
             .map(Into::into)
     };
     UNR_CLIENT.run_with_client(do_create).await
 }
 
-/// Makes a request to the UNR gRPC service to read `RelationshipInfo` records for the given parent name.
-pub async fn read_relationship(
+/// Makes a request to the UNR gRPC service to get all children associated with a parent.
+pub async fn read_relationships(
     parent_name: String,
 ) -> Result<RelationshipResponse, Status> {
     let do_read = |client: UnrConnectionAdapter| async move {
         let mut rel = TonicUnrRelationshipClient {
             inner: client.relationship_info_conn,
         };
-        read_relationship_with(&mut rel, parent_name)
+        read_relationships_with(&mut rel, parent_name)
             .await
             .map(Into::into)
     };
     UNR_CLIENT.run_with_client(do_read).await
 }
 
-/// Makes a request to the UNR gRPC service to update an existing `RelationshipInfo` record.
-pub async fn update_relationship(
+/// Makes a request to the UNR gRPC service to replace an existing parent's list of children with the provided list.
+pub async fn update_relationships(
     relationship_info: RelationshipInfo,
 ) -> Result<Empty, Status> {
     let do_update = |client: UnrConnectionAdapter| async move {
         let mut rel = TonicUnrRelationshipClient {
             inner: client.relationship_info_conn,
         };
-        update_relationship_with(&mut rel, relationship_info)
+        update_relationships_with(&mut rel, relationship_info)
             .await
             .map(Into::into)
     };
     UNR_CLIENT.run_with_client(do_update).await
 }
 
-/// Makes a request to the UNR gRPC service to delete `RelationshipInfo` records for the given parent name.
-pub async fn delete_relationship(parent_name: String) -> Result<Empty, Status> {
+/// Makes a request to the UNR gRPC service to remove all children from a parent's relationship list.
+pub async fn delete_relationships(
+    parent_name: String,
+) -> Result<Empty, Status> {
     let do_delete = |client: UnrConnectionAdapter| async move {
         let mut rel = TonicUnrRelationshipClient {
             inner: client.relationship_info_conn,
         };
-        delete_relationship_with(&mut rel, parent_name)
+        delete_relationships_with(&mut rel, parent_name)
             .await
             .map(Into::into)
     };
@@ -387,7 +389,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn create_relationship_with_calls_create_once_with_expected_payload()
+    async fn create_relationships_with_calls_create_once_with_expected_payload()
     {
         let relationship_info = RelationshipInfo {
             parent_name: "P".to_string(),
@@ -403,13 +405,13 @@ mod tests {
             })
             .returning(|_| Ok(Empty {}));
 
-        create_relationship_with(&mut mock, relationship_info)
+        create_relationships_with(&mut mock, relationship_info)
             .await
             .unwrap();
     }
 
     #[tokio::test]
-    async fn read_relationship_with_calls_read_once_with_expected_request() {
+    async fn read_relationships_with_calls_read_once_with_expected_request() {
         let parent_name = "P".to_string();
 
         let mut mock = MockUnrRelationshipClient::new();
@@ -425,13 +427,13 @@ mod tests {
                 })
             });
 
-        read_relationship_with(&mut mock, parent_name)
+        read_relationships_with(&mut mock, parent_name)
             .await
             .unwrap();
     }
 
     #[tokio::test]
-    async fn update_relationship_with_calls_update_once_with_expected_payload()
+    async fn update_relationships_with_calls_update_once_with_expected_payload()
     {
         let relationship_info = RelationshipInfo {
             parent_name: "P".to_string(),
@@ -447,13 +449,13 @@ mod tests {
             })
             .returning(|_| Ok(Empty {}));
 
-        update_relationship_with(&mut mock, relationship_info)
+        update_relationships_with(&mut mock, relationship_info)
             .await
             .unwrap();
     }
 
     #[tokio::test]
-    async fn delete_relationship_with_calls_delete_once_with_expected_request()
+    async fn delete_relationships_with_calls_delete_once_with_expected_request()
     {
         let parent_name = "P".to_string();
 
@@ -466,7 +468,7 @@ mod tests {
             })
             .returning(|_| Ok(Empty {}));
 
-        delete_relationship_with(&mut mock, parent_name)
+        delete_relationships_with(&mut mock, parent_name)
             .await
             .unwrap();
     }

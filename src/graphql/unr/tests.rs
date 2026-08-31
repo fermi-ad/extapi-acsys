@@ -18,6 +18,7 @@ mod unr_tests {
     struct FakeUnrApi {
         base: Mutex<HashMap<String, BaseInfo>>,
         rel: Mutex<HashMap<String, Vec<String>>>,
+        fail_next: Mutex<Option<Code>>,
     }
 
     #[async_trait::async_trait]
@@ -73,7 +74,7 @@ mod unr_tests {
             Ok(Empty {})
         }
 
-        async fn create_relationship(
+        async fn create_relationships(
             &self,
             relationship_info: crate::g_rpc::proto::services::unr::RelationshipInfo,
         ) -> Result<Empty, Status> {
@@ -90,7 +91,7 @@ mod unr_tests {
             Ok(Empty {})
         }
 
-        async fn read_relationship(
+        async fn read_relationships(
             &self, parent_name: String,
         ) -> Result<RelationshipResponse, Status> {
             let rel = self.rel.lock().unwrap();
@@ -106,14 +107,15 @@ mod unr_tests {
             })
         }
 
-        async fn update_relationship(
+        async fn update_relationships(
             &self,
             relationship_info: crate::g_rpc::proto::services::unr::RelationshipInfo,
         ) -> Result<Empty, Status> {
-            let mut rel = self.rel.lock().unwrap();
-            if !rel.contains_key(&relationship_info.parent_name) {
-                return Err(Status::new(Code::NotFound, "missing"));
+            if let Some(code) = self.fail_next.lock().unwrap().take() {
+                return Err(Status::new(code, "forced failure"));
             }
+
+            let mut rel = self.rel.lock().unwrap();
             rel.insert(
                 relationship_info.parent_name,
                 relationship_info.children_names,
@@ -121,7 +123,7 @@ mod unr_tests {
             Ok(Empty {})
         }
 
-        async fn delete_relationship(
+        async fn delete_relationships(
             &self, parent_name: String,
         ) -> Result<Empty, Status> {
             let mut rel = self.rel.lock().unwrap();
@@ -184,7 +186,7 @@ mod unr_tests {
     #[tokio::test]
     async fn set_children_empty_not_found_is_ok() {
         let api = Arc::new(FakeUnrApi::default());
-        // no relationship exists
+        // no relationships exist
         let got =
             super::set_children_impl(api.as_ref(), "P".to_string(), vec![])
                 .await;
@@ -193,7 +195,7 @@ mod unr_tests {
     }
 
     #[tokio::test]
-    async fn set_children_non_empty_creates_relationship() {
+    async fn set_children_non_empty_creates_relationships() {
         let api = Arc::new(FakeUnrApi::default());
         let got = super::set_children_impl(
             api.as_ref(),
@@ -204,7 +206,7 @@ mod unr_tests {
         .unwrap();
         assert_eq!(got.name, "P");
 
-        let rel = api.read_relationship("P".to_string()).await.unwrap();
+        let rel = api.read_relationships("P".to_string()).await.unwrap();
         assert_eq!(
             rel.relationship_info.unwrap().children_names,
             vec!["C1".to_string(), "C2".to_string()]
@@ -212,11 +214,11 @@ mod unr_tests {
     }
 
     #[tokio::test]
-    async fn set_children_already_exists_falls_back_to_update() {
+    async fn set_children_existing_relationship_is_replaced() {
         let api = Arc::new(FakeUnrApi::default());
 
-        // pre-create relationship so create_relationship returns AlreadyExists
-        api.create_relationship(
+        // pre-create relationship
+        api.create_relationships(
             crate::g_rpc::proto::services::unr::RelationshipInfo {
                 parent_name: "P".to_string(),
                 children_names: vec!["OLD".to_string()],
@@ -233,7 +235,7 @@ mod unr_tests {
         .await
         .unwrap();
 
-        let rel = api.read_relationship("P".to_string()).await.unwrap();
+        let rel = api.read_relationships("P".to_string()).await.unwrap();
         assert_eq!(
             rel.relationship_info.unwrap().children_names,
             vec!["NEW".to_string()]
@@ -310,7 +312,7 @@ mod unr_tests {
         .await
         .unwrap();
 
-        api.create_relationship(
+        api.create_relationships(
             crate::g_rpc::proto::services::unr::RelationshipInfo {
                 parent_name: "P".to_string(),
                 children_names: vec!["C".to_string()],
@@ -420,7 +422,17 @@ mod unr_tests {
     #[tokio::test]
     async fn mutation_create_device_works() {
         let api: Arc<dyn UnrApi> = Arc::new(FakeUnrApi::default());
-        let schema = schema_with_api(api);
+        let schema = schema_with_api(api.clone());
+
+        // Seed child so createDevice's child pre-validation passes.
+        api.create_base_info(BaseInfo {
+            device_name: "C".to_string(),
+            address: "".to_string(),
+            r#type: "".to_string(),
+            protocol: "".to_string(),
+        })
+        .await
+        .unwrap();
 
         let r = schema
             .execute(
@@ -439,6 +451,80 @@ mod unr_tests {
         let v = json_data(r);
         assert_eq!(v["createDevice"]["name"], "A");
         assert_eq!(v["createDevice"]["children"][0]["name"], "C");
+    }
+
+    #[tokio::test]
+    async fn mutation_create_device_missing_child_fails_without_creating_parent()
+     {
+        let api: Arc<dyn UnrApi> = Arc::new(FakeUnrApi::default());
+        let schema = schema_with_api(api.clone());
+
+        let r = schema
+            .execute(
+                r#"
+                mutation {
+                  createDevice(input:{name:"A", address:"ADDR", type:"TYPE", protocol:"PROTO", children:["MISSING"]}) {
+                    name
+                  }
+                }
+                "#,
+            )
+            .await;
+
+        assert!(!r.errors.is_empty(), "expected error");
+
+        // Ensure parent was not created.
+        let resp = api.read_base_info(vec!["A".to_string()]).await.unwrap();
+        assert!(resp.base_info.is_empty());
+    }
+
+    #[tokio::test]
+    async fn mutation_create_device_relationship_failure_includes_partial_success_extensions()
+     {
+        let api = Arc::new(FakeUnrApi::default());
+        let schema = schema_with_api(api.clone());
+
+        // Seed child so pre-validation passes.
+        api.create_base_info(BaseInfo {
+            device_name: "C".to_string(),
+            address: "".to_string(),
+            r#type: "".to_string(),
+            protocol: "".to_string(),
+        })
+        .await
+        .unwrap();
+
+        // Force the next relationship update to fail.
+        *api.fail_next.lock().unwrap() = Some(Code::InvalidArgument);
+
+        let r = schema
+            .execute(
+                r#"
+                mutation {
+                  createDevice(input:{name:"A", address:"ADDR", type:"TYPE", protocol:"PROTO", children:["C"]}) {
+                    name
+                  }
+                }
+                "#,
+            )
+            .await;
+
+        assert!(!r.errors.is_empty(), "expected error");
+
+        let err = r.errors.first().unwrap();
+        let ext = err.extensions.as_ref().expect("expected extensions");
+        assert_eq!(
+            ext.get("deviceCreated").unwrap(),
+            &async_graphql::Value::from(true)
+        );
+        assert_eq!(
+            ext.get("childrenAdded").unwrap(),
+            &async_graphql::Value::from(false)
+        );
+
+        // BaseInfo was created successfully.
+        let resp = api.read_base_info(vec!["A".to_string()]).await.unwrap();
+        assert_eq!(resp.base_info.len(), 1);
     }
 
     #[tokio::test]
@@ -567,7 +653,7 @@ mod unr_tests {
         assert_eq!(v["setChildren"]["name"], "A");
 
         // verify relationship stored
-        let rel = api.read_relationship("A".to_string()).await.unwrap();
+        let rel = api.read_relationships("A".to_string()).await.unwrap();
         assert_eq!(
             rel.relationship_info.unwrap().children_names,
             vec!["C2".to_string()]
@@ -589,7 +675,7 @@ mod unr_tests {
         .await
         .unwrap();
 
-        // deleting when relationship doesn't exist should still succeed
+        // deleting when no relationships exist should still succeed
         let r = schema
             .execute(
                 r#"
@@ -603,7 +689,7 @@ mod unr_tests {
         let v = json_data(r);
         assert_eq!(v["setChildren"]["name"], "A");
 
-        let rel = api.read_relationship("A".to_string()).await.unwrap();
+        let rel = api.read_relationships("A".to_string()).await.unwrap();
         assert!(rel.relationship_info.is_none());
     }
 
@@ -623,7 +709,7 @@ mod unr_tests {
         .unwrap();
 
         // create then delete should remove relationship
-        api.create_relationship(
+        api.create_relationships(
             crate::g_rpc::proto::services::unr::RelationshipInfo {
                 parent_name: "A".to_string(),
                 children_names: vec!["C".to_string()],
@@ -643,7 +729,7 @@ mod unr_tests {
             .await;
         assert!(r.errors.is_empty(), "errors: {:?}", r.errors);
 
-        let rel = api.read_relationship("A".to_string()).await.unwrap();
+        let rel = api.read_relationships("A".to_string()).await.unwrap();
         assert!(rel.relationship_info.is_none());
     }
 
@@ -662,8 +748,8 @@ mod unr_tests {
         .await
         .unwrap();
 
-        // pre-create relationship so create_relationship returns AlreadyExists
-        api.create_relationship(
+        // pre-create relationship so create_relationships returns AlreadyExists
+        api.create_relationships(
             crate::g_rpc::proto::services::unr::RelationshipInfo {
                 parent_name: "A".to_string(),
                 children_names: vec!["OLD".to_string()],
@@ -683,7 +769,7 @@ mod unr_tests {
             .await;
         assert!(r.errors.is_empty(), "errors: {:?}", r.errors);
 
-        let rel = api.read_relationship("A".to_string()).await.unwrap();
+        let rel = api.read_relationships("A".to_string()).await.unwrap();
         assert_eq!(
             rel.relationship_info.unwrap().children_names,
             vec!["NEW".to_string()]

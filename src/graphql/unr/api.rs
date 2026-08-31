@@ -24,19 +24,19 @@ pub trait UnrApi: Send + Sync {
         &self, device_names: Vec<String>,
     ) -> Result<Empty, Status>;
 
-    async fn create_relationship(
+    async fn create_relationships(
         &self, relationship_info: unr::RelationshipInfo,
     ) -> Result<Empty, Status>;
 
-    async fn read_relationship(
+    async fn read_relationships(
         &self, parent_name: String,
     ) -> Result<unr::RelationshipResponse, Status>;
 
-    async fn update_relationship(
+    async fn update_relationships(
         &self, relationship_info: unr::RelationshipInfo,
     ) -> Result<Empty, Status>;
 
-    async fn delete_relationship(
+    async fn delete_relationships(
         &self, parent_name: String,
     ) -> Result<Empty, Status>;
 }
@@ -71,27 +71,27 @@ impl UnrApi for GrpcUnrApi {
         crate::g_rpc::unr::delete_base_info(device_names).await
     }
 
-    async fn create_relationship(
+    async fn create_relationships(
         &self, relationship_info: unr::RelationshipInfo,
     ) -> Result<Empty, Status> {
-        crate::g_rpc::unr::create_relationship(relationship_info).await
+        crate::g_rpc::unr::create_relationships(relationship_info).await
     }
 
-    async fn read_relationship(
+    async fn read_relationships(
         &self, parent_name: String,
     ) -> Result<unr::RelationshipResponse, Status> {
-        crate::g_rpc::unr::read_relationship(parent_name).await
+        crate::g_rpc::unr::read_relationships(parent_name).await
     }
 
-    async fn update_relationship(
+    async fn update_relationships(
         &self, relationship_info: unr::RelationshipInfo,
     ) -> Result<Empty, Status> {
-        crate::g_rpc::unr::update_relationship(relationship_info).await
+        crate::g_rpc::unr::update_relationships(relationship_info).await
     }
 
-    async fn delete_relationship(
+    async fn delete_relationships(
         &self, parent_name: String,
     ) -> Result<Empty, Status> {
-        crate::g_rpc::unr::delete_relationship(parent_name).await
+        crate::g_rpc::unr::delete_relationships(parent_name).await
     }
 }

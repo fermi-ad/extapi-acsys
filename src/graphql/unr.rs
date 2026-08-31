@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use self::api::UnrApi;
 use async_graphql::{
-    Context, Error, Object, Result, SimpleObject,
+    Context, Error, ErrorExtensions, Object, Result, SimpleObject,
     dataloader::{DataLoader, HashMapCache},
 };
 use tonic::{Code, Status};
@@ -37,11 +37,11 @@ fn handle_error(e: Status, gerund: &str) -> Error {
 async fn set_children_impl(
     api: &dyn UnrApi, parent: String, children: Vec<String>,
 ) -> Result<Device> {
-    // Setting children to empty means "remove the relationship row".
+    // Setting children to empty means "remove all relationships".
     if children.is_empty() {
         // Delete is idempotent from the GraphQL perspective: if it doesn't exist,
         // treat it as success.
-        return match api.delete_relationship(parent.clone()).await {
+        return match api.delete_relationships(parent.clone()).await {
             Ok(_) => Ok(Device::new(parent)),
             Err(e) if e.code() == Code::NotFound => Ok(Device::new(parent)),
             Err(e) => Err(handle_error(e, "setting children")),
@@ -54,21 +54,10 @@ async fn set_children_impl(
             children_names: children,
         };
 
-    // RelationshipInfo has distinct create/update endpoints.
-    // For "set children" semantics we want:
-    // - create if the relationship row doesn't exist yet
-    // - update if it already exists
-    //
-    // We implement this as create-then-fallback-to-update on AlreadyExists.
-    match api.create_relationship(relationship_info.clone()).await {
-        Ok(_) => Ok(Device::new(parent)),
-        Err(e) if e.code() == Code::AlreadyExists => api
-            .update_relationship(relationship_info)
-            .await
-            .map(|_| Device::new(parent))
-            .map_err(|e| handle_error(e, "setting children")),
-        Err(e) => Err(handle_error(e, "setting children")),
-    }
+    api.update_relationships(relationship_info)
+        .await
+        .map(|_| Device::new(parent))
+        .map_err(|e| handle_error(e, "setting children"))
 }
 
 #[derive(Clone, Debug, SimpleObject)]
@@ -119,7 +108,7 @@ impl Device {
     async fn children(&self, ctx: &Context<'_>) -> Result<Vec<Device>> {
         let api = ctx.data_unchecked::<Arc<dyn UnrApi>>();
         let resp = api
-            .read_relationship(self.name.clone())
+            .read_relationships(self.name.clone())
             .await
             .map_err(|e| handle_error(e, "reading relationship"))?;
 
@@ -219,19 +208,53 @@ impl UnrMutations {
         };
 
         let api = ctx.data_unchecked::<Arc<dyn UnrApi>>();
+
+        // Pre-validate children existence before creating anything.
+        // This avoids partially-completed writes when a child doesn't exist.
+        if let Some(children) = children.as_ref()
+            && !children.is_empty()
+        {
+            let resp = api
+                .read_base_info(children.clone())
+                .await
+                .map_err(|e| handle_error(e, "validating children"))?;
+
+            let present: std::collections::HashSet<&str> = resp
+                .base_info
+                .iter()
+                .map(|bi| bi.device_name.as_str())
+                .collect();
+
+            if let Some(missing) =
+                children.iter().find(|c| !present.contains(c.as_str()))
+            {
+                return Err(Error::new(format!(
+                    "Child device does not exist: {missing}"
+                )));
+            }
+        }
+
         api.create_base_info(base_info.clone())
             .await
             .map_err(|e| handle_error(e, "creating device"))?;
 
+        // Add relationships (if requested).
+        // Note: this is not atomic with base_info creation; if this fails, the
+        // device exists but has no/partial relationships (acceptable).
+        if let Some(children) = children
+            && let Err(e) =
+                set_children_impl(api.as_ref(), device_name.clone(), children)
+                    .await
+        {
+            return Err(e.extend_with(|_, ext| {
+                ext.set("deviceCreated", true);
+                ext.set("childrenAdded", false);
+            }));
+        }
+
         // Read-your-writes: prime/overwrite BaseInfo cache for this request.
         let loader = ctx.data_unchecked::<DataLoader<loader::UnrBaseInfoLoader, HashMapCache>>();
         loader.feed_one(device_name.clone(), base_info).await;
-
-        if let Some(children) = children {
-            // Replace adjacency list.
-            set_children_impl(api.as_ref(), device_name.clone(), children)
-                .await?;
-        }
 
         Ok(Device::new(device_name))
     }
