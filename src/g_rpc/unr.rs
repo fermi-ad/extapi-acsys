@@ -41,9 +41,6 @@ struct TonicUnrBaseInfoClient {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 trait UnrRelationshipClient: Send {
-    async fn create(
-        &mut self, relationship_info: RelationshipInfo,
-    ) -> Result<Empty, Status>;
     async fn read(
         &mut self, request: RelationshipRequest,
     ) -> Result<RelationshipResponse, Status>;
@@ -61,15 +58,6 @@ struct TonicUnrRelationshipClient {
 
 #[async_trait::async_trait]
 impl UnrRelationshipClient for TonicUnrRelationshipClient {
-    async fn create(
-        &mut self, relationship_info: RelationshipInfo,
-    ) -> Result<Empty, Status> {
-        self.inner
-            .create(relationship_info)
-            .await
-            .map(Response::into_inner)
-    }
-
     async fn read(
         &mut self, request: RelationshipRequest,
     ) -> Result<RelationshipResponse, Status> {
@@ -202,12 +190,6 @@ pub async fn delete_base_info(
     UNR_CLIENT.run_with_client(do_delete).await
 }
 
-async fn create_relationships_with(
-    client: &mut dyn UnrRelationshipClient, relationship_info: RelationshipInfo,
-) -> Result<Empty, Status> {
-    client.create(relationship_info).await
-}
-
 async fn read_relationships_with(
     client: &mut dyn UnrRelationshipClient, parent_name: String,
 ) -> Result<RelationshipResponse, Status> {
@@ -226,21 +208,6 @@ async fn delete_relationships_with(
     client.delete(RelationshipRequest { parent_name }).await
 }
 
-/// Makes a request to the UNR gRPC service to add a set of children to a parent's relationship list.
-pub async fn create_relationships(
-    relationship_info: RelationshipInfo,
-) -> Result<Empty, Status> {
-    let do_create = |client: UnrConnectionAdapter| async move {
-        let mut rel = TonicUnrRelationshipClient {
-            inner: client.relationship_info_conn,
-        };
-        create_relationships_with(&mut rel, relationship_info)
-            .await
-            .map(Into::into)
-    };
-    UNR_CLIENT.run_with_client(do_create).await
-}
-
 /// Makes a request to the UNR gRPC service to get all children associated with a parent.
 pub async fn read_relationships(
     parent_name: String,
@@ -256,7 +223,7 @@ pub async fn read_relationships(
     UNR_CLIENT.run_with_client(do_read).await
 }
 
-/// Makes a request to the UNR gRPC service to replace an existing parent's list of children with the provided list.
+/// Makes a request to the UNR gRPC service to replace an existing parent's list of children (if any) with the provided list.
 pub async fn update_relationships(
     relationship_info: RelationshipInfo,
 ) -> Result<Empty, Status> {
@@ -384,28 +351,6 @@ mod tests {
             .returning(|_| Ok(Empty {}));
 
         delete_base_info_with(&mut mock, device_names)
-            .await
-            .unwrap();
-    }
-
-    #[tokio::test]
-    async fn create_relationships_with_calls_create_once_with_expected_payload()
-    {
-        let relationship_info = RelationshipInfo {
-            parent_name: "P".to_string(),
-            children_names: vec!["C1".to_string(), "C2".to_string()],
-        };
-
-        let mut mock = MockUnrRelationshipClient::new();
-        mock.expect_create()
-            .times(1)
-            .withf({
-                let relationship_info = relationship_info.clone();
-                move |got| got == &relationship_info
-            })
-            .returning(|_| Ok(Empty {}));
-
-        create_relationships_with(&mut mock, relationship_info)
             .await
             .unwrap();
     }

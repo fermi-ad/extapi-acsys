@@ -74,23 +74,6 @@ mod unr_tests {
             Ok(Empty {})
         }
 
-        async fn create_relationships(
-            &self,
-            relationship_info: crate::g_rpc::proto::services::unr::RelationshipInfo,
-        ) -> Result<Empty, Status> {
-            let mut rel = self.rel.lock().unwrap();
-
-            if rel.contains_key(&relationship_info.parent_name) {
-                return Err(Status::new(Code::AlreadyExists, "exists"));
-            }
-
-            rel.insert(
-                relationship_info.parent_name,
-                relationship_info.children_names,
-            );
-            Ok(Empty {})
-        }
-
         async fn read_relationships(
             &self, parent_name: String,
         ) -> Result<RelationshipResponse, Status> {
@@ -218,7 +201,7 @@ mod unr_tests {
         let api = Arc::new(FakeUnrApi::default());
 
         // pre-create relationship
-        api.create_relationships(
+        api.update_relationships(
             crate::g_rpc::proto::services::unr::RelationshipInfo {
                 parent_name: "P".to_string(),
                 children_names: vec!["OLD".to_string()],
@@ -312,7 +295,7 @@ mod unr_tests {
         .await
         .unwrap();
 
-        api.create_relationships(
+        api.update_relationships(
             crate::g_rpc::proto::services::unr::RelationshipInfo {
                 parent_name: "P".to_string(),
                 children_names: vec!["C".to_string()],
@@ -709,7 +692,7 @@ mod unr_tests {
         .unwrap();
 
         // create then delete should remove relationship
-        api.create_relationships(
+        api.update_relationships(
             crate::g_rpc::proto::services::unr::RelationshipInfo {
                 parent_name: "A".to_string(),
                 children_names: vec!["C".to_string()],
@@ -749,7 +732,7 @@ mod unr_tests {
         .unwrap();
 
         // pre-create relationship so create_relationships returns AlreadyExists
-        api.create_relationships(
+        api.update_relationships(
             crate::g_rpc::proto::services::unr::RelationshipInfo {
                 parent_name: "A".to_string(),
                 children_names: vec!["OLD".to_string()],

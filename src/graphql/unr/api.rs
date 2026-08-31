@@ -24,10 +24,6 @@ pub trait UnrApi: Send + Sync {
         &self, device_names: Vec<String>,
     ) -> Result<Empty, Status>;
 
-    async fn create_relationships(
-        &self, relationship_info: unr::RelationshipInfo,
-    ) -> Result<Empty, Status>;
-
     async fn read_relationships(
         &self, parent_name: String,
     ) -> Result<unr::RelationshipResponse, Status>;
@@ -69,12 +65,6 @@ impl UnrApi for GrpcUnrApi {
         &self, device_names: Vec<String>,
     ) -> Result<Empty, Status> {
         crate::g_rpc::unr::delete_base_info(device_names).await
-    }
-
-    async fn create_relationships(
-        &self, relationship_info: unr::RelationshipInfo,
-    ) -> Result<Empty, Status> {
-        crate::g_rpc::unr::create_relationships(relationship_info).await
     }
 
     async fn read_relationships(
