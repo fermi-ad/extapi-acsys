@@ -18,7 +18,31 @@ mod unr_tests {
     struct FakeUnrApi {
         base: Mutex<HashMap<String, BaseInfo>>,
         rel: Mutex<HashMap<String, Vec<String>>>,
-        fail_next: Mutex<Option<Code>>,
+
+        /// Failure injection for tests.
+        ///
+        /// Semantics:
+        /// - `None` => don't fail
+        /// - `Some((0, code))` => fail the next UNR call with `code`
+        /// - `Some((n, code))` where `n > 0` => succeed next `n` calls, then fail with `code`
+        fail_after: Mutex<Option<(usize, Code)>>,
+    }
+
+    impl FakeUnrApi {
+        fn check_fail(&self) -> Result<(), Status> {
+            let mut guard = self.fail_after.lock().unwrap();
+            match *guard {
+                None => Ok(()),
+                Some((0, code)) => {
+                    *guard = None;
+                    Err(Status::new(code, "forced failure"))
+                }
+                Some((n, code)) => {
+                    *guard = Some((n - 1, code));
+                    Ok(())
+                }
+            }
+        }
     }
 
     #[async_trait::async_trait]
@@ -26,6 +50,8 @@ mod unr_tests {
         async fn create_base_info(
             &self, base_info: BaseInfo,
         ) -> Result<Empty, Status> {
+            self.check_fail()?;
+
             let mut base = self.base.lock().unwrap();
             if base.contains_key(&base_info.device_name) {
                 return Err(Status::new(Code::AlreadyExists, "exists"));
@@ -37,6 +63,8 @@ mod unr_tests {
         async fn read_base_info(
             &self, device_names: Vec<String>,
         ) -> Result<BaseResponse, Status> {
+            self.check_fail()?;
+
             let base = self.base.lock().unwrap();
             let mut out: Vec<BaseInfo> = Vec::new();
 
@@ -56,6 +84,8 @@ mod unr_tests {
         async fn update_base_info(
             &self, base_info: BaseInfo,
         ) -> Result<Empty, Status> {
+            self.check_fail()?;
+
             let mut base = self.base.lock().unwrap();
             if base.contains_key(&base_info.device_name) {
                 base.insert(base_info.device_name.clone(), base_info);
@@ -66,6 +96,8 @@ mod unr_tests {
         async fn delete_base_info(
             &self, device_names: Vec<String>,
         ) -> Result<Empty, Status> {
+            self.check_fail()?;
+
             let mut base = self.base.lock().unwrap();
             for n in device_names {
                 base.remove(&n);
@@ -76,6 +108,8 @@ mod unr_tests {
         async fn read_relationships(
             &self, parent_name: String,
         ) -> Result<RelationshipResponse, Status> {
+            self.check_fail()?;
+
             let rel = self.rel.lock().unwrap();
             let children = rel.get(&parent_name).cloned().unwrap_or_default();
 
@@ -93,9 +127,7 @@ mod unr_tests {
             &self,
             relationship_info: crate::g_rpc::proto::services::unr::RelationshipInfo,
         ) -> Result<Empty, Status> {
-            if let Some(code) = self.fail_next.lock().unwrap().take() {
-                return Err(Status::new(code, "forced failure"));
-            }
+            self.check_fail()?;
 
             let mut rel = self.rel.lock().unwrap();
             rel.insert(
@@ -108,6 +140,8 @@ mod unr_tests {
         async fn delete_relationships(
             &self, parent_name: String,
         ) -> Result<Empty, Status> {
+            self.check_fail()?;
+
             let mut rel = self.rel.lock().unwrap();
             let _ = rel.remove(&parent_name);
             Ok(Empty {})
@@ -474,8 +508,12 @@ mod unr_tests {
         .await
         .unwrap();
 
-        // Force the next relationship update to fail.
-        *api.fail_next.lock().unwrap() = Some(Code::InvalidArgument);
+        // Force the relationship update to fail.
+        // Call order inside createDevice (when children are provided):
+        // 1) read_base_info (child pre-validation)
+        // 2) create_base_info (parent)
+        // 3) update_relationships (set children)
+        *api.fail_after.lock().unwrap() = Some((2, Code::InvalidArgument));
 
         let r = schema
             .execute(
@@ -489,9 +527,10 @@ mod unr_tests {
             )
             .await;
 
-        assert!(!r.errors.is_empty(), "expected error");
+        assert!(!r.errors.is_empty(), "expected error: {r:#?}");
 
         let err = r.errors.first().unwrap();
+        eprintln!("GraphQL error: {err:#?}");
         let ext = err.extensions.as_ref().expect("expected extensions");
         assert_eq!(
             ext.get("deviceCreated").unwrap(),

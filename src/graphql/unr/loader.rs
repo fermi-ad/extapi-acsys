@@ -49,7 +49,7 @@ impl Loader<String> for UnrBaseInfoLoader {
         Ok(resp
             .base_info
             .into_iter()
-            .map(|bi| (bi.device_name.clone(), bi))
+            .map(|base_info| (base_info.device_name.clone(), base_info))
             .collect())
     }
 }
