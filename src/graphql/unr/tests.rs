@@ -57,10 +57,9 @@ mod unr_tests {
             &self, base_info: BaseInfo,
         ) -> Result<Empty, Status> {
             let mut base = self.base.lock().unwrap();
-            if !base.contains_key(&base_info.device_name) {
-                return Err(Status::new(Code::NotFound, "missing"));
+            if base.contains_key(&base_info.device_name) {
+                base.insert(base_info.device_name.clone(), base_info);
             }
-            base.insert(base_info.device_name.clone(), base_info);
             Ok(Empty {})
         }
 
@@ -78,15 +77,15 @@ mod unr_tests {
             &self, parent_name: String,
         ) -> Result<RelationshipResponse, Status> {
             let rel = self.rel.lock().unwrap();
-            let children = rel.get(&parent_name).cloned();
+            let children = rel.get(&parent_name).cloned().unwrap_or_default();
 
             Ok(RelationshipResponse {
-                relationship_info: children.map(|c| {
+                relationship_info: Some(
                     crate::g_rpc::proto::services::unr::RelationshipInfo {
                         parent_name,
-                        children_names: c,
-                    }
-                }),
+                        children_names: children,
+                    },
+                ),
             })
         }
 
@@ -110,9 +109,7 @@ mod unr_tests {
             &self, parent_name: String,
         ) -> Result<Empty, Status> {
             let mut rel = self.rel.lock().unwrap();
-            if rel.remove(&parent_name).is_none() {
-                return Err(Status::new(Code::NotFound, "missing"));
-            }
+            let _ = rel.remove(&parent_name);
             Ok(Empty {})
         }
     }
@@ -167,7 +164,7 @@ mod unr_tests {
     }
 
     #[tokio::test]
-    async fn set_children_empty_not_found_is_ok() {
+    async fn set_children_empty_is_idempotent() {
         let api = Arc::new(FakeUnrApi::default());
         // no relationships exist
         let got =
@@ -569,6 +566,23 @@ mod unr_tests {
     }
 
     #[tokio::test]
+    async fn mutation_update_device_missing_device_fails() {
+        let api: Arc<dyn UnrApi> = Arc::new(FakeUnrApi::default());
+        let schema = schema_with_api(api);
+
+        assert_err_starts_with(
+            &schema,
+            r#"
+            mutation {
+              updateDevice(input:{name:"MISSING", address:"ADDR2", type:"TYPE2", protocol:"PROTO2"}) { name }
+            }
+            "#,
+            "Device does not exist:",
+        )
+        .await;
+    }
+
+    #[tokio::test]
     async fn mutation_update_device_returns_updated_fields() {
         let api: Arc<dyn UnrApi> = Arc::new(FakeUnrApi::default());
         let schema = schema_with_api(api.clone());
@@ -673,7 +687,10 @@ mod unr_tests {
         assert_eq!(v["setChildren"]["name"], "A");
 
         let rel = api.read_relationships("A".to_string()).await.unwrap();
-        assert!(rel.relationship_info.is_none());
+        assert_eq!(
+            rel.relationship_info.unwrap().children_names,
+            Vec::<String>::new()
+        );
     }
 
     #[tokio::test]
@@ -713,7 +730,10 @@ mod unr_tests {
         assert!(r.errors.is_empty(), "errors: {:?}", r.errors);
 
         let rel = api.read_relationships("A".to_string()).await.unwrap();
-        assert!(rel.relationship_info.is_none());
+        assert_eq!(
+            rel.relationship_info.unwrap().children_names,
+            Vec::<String>::new()
+        );
     }
 
     #[tokio::test]
@@ -791,6 +811,23 @@ mod unr_tests {
         // verify deleted
         let resp = api.read_base_info(vec!["A".to_string()]).await.unwrap();
         assert!(resp.base_info.is_empty());
+    }
+
+    #[tokio::test]
+    async fn mutation_delete_devices_empty_list_fails() {
+        let api: Arc<dyn UnrApi> = Arc::new(FakeUnrApi::default());
+        let schema = schema_with_api(api);
+
+        assert_err_starts_with(
+            &schema,
+            r#"
+            mutation {
+              deleteDevices(names:[])
+            }
+            "#,
+            "deleteDevices requires at least one device name",
+        )
+        .await;
     }
 
     #[tokio::test]

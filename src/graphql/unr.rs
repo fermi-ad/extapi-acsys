@@ -39,13 +39,11 @@ async fn set_children_impl(
 ) -> Result<Device> {
     // Setting children to empty means "remove all relationships".
     if children.is_empty() {
-        // Delete is idempotent from the GraphQL perspective: if it doesn't exist,
-        // treat it as success.
-        return match api.delete_relationships(parent.clone()).await {
-            Ok(_) => Ok(Device::new(parent)),
-            Err(e) if e.code() == Code::NotFound => Ok(Device::new(parent)),
-            Err(e) => Err(handle_error(e, "setting children")),
-        };
+        return api
+            .delete_relationships(parent.clone())
+            .await
+            .map(|_| Device::new(parent))
+            .map_err(|e| handle_error(e, "setting children"));
     }
 
     let relationship_info =
@@ -272,6 +270,23 @@ impl UnrMutations {
         };
 
         let api = ctx.data_unchecked::<Arc<dyn UnrApi>>();
+
+        // grpc-unr-service update does not signal missing devices. Make
+        // semantics explicit by pre-checking existence.
+        let exists = api
+            .read_base_info(vec![device_name.clone()])
+            .await
+            .map_err(|e| handle_error(e, "validating device exists"))?
+            .base_info
+            .iter()
+            .any(|bi| bi.device_name == device_name);
+
+        if !exists {
+            return Err(Error::new(format!(
+                "Device does not exist: {device_name}"
+            )));
+        }
+
         api.update_base_info(base_info.clone())
             .await
             .map_err(|e| handle_error(e, "updating device"))?;
@@ -286,6 +301,12 @@ impl UnrMutations {
     async fn delete_devices(
         &self, ctx: &Context<'_>, names: Vec<String>,
     ) -> Result<Vec<String>> {
+        if names.is_empty() {
+            return Err(Error::new(
+                "deleteDevices requires at least one device name",
+            ));
+        }
+
         let api = ctx.data_unchecked::<Arc<dyn UnrApi>>();
         api.delete_base_info(names.clone())
             .await

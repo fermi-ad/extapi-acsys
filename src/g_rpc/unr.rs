@@ -368,7 +368,10 @@ mod tests {
             })
             .returning(|_| {
                 Ok(RelationshipResponse {
-                    relationship_info: None,
+                    relationship_info: Some(RelationshipInfo {
+                        parent_name: "P".to_string(),
+                        children_names: vec![],
+                    }),
                 })
             });
 
