@@ -38,6 +38,7 @@ The following variables exist for configuring the service at runtime:
 - `RUST_LOG` -> The default logging environment variable from Rust. Can be configured to log specific crates/modules at different levels from the global default.
 - `SCANNER_GRPC_HOST` -> Hostname for the wire scanner gRPC service
 - `TLG_GRPC_HOST` -> Hostname for the TLG gRPC service
+- `UNR_GRPC_HOST` -> Hostname for the UNR gRPC service
 
 ### Error IDs in responses
 

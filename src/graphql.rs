@@ -6,6 +6,7 @@
 use crate::g_rpc::dpm::build_connection;
 use async_graphql::{
     EmptyMutation, EmptySubscription, ObjectType, Schema, SubscriptionType,
+    dataloader::{DataLoader, HashMapCache},
 };
 use async_graphql_axum::{
     GraphQLRequest, GraphQLResponse, GraphQLSubscription,
@@ -20,7 +21,10 @@ use axum::{
 use http::{Method, header};
 #[cfg(feature = "kafka")]
 use rust_env_var_lib::env_var;
-use std::net::{IpAddr, Ipv6Addr, SocketAddr};
+use std::{
+    net::{IpAddr, Ipv6Addr, SocketAddr},
+    sync::Arc,
+};
 use tower_http::cors::{Any, CorsLayer};
 use tracing::{info, instrument};
 use types::AuthInfo;
@@ -33,9 +37,22 @@ mod faas;
 mod scanner;
 mod tlg;
 mod types;
+mod unr;
 
 // Generic function which adds `AuthInfo` to the context. This
 // function can be used for all the GraphQL schemas.
+
+/// Injects per-request auth data from the Authorization header.
+/// Must be called by every handler — this service is zero-trust.
+fn with_auth(
+    req: GraphQLRequest, headers: &HeaderMap,
+) -> async_graphql::Request {
+    req.into_inner().data(AuthInfo::new(
+        headers
+            .get(AUTHORIZATION)
+            .map(|v| v.to_str().unwrap().to_string()),
+    ))
+}
 
 #[instrument(name = "GRAPHQL", skip(schema, req, headers),
 	     fields(who = tracing::field::Empty))]
@@ -48,10 +65,21 @@ where
     M: ObjectType + Send + Sync + 'static,
     S: SubscriptionType + Send + Sync + 'static,
 {
-    let request = req.into_inner().data(AuthInfo::new(
-        headers
-            .get(AUTHORIZATION)
-            .map(|v| v.to_str().unwrap().to_string()),
+    schema.execute(with_auth(req, &headers)).await.into()
+}
+
+type UnrSchema = Schema<unr::UnrQueries, unr::UnrMutations, EmptySubscription>;
+
+#[instrument(name = "GRAPHQL", skip(schema, api, req, headers),
+	     fields(who = tracing::field::Empty))]
+async fn unr_graphql_handler(
+    State((schema, api)): State<(UnrSchema, Arc<dyn unr::api::UnrApi>)>,
+    headers: HeaderMap, req: GraphQLRequest,
+) -> GraphQLResponse {
+    let request = with_auth(req, &headers).data(DataLoader::with_cache(
+        unr::loader::UnrBaseInfoLoader::new(api),
+        tokio::spawn,
+        HashMapCache::default(),
     ));
 
     schema.execute(request).await.into()
@@ -73,6 +101,7 @@ async fn base_page() -> Html<&'static str> {
       <li><a href="/devdb">Device Database</a></li>
       <li><a href="/faas">Functions as a Service</a></li>
       <li><a href="/tlg">Timeline Generator placement</a></li>
+      <li><a href="/unr">UNR</a> (device graph)</li>
       <li><a href="/wscan">Wire Scanner</a> (WIP)</li>
     </ul>
   </body>
@@ -220,6 +249,36 @@ fn create_devdb_router() -> Router {
     )
 }
 
+fn create_unr_router_with_api(api: Arc<dyn unr::api::UnrApi>) -> Router {
+    const Q_ENDPOINT: &str = "/unr";
+
+    let schema = Schema::build(unr::UnrQueries, unr::UnrMutations, EmptySubscription)
+        // UNR can be queried recursively via `Device.children`; cap depth/complexity
+        // to prevent expensive full-graph traversals.
+        .limit_depth(4)
+        .limit_complexity(200)
+        .data(api.clone())
+        .finish();
+
+    let graphiql = axum::response::Html(
+        async_graphql::http::GraphiQLSource::build()
+            .endpoint(Q_ENDPOINT)
+            .finish(),
+    );
+
+    Router::new().route(
+        Q_ENDPOINT,
+        get(graphiql)
+            .post(unr_graphql_handler)
+            .with_state((schema, api)),
+    )
+}
+
+fn create_unr_router() -> Router {
+    let api = Arc::new(unr::api::GrpcUnrApi);
+    create_unr_router_with_api(api)
+}
+
 fn create_faas_router() -> Router {
     const Q_ENDPOINT: &str = "/faas";
 
@@ -302,6 +361,7 @@ async fn create_site() -> Router {
         .merge(create_devdb_router())
         .merge(create_faas_router())
         .merge(create_tlg_router())
+        .merge(create_unr_router())
         .merge(create_wscan_router())
         .layer(
             CorsLayer::new()

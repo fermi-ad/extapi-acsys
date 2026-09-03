@@ -1,6 +1,6 @@
 [package]
 name = "extapi-acsys"
-version = "0.6.5"
+version = "0.6.6"
 edition = "2024"
 
 [features]
@@ -12,7 +12,8 @@ tonic-prost-build = "0.14"
 protoc-bin-vendored = "3"
 
 [dependencies]
-async-graphql = { version = "7", features = ["chrono"] }
+async-graphql = { version = "7", features = ["chrono", "dataloader"] }
+async-trait = "0.1"
 async-graphql-axum = "7"
 async-stream = "0.3"
 axum = { version = "0.8", features = ["ws"] }
