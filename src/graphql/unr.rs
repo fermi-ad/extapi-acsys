@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use self::api::UnrApi;
 use async_graphql::{
-    Context, Error, ErrorExtensions, Object, Result, SimpleObject,
+    Context, Error, ErrorExtensions, Object, Result,
     dataloader::{DataLoader, HashMapCache},
 };
 use tonic::{Code, Status};
@@ -36,13 +36,13 @@ fn handle_error(e: Status, gerund: &str) -> Error {
 
 async fn set_children_impl(
     api: &dyn UnrApi, parent: String, children: Vec<String>,
-) -> Result<Device> {
+) -> Result<types::Device> {
     // Setting children to empty means "remove all relationships".
     if children.is_empty() {
         return api
             .delete_relationships(parent.clone())
             .await
-            .map(|_| Device::new(parent))
+            .map(|_| types::Device::new(parent))
             .map_err(|e| handle_error(e, "setting children"));
     }
 
@@ -54,69 +54,8 @@ async fn set_children_impl(
 
     api.update_relationships(relationship_info)
         .await
-        .map(|_| Device::new(parent))
+        .map(|_| types::Device::new(parent))
         .map_err(|e| handle_error(e, "setting children"))
-}
-
-#[derive(Clone, Debug, SimpleObject)]
-#[graphql(complex)]
-pub struct Device {
-    pub name: String,
-}
-
-impl Device {
-    fn new(name: String) -> Self {
-        Self { name }
-    }
-}
-
-#[async_graphql::ComplexObject]
-impl Device {
-    #[graphql(skip)]
-    fn non_empty(s: String) -> Option<String> {
-        (!s.is_empty()).then_some(s)
-    }
-
-    #[graphql(skip)]
-    async fn load_base_info(
-        &self, ctx: &Context<'_>,
-    ) -> Result<Option<BaseInfo>> {
-        let loader = ctx.data_unchecked::<DataLoader<loader::UnrBaseInfoLoader, HashMapCache>>();
-        loader
-            .load_one(self.name.clone())
-            .await
-            .map_err(|e| Error::new(format!("Error reading base info: {e}")))
-    }
-
-    async fn address(&self, ctx: &Context<'_>) -> Result<Option<String>> {
-        let base_info = self.load_base_info(ctx).await?;
-        Ok(base_info.and_then(|base_info| Self::non_empty(base_info.address)))
-    }
-
-    async fn r#type(&self, ctx: &Context<'_>) -> Result<Option<String>> {
-        let base_info = self.load_base_info(ctx).await?;
-        Ok(base_info.and_then(|base_info| Self::non_empty(base_info.r#type)))
-    }
-
-    async fn protocol(&self, ctx: &Context<'_>) -> Result<Option<String>> {
-        let base_info = self.load_base_info(ctx).await?;
-        Ok(base_info.and_then(|base_info| Self::non_empty(base_info.protocol)))
-    }
-
-    async fn children(&self, ctx: &Context<'_>) -> Result<Vec<Device>> {
-        let api = ctx.data_unchecked::<Arc<dyn UnrApi>>();
-        let resp = api
-            .read_relationships(self.name.clone())
-            .await
-            .map_err(|e| handle_error(e, "reading relationship"))?;
-
-        let children = resp
-            .relationship_info
-            .map(|ri| ri.children_names)
-            .unwrap_or_default();
-
-        Ok(children.into_iter().map(Device::new).collect())
-    }
 }
 
 #[derive(Default)]
@@ -156,7 +95,7 @@ impl UnrQueries {
                 .base_info
                 .into_iter()
                 .map(|bi| {
-                    types::DeviceQueryResult::Device(Device::new(
+                    types::DeviceQueryResult::Device(types::Device::new(
                         bi.device_name,
                     ))
                 })
@@ -176,7 +115,7 @@ impl UnrQueries {
             .into_iter()
             .map(|n| {
                 if present.contains(&n) {
-                    types::DeviceQueryResult::Device(Device::new(n))
+                    types::DeviceQueryResult::Device(types::Device::new(n))
                 } else {
                     types::DeviceQueryResult::NotFound(types::NotFound {
                         name: n,
@@ -194,7 +133,7 @@ pub struct UnrMutations;
 impl UnrMutations {
     async fn create_device(
         &self, ctx: &Context<'_>, input: types::CreateDeviceInput,
-    ) -> Result<Device> {
+    ) -> Result<types::Device> {
         let children = input.children.clone();
         let device_name = input.name.clone();
 
@@ -254,12 +193,12 @@ impl UnrMutations {
         let loader = ctx.data_unchecked::<DataLoader<loader::UnrBaseInfoLoader, HashMapCache>>();
         loader.feed_one(device_name.clone(), base_info).await;
 
-        Ok(Device::new(device_name))
+        Ok(types::Device::new(device_name))
     }
 
     async fn update_device(
         &self, ctx: &Context<'_>, input: types::UpdateDeviceInput,
-    ) -> Result<Device> {
+    ) -> Result<types::Device> {
         let device_name = input.name.clone();
 
         let base_info = BaseInfo {
@@ -295,7 +234,7 @@ impl UnrMutations {
         let loader = ctx.data_unchecked::<DataLoader<loader::UnrBaseInfoLoader, HashMapCache>>();
         loader.feed_one(device_name.clone(), base_info).await;
 
-        Ok(Device::new(device_name))
+        Ok(types::Device::new(device_name))
     }
 
     async fn delete_devices(
@@ -316,7 +255,7 @@ impl UnrMutations {
 
     async fn set_children(
         &self, ctx: &Context<'_>, parent: String, children: Vec<String>,
-    ) -> Result<Device> {
+    ) -> Result<types::Device> {
         // Relationship mutation doesn't change BaseInfo, but we still want
         // read-your-writes for BaseInfo fields if the client requests them.
         // Ensure the loader has at least the parent cached if it exists.
