@@ -36,18 +36,8 @@ impl Loader<String> for UnrBaseInfoLoader {
     async fn load(
         &self, keys: &[String],
     ) -> Result<HashMap<String, Self::Value>, Self::Error> {
-        // De-dupe keys while preserving stable ordering.
-        let mut uniq: Vec<String> = Vec::with_capacity(keys.len());
-        let mut seen =
-            std::collections::HashSet::<&str>::with_capacity(keys.len());
-        for k in keys {
-            if seen.insert(k.as_str()) {
-                uniq.push(k.clone());
-            }
-        }
-
         self.api
-            .read_base_info(uniq)
+            .read_base_info(keys.to_vec())
             .await
             .map_err(|e| {
                 tracing::warn!("UnrBaseInfoLoader: gRPC error: {e:?}");
