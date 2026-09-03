@@ -43,7 +43,6 @@ uuid = { version = "1", features = ["v4"] }
 [dev-dependencies]
 rust-pubsub-lib = { git = "https://github.com/fermi-ad/rust-pubsub-lib", tag = "v10.0.0", features = ["testing-utils"] }
 tower = "0.5"
-mockall = "0.13"
 
 [profile.release]
 incremental = false
