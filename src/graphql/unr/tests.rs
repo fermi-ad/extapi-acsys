@@ -9,10 +9,15 @@ mod unr_tests {
     };
     use async_graphql::dataloader::{DataLoader, HashMapCache};
     use async_graphql::{EmptySubscription, Schema, dataloader::Loader};
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+    };
     use serde_json::Value;
     use std::sync::Arc;
     use std::{collections::HashMap, sync::Mutex};
     use tonic::{Code, Status};
+    use tower::Service;
 
     #[derive(Default)]
     struct FakeUnrApi {
@@ -26,6 +31,9 @@ mod unr_tests {
         /// - `Some((0, code))` => fail the next UNR call with `code`
         /// - `Some((n, code))` where `n > 0` => succeed next `n` calls, then fail with `code`
         fail_after: Mutex<Option<(usize, Code)>>,
+
+        /// Count how many times `read_base_info` was called.
+        read_base_info_calls: Mutex<usize>,
     }
 
     impl FakeUnrApi {
@@ -64,6 +72,8 @@ mod unr_tests {
             &self, device_names: Vec<String>,
         ) -> Result<BaseResponse, Status> {
             self.check_fail()?;
+
+            *self.read_base_info_calls.lock().unwrap() += 1;
 
             let base = self.base.lock().unwrap();
             let mut out: Vec<BaseInfo> = Vec::new();
@@ -153,6 +163,8 @@ mod unr_tests {
     ) -> Schema<UnrQueries, UnrMutations, EmptySubscription> {
         Schema::build(UnrQueries, UnrMutations, EmptySubscription)
             .data(api.clone())
+            // Tests execute the schema directly (bypassing the HTTP handler), so
+            // attach a loader here to emulate request-scoped injection.
             .data(DataLoader::with_cache(
                 loader::UnrBaseInfoLoader::new(api),
                 tokio::spawn,
@@ -163,6 +175,21 @@ mod unr_tests {
 
     fn json_data(result: async_graphql::Response) -> Value {
         serde_json::to_value(result.data).expect("response data is JSON")
+    }
+
+    fn mk_request_scoped_loader(
+        api: Arc<dyn UnrApi>,
+    ) -> DataLoader<loader::UnrBaseInfoLoader, HashMapCache> {
+        DataLoader::with_cache(
+            loader::UnrBaseInfoLoader::new(api),
+            tokio::spawn,
+            HashMapCache::default(),
+        )
+    }
+
+    fn mk_unr_router_with_api(api: Arc<dyn UnrApi>) -> axum::Router {
+        // Use the same UNR router wiring as production.
+        crate::graphql::create_unr_router_with_api(api)
     }
 
     async fn assert_err_starts_with(
@@ -275,6 +302,157 @@ mod unr_tests {
             .unwrap();
         assert!(out.contains_key("A"));
         assert!(!out.contains_key("B"));
+    }
+
+    #[tokio::test]
+    async fn dataloader_cache_is_used_within_single_request() {
+        let api = Arc::new(FakeUnrApi::default());
+        api.create_base_info(BaseInfo {
+            device_name: "D".to_string(),
+            address: "ADDR".to_string(),
+            r#type: "TYPE".to_string(),
+            protocol: "PROTO".to_string(),
+        })
+        .await
+        .unwrap();
+
+        let schema = schema_with_api(api.clone());
+
+        // Attach a request-scoped loader and query multiple BaseInfo-backed fields.
+        // `devices()` primes the loader; subsequent field resolvers should hit cache.
+        let req = async_graphql::Request::new(
+            r#"
+            query {
+              devices(names:["D"]) {
+                __typename
+                ... on Device { name address type protocol }
+              }
+            }
+            "#,
+        )
+        .data(mk_request_scoped_loader(api.clone()));
+
+        let result = schema.execute(req).await;
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+
+        // Expect exactly one UNR base-info fetch for the whole request.
+        assert_eq!(*api.read_base_info_calls.lock().unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn dataloader_cache_does_not_carry_over_across_requests() {
+        let api = Arc::new(FakeUnrApi::default());
+        api.create_base_info(BaseInfo {
+            device_name: "D".to_string(),
+            address: "ADDR".to_string(),
+            r#type: "TYPE".to_string(),
+            protocol: "PROTO".to_string(),
+        })
+        .await
+        .unwrap();
+
+        let schema = schema_with_api(api.clone());
+
+        let gql = r#"
+            query {
+              devices(names:["D"]) {
+                __typename
+                ... on Device { name address type protocol }
+              }
+            }
+        "#;
+
+        // First request with its own loader.
+        let r1 = schema
+            .execute(
+                async_graphql::Request::new(gql)
+                    .data(mk_request_scoped_loader(api.clone())),
+            )
+            .await;
+        assert!(r1.errors.is_empty(), "errors: {:?}", r1.errors);
+
+        // Second request with a fresh loader should trigger another UNR fetch.
+        let r2 = schema
+            .execute(
+                async_graphql::Request::new(gql)
+                    .data(mk_request_scoped_loader(api.clone())),
+            )
+            .await;
+        assert!(r2.errors.is_empty(), "errors: {:?}", r2.errors);
+
+        assert_eq!(*api.read_base_info_calls.lock().unwrap(), 2);
+    }
+
+    #[tokio::test]
+    async fn http_handler_injects_request_scoped_loader_no_cache_bleed() {
+        let api = Arc::new(FakeUnrApi::default());
+        api.create_base_info(BaseInfo {
+            device_name: "D".to_string(),
+            address: "ADDR".to_string(),
+            r#type: "TYPE".to_string(),
+            protocol: "PROTO".to_string(),
+        })
+        .await
+        .unwrap();
+
+        let mut app = mk_unr_router_with_api(api.clone());
+
+        let gql = r#"{ "query": "query { devices(names:[\"D\"]) { __typename ... on Device { name address type protocol } } }" }"#;
+
+        // Note: this endpoint requires an Authorization header (any value) to
+        // satisfy `AuthInfo` parsing in the handler.
+
+        // First HTTP request.
+        let resp1 = app
+            .call(
+                Request::builder()
+                    .method("POST")
+                    .uri("/unr")
+                    .header("content-type", "application/json")
+                    .header("authorization", "Bearer TEST")
+                    .body(Body::from(gql))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        if resp1.status() != StatusCode::OK {
+            let body = axum::body::to_bytes(resp1.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            panic!(
+                "unexpected status {} body: {}",
+                StatusCode::BAD_REQUEST,
+                String::from_utf8_lossy(&body)
+            );
+        }
+
+        // Second HTTP request.
+        let resp2 = app
+            .call(
+                Request::builder()
+                    .method("POST")
+                    .uri("/unr")
+                    .header("content-type", "application/json")
+                    .header("authorization", "Bearer TEST")
+                    .body(Body::from(gql))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        if resp2.status() != StatusCode::OK {
+            let body = axum::body::to_bytes(resp2.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            panic!(
+                "unexpected status {} body: {}",
+                StatusCode::BAD_REQUEST,
+                String::from_utf8_lossy(&body)
+            );
+        }
+
+        // If the loader were schema-scoped, the second request could reuse the cache
+        // and this would remain 1. With request-scoped injection, it must be 2.
+        assert_eq!(*api.read_base_info_calls.lock().unwrap(), 2);
     }
 
     #[tokio::test]
