@@ -85,7 +85,7 @@ impl Device {
         loader
             .load_one(self.name.clone())
             .await
-            .map_err(|_e| Error::new("Error reading base info."))
+            .map_err(|e| Error::new(format!("Error reading base info: {e}")))
     }
 
     async fn address(&self, ctx: &Context<'_>) -> Result<Option<String>> {

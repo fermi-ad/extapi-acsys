@@ -305,6 +305,26 @@ mod unr_tests {
     }
 
     #[tokio::test]
+    async fn loader_transport_errors_bubble_up() {
+        let api = Arc::new(FakeUnrApi::default());
+
+        // Fail the next UNR call (read_base_info).
+        *api.fail_after.lock().unwrap() = Some((0, Code::Unavailable));
+
+        let loader = loader::UnrBaseInfoLoader::new(api);
+        let err = loader
+            .load(&["A".to_string()])
+            .await
+            .expect_err("expected loader error");
+
+        assert!(
+            err.to_string().contains("forced failure"),
+            "expected underlying tonic status message to be preserved, got: {:?}",
+            err
+        );
+    }
+
+    #[tokio::test]
     async fn dataloader_cache_is_used_within_single_request() {
         let api = Arc::new(FakeUnrApi::default());
         api.create_base_info(BaseInfo {

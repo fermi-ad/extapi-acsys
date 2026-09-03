@@ -1,8 +1,19 @@
 use crate::g_rpc::proto::services::unr::BaseInfo;
 use async_graphql::dataloader::Loader;
-use std::{collections::HashMap, convert::Infallible, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use crate::graphql::unr::api::UnrApi;
+
+#[derive(Clone, Debug)]
+pub struct LoaderError(pub String);
+
+impl std::fmt::Display for LoaderError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for LoaderError {}
 
 /// Batch loader for UNR BaseInfo records.
 ///
@@ -20,7 +31,7 @@ impl UnrBaseInfoLoader {
 
 impl Loader<String> for UnrBaseInfoLoader {
     type Value = BaseInfo;
-    type Error = Infallible;
+    type Error = LoaderError;
 
     async fn load(
         &self, keys: &[String],
@@ -35,21 +46,18 @@ impl Loader<String> for UnrBaseInfoLoader {
             }
         }
 
-        // UNR returns BaseInfo rows for the requested names.
-        // Missing devices are simply absent from the response.
-        let resp = self.api.read_base_info(uniq).await;
-
-        // DataLoader's Loader::Error must be Clone; tonic::Status isn't.
-        // We treat transport/service errors as "no values" and let callers
-        // surface errors via their existing error-handling paths.
-        let Ok(resp) = resp else {
-            return Ok(HashMap::new());
-        };
-
-        Ok(resp
-            .base_info
-            .into_iter()
-            .map(|base_info| (base_info.device_name.clone(), base_info))
-            .collect())
+        self.api
+            .read_base_info(uniq)
+            .await
+            .map_err(|e| {
+                tracing::warn!("UnrBaseInfoLoader: gRPC error: {e:?}");
+                LoaderError(e.to_string())
+            })
+            .map(|resp| {
+                resp.base_info
+                    .into_iter()
+                    .map(|base_info| (base_info.device_name.clone(), base_info))
+                    .collect()
+            })
     }
 }
