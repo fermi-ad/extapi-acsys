@@ -21,7 +21,10 @@ use axum::{
 use http::{Method, header};
 #[cfg(feature = "kafka")]
 use rust_env_var_lib::env_var;
-use std::net::{IpAddr, Ipv6Addr, SocketAddr};
+use std::{
+    net::{IpAddr, Ipv6Addr, SocketAddr},
+    sync::Arc,
+};
 use tower_http::cors::{Any, CorsLayer};
 use tracing::{info, instrument};
 use types::AuthInfo;
@@ -70,10 +73,7 @@ type UnrSchema = Schema<unr::UnrQueries, unr::UnrMutations, EmptySubscription>;
 #[instrument(name = "GRAPHQL", skip(schema, api, req, headers),
 	     fields(who = tracing::field::Empty))]
 async fn unr_graphql_handler(
-    State((schema, api)): State<(
-        UnrSchema,
-        std::sync::Arc<dyn unr::api::UnrApi>,
-    )>,
+    State((schema, api)): State<(UnrSchema, Arc<dyn unr::api::UnrApi>)>,
     headers: HeaderMap, req: GraphQLRequest,
 ) -> GraphQLResponse {
     let request = with_auth(req, &headers).data(DataLoader::with_cache(
@@ -249,9 +249,7 @@ fn create_devdb_router() -> Router {
     )
 }
 
-fn create_unr_router_with_api(
-    api: std::sync::Arc<dyn unr::api::UnrApi>,
-) -> Router {
+fn create_unr_router_with_api(api: Arc<dyn unr::api::UnrApi>) -> Router {
     const Q_ENDPOINT: &str = "/unr";
 
     let schema = Schema::build(unr::UnrQueries, unr::UnrMutations, EmptySubscription)
@@ -277,8 +275,7 @@ fn create_unr_router_with_api(
 }
 
 fn create_unr_router() -> Router {
-    let api: std::sync::Arc<dyn unr::api::UnrApi> =
-        std::sync::Arc::new(unr::api::GrpcUnrApi);
+    let api = Arc::new(unr::api::GrpcUnrApi);
     create_unr_router_with_api(api)
 }
 

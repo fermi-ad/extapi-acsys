@@ -187,11 +187,6 @@ mod unr_tests {
         )
     }
 
-    fn mk_unr_router_with_api(api: Arc<dyn UnrApi>) -> axum::Router {
-        // Use the same UNR router wiring as production.
-        crate::graphql::create_unr_router_with_api(api)
-    }
-
     async fn assert_err_starts_with(
         schema: &Schema<UnrQueries, UnrMutations, EmptySubscription>,
         gql: &str, prefix: &str,
@@ -415,7 +410,7 @@ mod unr_tests {
         .await
         .unwrap();
 
-        let mut app = mk_unr_router_with_api(api.clone());
+        let mut app = crate::graphql::create_unr_router_with_api(api.clone());
 
         let gql = r#"{ "query": "query { devices(names:[\"D\"]) { __typename ... on Device { name address type protocol } } }" }"#;
 
