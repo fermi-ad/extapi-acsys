@@ -1,6 +1,6 @@
 use super::*;
 use crate::g_rpc::proto::{
-    google::protobuf::Timestamp, services::alarms::TimerType,
+    google::protobuf::Timestamp, services::alarm_timers::TimerType,
 };
 
 #[test]

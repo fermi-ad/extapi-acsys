@@ -1,3 +1,0 @@
-[submodule "src/g_rpc/protos"]
-	path = src/g_rpc/protos
-	url = https://github.com/fermi-ad/interface-definitions.git

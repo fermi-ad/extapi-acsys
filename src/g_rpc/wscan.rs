@@ -1,16 +1,11 @@
 //! This module implements the client side of the wire scan gRPC
 //! protocol.
 
-pub mod proto {
-    tonic::include_proto!("scanner");
-}
-
-use proto::{
+use crate::g_rpc::proto::scanner::{
     DetectorRequest, ScanProgress, ScanRequest, ScanResult,
     scanner_client::ScannerClient,
 };
 use rust_env_var_lib::env_var;
-use std::collections::HashMap;
 use tonic::{Response, Status, Streaming, transport};
 
 const WIRE_SCANNER_HOST: &str = "SCANNER_GRPC_HOST";
@@ -22,21 +17,6 @@ async fn get_client() -> Result<ScannerClient<transport::Channel>, Status> {
     ScannerClient::connect(host)
         .await
         .map_err(|_| Status::unavailable("wire-scanner service unavailable"))
-}
-
-pub async fn _retrieve_scans() -> Result<HashMap<String, String>, Status> {
-    let map = HashMap::from([
-        (
-            "scl-ws-station1".into(),
-            "Super Conduction Linac Wire Scanner - Station 1".into(),
-        ),
-        (
-            "scl-ws-station2".into(),
-            "Super Conducting Linac Wire Scanner - Station 2".into(),
-        ),
-    ]);
-
-    Ok(map)
 }
 
 pub async fn start_scan(

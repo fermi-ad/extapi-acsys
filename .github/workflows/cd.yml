@@ -8,10 +8,16 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
+      - name: Generate a token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.ACTION_SETTINGS_APP_ID }}
+          private-key: ${{ secrets.ACTION_SETTINGS_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
       - name: Check out code
         uses: actions/checkout@v6
-        with:
-          submodules: recursive
 
       - name: Docker meta
         id: meta
@@ -41,3 +47,5 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            "GIT_TOKEN=${{ steps.app-token.outputs.token }}"
