@@ -5,7 +5,10 @@ mod unr_tests {
     use super::*;
     use crate::g_rpc::proto::{
         google::protobuf::Empty,
-        services::unr::{BaseResponse, RelationshipResponse},
+        services::{
+            base_info::{BaseInfo, BaseResponse},
+            relationship_info::{RelationshipInfo, RelationshipResponse},
+        },
     };
     use async_graphql::dataloader::{DataLoader, HashMapCache};
     use async_graphql::{EmptySubscription, Schema, dataloader::Loader};
@@ -124,18 +127,15 @@ mod unr_tests {
             let children = rel.get(&parent_name).cloned().unwrap_or_default();
 
             Ok(RelationshipResponse {
-                relationship_info: Some(
-                    crate::g_rpc::proto::services::unr::RelationshipInfo {
-                        parent_name,
-                        children_names: children,
-                    },
-                ),
+                relationship_info: vec![RelationshipInfo {
+                    parent_name,
+                    children_names: children,
+                }],
             })
         }
 
         async fn update_relationships(
-            &self,
-            relationship_info: crate::g_rpc::proto::services::unr::RelationshipInfo,
+            &self, relationship_info: RelationshipInfo,
         ) -> Result<Empty, Status> {
             self.check_fail()?;
 
@@ -244,7 +244,7 @@ mod unr_tests {
 
         let rel = api.read_relationships("P".to_string()).await.unwrap();
         assert_eq!(
-            rel.relationship_info.unwrap().children_names,
+            rel.relationship_info.first().unwrap().children_names,
             vec!["C1".to_string(), "C2".to_string()]
         );
     }
@@ -254,12 +254,10 @@ mod unr_tests {
         let api = Arc::new(FakeUnrApi::default());
 
         // pre-create relationship
-        api.update_relationships(
-            crate::g_rpc::proto::services::unr::RelationshipInfo {
-                parent_name: "P".to_string(),
-                children_names: vec!["OLD".to_string()],
-            },
-        )
+        api.update_relationships(RelationshipInfo {
+            parent_name: "P".to_string(),
+            children_names: vec!["OLD".to_string()],
+        })
         .await
         .unwrap();
 
@@ -273,7 +271,7 @@ mod unr_tests {
 
         let rel = api.read_relationships("P".to_string()).await.unwrap();
         assert_eq!(
-            rel.relationship_info.unwrap().children_names,
+            rel.relationship_info.first().unwrap().children_names,
             vec!["NEW".to_string()]
         );
     }
@@ -519,12 +517,10 @@ mod unr_tests {
         .await
         .unwrap();
 
-        api.update_relationships(
-            crate::g_rpc::proto::services::unr::RelationshipInfo {
-                parent_name: "P".to_string(),
-                children_names: vec!["C".to_string()],
-            },
-        )
+        api.update_relationships(RelationshipInfo {
+            parent_name: "P".to_string(),
+            children_names: vec!["C".to_string()],
+        })
         .await
         .unwrap();
 
@@ -884,7 +880,7 @@ mod unr_tests {
         // verify relationship stored
         let rel = api.read_relationships("A".to_string()).await.unwrap();
         assert_eq!(
-            rel.relationship_info.unwrap().children_names,
+            rel.relationship_info.first().unwrap().children_names,
             vec!["C2".to_string()]
         );
     }
@@ -920,7 +916,7 @@ mod unr_tests {
 
         let rel = api.read_relationships("A".to_string()).await.unwrap();
         assert_eq!(
-            rel.relationship_info.unwrap().children_names,
+            rel.relationship_info.first().unwrap().children_names,
             Vec::<String>::new()
         );
     }
@@ -941,12 +937,10 @@ mod unr_tests {
         .unwrap();
 
         // create then delete should remove relationship
-        api.update_relationships(
-            crate::g_rpc::proto::services::unr::RelationshipInfo {
-                parent_name: "A".to_string(),
-                children_names: vec!["C".to_string()],
-            },
-        )
+        api.update_relationships(RelationshipInfo {
+            parent_name: "A".to_string(),
+            children_names: vec!["C".to_string()],
+        })
         .await
         .unwrap();
 
@@ -963,7 +957,7 @@ mod unr_tests {
 
         let rel = api.read_relationships("A".to_string()).await.unwrap();
         assert_eq!(
-            rel.relationship_info.unwrap().children_names,
+            rel.relationship_info.first().unwrap().children_names,
             Vec::<String>::new()
         );
     }
@@ -984,12 +978,10 @@ mod unr_tests {
         .unwrap();
 
         // pre-create relationship so create_relationships returns AlreadyExists
-        api.update_relationships(
-            crate::g_rpc::proto::services::unr::RelationshipInfo {
-                parent_name: "A".to_string(),
-                children_names: vec!["OLD".to_string()],
-            },
-        )
+        api.update_relationships(RelationshipInfo {
+            parent_name: "A".to_string(),
+            children_names: vec!["OLD".to_string()],
+        })
         .await
         .unwrap();
 
@@ -1006,7 +998,7 @@ mod unr_tests {
 
         let rel = api.read_relationships("A".to_string()).await.unwrap();
         assert_eq!(
-            rel.relationship_info.unwrap().children_names,
+            rel.relationship_info.first().unwrap().children_names,
             vec!["NEW".to_string()]
         );
     }

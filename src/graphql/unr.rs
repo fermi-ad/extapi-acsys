@@ -2,8 +2,11 @@
 //!
 //! Provides a resource/graph-oriented GraphQL schema for UNR data.
 
-use crate::g_rpc::proto::services::unr::BaseInfo;
 use std::sync::Arc;
+
+use crate::g_rpc::proto::services::{
+    base_info::BaseInfo, relationship_info::RelationshipInfo,
+};
 
 use self::api::UnrApi;
 use async_graphql::{
@@ -46,11 +49,10 @@ async fn set_children_impl(
             .map_err(|e| handle_error(e, "setting children"));
     }
 
-    let relationship_info =
-        crate::g_rpc::proto::services::unr::RelationshipInfo {
-            parent_name: parent.clone(),
-            children_names: children,
-        };
+    let relationship_info = RelationshipInfo {
+        parent_name: parent.clone(),
+        children_names: children,
+    };
 
     api.update_relationships(relationship_info)
         .await

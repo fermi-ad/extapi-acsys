@@ -1,4 +1,4 @@
-use crate::g_rpc::proto::services::unr::BaseInfo;
+use crate::g_rpc::proto::services::base_info::BaseInfo;
 use async_graphql::dataloader::Loader;
 use std::{collections::HashMap, sync::Arc};
 
