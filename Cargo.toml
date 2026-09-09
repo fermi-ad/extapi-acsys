@@ -12,7 +12,6 @@ rust-grpc-lib = { git = "https://github.com/fermi-ad/rust-grpc-lib", tag = "v5.0
 
 [dependencies]
 async-graphql = { version = "7", features = ["chrono", "dataloader"] }
-async-trait = "0.1"
 async-graphql-axum = "7"
 async-stream = "0.3"
 axum = { version = "0.8", features = ["ws"] }
