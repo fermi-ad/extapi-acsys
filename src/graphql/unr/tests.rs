@@ -6,6 +6,7 @@ use crate::g_rpc::proto::{
         relationship_info::{RelationshipInfo, RelationshipResponse},
     },
 };
+use async_graphql::async_trait::async_trait;
 use async_graphql::dataloader::{DataLoader, HashMapCache};
 use async_graphql::{EmptySubscription, Schema, dataloader::Loader};
 use axum::{
@@ -52,7 +53,7 @@ impl FakeUnrApi {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl UnrApi for FakeUnrApi {
     async fn create_base_info(
         &self, base_info: BaseInfo,
