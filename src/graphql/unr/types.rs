@@ -85,11 +85,10 @@ impl Device {
 
         Ok(resp
             .relationship_info
-            .into_iter()
-            .flat_map(|RelationshipInfo { children_names, .. }| {
-                children_names.into_iter().map(Device::new)
+            .map(|RelationshipInfo { children_names, .. }| {
+                children_names.into_iter().map(Device::new).collect()
             })
-            .collect())
+            .unwrap_or_default())
     }
 }
 
