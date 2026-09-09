@@ -6,7 +6,7 @@ use crate::g_rpc::{
     alarms_db::AlarmsDbConnectionAdapter,
     proto::{
         google::protobuf::{Empty, Timestamp},
-        services::alarms::{
+        services::alarm_timers::{
             AlarmTimer, AlarmTimers, DeleteRequest, ReadRequest, TimerType,
         },
     },

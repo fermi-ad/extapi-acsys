@@ -6,7 +6,9 @@ use crate::g_rpc::{
     alarms_db::AlarmsDbConnectionAdapter,
     proto::{
         google::protobuf::Empty,
-        services::alarms::{AlarmGroupMetadata, AlarmGroups, GroupsRequest},
+        services::alarm_groups::{
+            AlarmGroupMetadata, AlarmGroups, GroupsRequest,
+        },
     },
 };
 use tonic::{Response, Status};

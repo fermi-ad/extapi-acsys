@@ -1,4 +1,6 @@
-use crate::g_rpc::proto::services::unr::BaseInfo;
+use crate::g_rpc::proto::services::{
+    base_info::BaseInfo, relationship_info::RelationshipInfo,
+};
 use std::sync::Arc;
 
 use super::{api::UnrApi, handle_error, loader};
@@ -81,12 +83,12 @@ impl Device {
             .await
             .map_err(|e| handle_error(e, "reading relationship"))?;
 
-        let children = resp
+        Ok(resp
             .relationship_info
-            .map(|ri| ri.children_names)
-            .unwrap_or_default();
-
-        Ok(children.into_iter().map(Device::new).collect())
+            .map(|RelationshipInfo { children_names, .. }| {
+                children_names.into_iter().map(Device::new).collect()
+            })
+            .unwrap_or_default())
     }
 }
 

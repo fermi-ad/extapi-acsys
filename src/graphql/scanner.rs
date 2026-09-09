@@ -1,8 +1,8 @@
-use crate::g_rpc::wscan;
+use crate::g_rpc::{proto::scanner::ScanResult, wscan};
 
 use async_graphql::{Object, Subscription, types::ID};
-use futures_util::{Stream, StreamExt, stream};
-use std::pin::Pin;
+use futures_util::{Stream, StreamExt};
+use tonic::Status;
 use tracing::{error, info};
 
 // Pull in our local types.
@@ -64,11 +64,9 @@ impl ScannerMutations {
 	     obtained from a previous `request_scan` command or from a scan \
 	     progress query."]
     async fn abort_scan(&self, id: ID) -> bool {
-        wscan::abort_scan(id.0.clone()).await.is_ok()
+        wscan::abort_scan(id.0).await.is_ok()
     }
 }
-
-type ScanStream = Pin<Box<dyn Stream<Item = types::ScanResult> + Send>>;
 
 #[derive(Default)]
 pub struct ScannerSubscriptions;
@@ -76,23 +74,22 @@ pub struct ScannerSubscriptions;
 #[Subscription]
 impl ScannerSubscriptions {
     #[doc = "Starts a scan at the specified station."]
-    async fn get_scanner_state(&self, id: ID) -> ScanStream {
+    async fn get_scanner_state(
+        &self, id: ID,
+    ) -> Result<impl Stream<Item = types::ScanResult>, Status> {
         info!("requesting scan at station {}", &id.0);
-        match wscan::start_scan(id.0, 0.0, 0.0, 0.0, 0.0, 0).await {
-            Ok(s) => Box::pin(s.into_inner().map(Result::unwrap).map(
-                |wscan::proto::ScanResult { progress, voltage }| {
-                    types::ScanResult {
+        wscan::start_scan(id.0, 0.0, 0.0, 0.0, 0.0, 0)
+            .await
+            .inspect_err(|e| error!("{e}"))
+            .map(|s| {
+                s.into_inner().map(Result::unwrap).map(
+                    |ScanResult { progress, voltage }| types::ScanResult {
                         progress: types::ScanCurrentState::from(
                             progress.unwrap(),
                         ),
                         voltage,
-                    }
-                },
-            )) as ScanStream,
-            Err(e) => {
-                error!("{}", &e);
-                Box::pin(stream::empty()) as ScanStream
-            }
-        }
+                    },
+                )
+            })
     }
 }

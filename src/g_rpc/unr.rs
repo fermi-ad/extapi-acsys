@@ -8,11 +8,15 @@ use crate::g_rpc::{
     connection_utils::{ConnectionAdapter, ConnectionPort},
     proto::{
         google::protobuf::Empty,
-        services::unr::{
-            BaseInfo, BaseRequest, BaseResponse, RelationshipInfo,
-            RelationshipRequest, RelationshipResponse,
-            base_info_service_client::BaseInfoServiceClient,
-            relationship_info_service_client::RelationshipInfoServiceClient,
+        services::{
+            base_info::{
+                BaseInfo, BaseRequest, BaseResponse,
+                base_info_service_client::BaseInfoServiceClient,
+            },
+            relationship_info::{
+                RelationshipInfo, RelationshipRequest, RelationshipResponse,
+                relationship_info_service_client::RelationshipInfoServiceClient,
+            },
         },
     },
 };
