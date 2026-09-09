@@ -5,7 +5,7 @@ use crate::g_rpc::proto::{
         relationship_info::{RelationshipInfo, RelationshipResponse},
     },
 };
-use async_trait::async_trait;
+use async_graphql::async_trait::async_trait;
 use tonic::Status;
 
 /// Injectable UNR API surface used by the GraphQL layer.
