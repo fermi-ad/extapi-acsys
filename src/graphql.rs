@@ -77,7 +77,7 @@ async fn unr_graphql_handler(
     headers: HeaderMap, req: GraphQLRequest,
 ) -> GraphQLResponse {
     let request = with_auth(req, &headers).data(DataLoader::with_cache(
-        unr::loader::UnrBaseInfoLoader::new(api),
+        unr::loader::UnrEntityLoader::new(api),
         tokio::spawn,
         HashMapCache::default(),
     ));
