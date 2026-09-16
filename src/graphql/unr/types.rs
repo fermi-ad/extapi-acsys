@@ -1,6 +1,4 @@
-use crate::g_rpc::proto::services::{
-    base_info::BaseInfo, relationship_info::RelationshipInfo,
-};
+use crate::g_rpc::proto::services::unr::entity::Entity;
 use std::sync::Arc;
 
 use super::{api::UnrApi, handle_error, loader};
@@ -51,44 +49,57 @@ impl Device {
     }
 
     #[graphql(skip)]
-    async fn load_base_info(
-        &self, ctx: &Context<'_>,
-    ) -> Result<Option<BaseInfo>> {
-        let loader = ctx.data_unchecked::<DataLoader<loader::UnrBaseInfoLoader, HashMapCache>>();
+    async fn load_entity(&self, ctx: &Context<'_>) -> Result<Option<Entity>> {
+        let loader = ctx.data_unchecked::<DataLoader<loader::UnrEntityLoader, HashMapCache>>();
         loader
             .load_one(self.name.clone())
             .await
-            .map_err(|e| Error::new(format!("Error reading base info: {e}")))
+            .map_err(|e| Error::new(format!("Error reading entity: {e}")))
     }
 
     async fn address(&self, ctx: &Context<'_>) -> Result<Option<String>> {
-        let base_info = self.load_base_info(ctx).await?;
-        Ok(base_info.and_then(|base_info| Self::non_empty(base_info.address)))
+        let entity = self.load_entity(ctx).await?;
+        Ok(entity.and_then(|entity| Self::non_empty(entity.address)))
     }
 
     async fn r#type(&self, ctx: &Context<'_>) -> Result<Option<String>> {
-        let base_info = self.load_base_info(ctx).await?;
-        Ok(base_info.and_then(|base_info| Self::non_empty(base_info.r#type)))
+        let entity = self.load_entity(ctx).await?;
+        Ok(entity.and_then(|entity| Self::non_empty(entity.r#type)))
     }
 
     async fn protocol(&self, ctx: &Context<'_>) -> Result<Option<String>> {
-        let base_info = self.load_base_info(ctx).await?;
-        Ok(base_info.and_then(|base_info| Self::non_empty(base_info.protocol)))
+        let entity = self.load_entity(ctx).await?;
+        Ok(entity.and_then(|entity| Self::non_empty(entity.protocol)))
     }
 
     async fn children(&self, ctx: &Context<'_>) -> Result<Vec<Device>> {
         let api = ctx.data_unchecked::<Arc<dyn UnrApi>>();
         let resp = api
-            .read_relationships(self.name.clone())
+            .read_relationships(vec![self.name.clone()])
             .await
             .map_err(|e| handle_error(e, "reading relationship"))?;
 
         Ok(resp
-            .relationship_info
-            .map(|RelationshipInfo { children_names, .. }| {
-                children_names.into_iter().map(Device::new).collect()
-            })
+            .entries
+            .into_iter()
+            .find(|entry| entry.id == self.name)
+            .map(|entry| entry.children.into_iter().map(Device::new).collect())
             .unwrap_or_default())
+    }
+
+    async fn parent(&self, ctx: &Context<'_>) -> Result<Option<Device>> {
+        let api = ctx.data_unchecked::<Arc<dyn UnrApi>>();
+        let resp = api
+            .read_relationships(vec![self.name.clone()])
+            .await
+            .map_err(|e| handle_error(e, "reading relationship"))?;
+
+        Ok(resp
+            .entries
+            .into_iter()
+            .find(|entry| entry.id == self.name)
+            .and_then(|entry| Self::non_empty(entry.child_of))
+            .map(Device::new))
     }
 }
 

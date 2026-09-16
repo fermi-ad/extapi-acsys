@@ -1,8 +1,8 @@
 use crate::g_rpc::proto::{
     google::protobuf::Empty,
-    services::{
-        base_info::{BaseInfo, BaseResponse},
-        relationship_info::{RelationshipInfo, RelationshipResponse},
+    services::unr::{
+        entity::{Entity, ReadEntityResponse},
+        relationship::{ReadRelationshipResponse, Relationship},
     },
 };
 use async_graphql::async_trait::async_trait;
@@ -14,32 +14,30 @@ use tonic::Status;
 /// standing up a gRPC server.
 #[async_trait]
 pub trait UnrApi: Send + Sync {
-    async fn create_base_info(
-        &self, base_info: BaseInfo,
+    async fn create_entities(
+        &self, entities: Vec<Entity>,
     ) -> Result<Empty, Status>;
 
-    async fn read_base_info(
-        &self, device_names: Vec<String>,
-    ) -> Result<BaseResponse, Status>;
+    async fn read_entities(
+        &self, ids: Vec<String>,
+    ) -> Result<ReadEntityResponse, Status>;
 
-    async fn update_base_info(
-        &self, base_info: BaseInfo,
+    async fn update_entities(
+        &self, entities: Vec<Entity>,
     ) -> Result<Empty, Status>;
 
-    async fn delete_base_info(
-        &self, device_names: Vec<String>,
+    async fn delete_entities(&self, ids: Vec<String>) -> Result<Empty, Status>;
+
+    async fn create_relationships(
+        &self, relationships: Vec<Relationship>,
     ) -> Result<Empty, Status>;
 
     async fn read_relationships(
-        &self, parent_name: String,
-    ) -> Result<RelationshipResponse, Status>;
-
-    async fn update_relationships(
-        &self, relationship_info: RelationshipInfo,
-    ) -> Result<Empty, Status>;
+        &self, ids: Vec<String>,
+    ) -> Result<ReadRelationshipResponse, Status>;
 
     async fn delete_relationships(
-        &self, parent_name: String,
+        &self, relationships: Vec<Relationship>,
     ) -> Result<Empty, Status>;
 }
 
@@ -49,45 +47,43 @@ pub struct GrpcUnrApi;
 
 #[async_trait]
 impl UnrApi for GrpcUnrApi {
-    async fn create_base_info(
-        &self, base_info: BaseInfo,
+    async fn create_entities(
+        &self, entities: Vec<Entity>,
     ) -> Result<Empty, Status> {
-        crate::g_rpc::unr::create_base_info(base_info).await
+        crate::g_rpc::unr::create_entities(entities).await
     }
 
-    async fn read_base_info(
-        &self, device_names: Vec<String>,
-    ) -> Result<BaseResponse, Status> {
-        crate::g_rpc::unr::read_base_info(device_names).await
+    async fn read_entities(
+        &self, ids: Vec<String>,
+    ) -> Result<ReadEntityResponse, Status> {
+        crate::g_rpc::unr::read_entities(ids).await
     }
 
-    async fn update_base_info(
-        &self, base_info: BaseInfo,
+    async fn update_entities(
+        &self, entities: Vec<Entity>,
     ) -> Result<Empty, Status> {
-        crate::g_rpc::unr::update_base_info(base_info).await
+        crate::g_rpc::unr::update_entities(entities).await
     }
 
-    async fn delete_base_info(
-        &self, device_names: Vec<String>,
+    async fn delete_entities(&self, ids: Vec<String>) -> Result<Empty, Status> {
+        crate::g_rpc::unr::delete_entities(ids).await
+    }
+
+    async fn create_relationships(
+        &self, relationships: Vec<Relationship>,
     ) -> Result<Empty, Status> {
-        crate::g_rpc::unr::delete_base_info(device_names).await
+        crate::g_rpc::unr::create_relationships(relationships).await
     }
 
     async fn read_relationships(
-        &self, parent_name: String,
-    ) -> Result<RelationshipResponse, Status> {
-        crate::g_rpc::unr::read_relationships(parent_name).await
-    }
-
-    async fn update_relationships(
-        &self, relationship_info: RelationshipInfo,
-    ) -> Result<Empty, Status> {
-        crate::g_rpc::unr::update_relationships(relationship_info).await
+        &self, ids: Vec<String>,
+    ) -> Result<ReadRelationshipResponse, Status> {
+        crate::g_rpc::unr::read_relationships(ids).await
     }
 
     async fn delete_relationships(
-        &self, parent_name: String,
+        &self, relationships: Vec<Relationship>,
     ) -> Result<Empty, Status> {
-        crate::g_rpc::unr::delete_relationships(parent_name).await
+        crate::g_rpc::unr::delete_relationships(relationships).await
     }
 }

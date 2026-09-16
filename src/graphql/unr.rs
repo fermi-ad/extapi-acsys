@@ -4,8 +4,8 @@
 
 use std::sync::Arc;
 
-use crate::g_rpc::proto::services::{
-    base_info::BaseInfo, relationship_info::RelationshipInfo,
+use crate::g_rpc::proto::services::unr::{
+    entity::Entity, relationship::Relationship,
 };
 
 use self::api::UnrApi;
@@ -40,24 +40,53 @@ fn handle_error(e: Status, gerund: &str) -> Error {
 async fn set_children_impl(
     api: &dyn UnrApi, parent: String, children: Vec<String>,
 ) -> Result<types::Device> {
-    // Setting children to empty means "remove all relationships".
-    if children.is_empty() {
-        return api
-            .delete_relationships(parent.clone())
+    // Read the current children for this parent.
+    let resp = api
+        .read_relationships(vec![parent.clone()])
+        .await
+        .map_err(|e| handle_error(e, "reading current relationships"))?;
+
+    let current_children: std::collections::HashSet<String> = resp
+        .entries
+        .into_iter()
+        .find(|entry| entry.id == parent)
+        .map(|entry| entry.children.into_iter().collect())
+        .unwrap_or_default();
+
+    let requested_children: std::collections::HashSet<String> =
+        children.into_iter().collect();
+
+    // Delete relationships for children present in current but not requested.
+    let to_delete: Vec<Relationship> = current_children
+        .difference(&requested_children)
+        .map(|child_id| Relationship {
+            parent_id: parent.clone(),
+            child_id: child_id.clone(),
+        })
+        .collect();
+
+    if !to_delete.is_empty() {
+        api.delete_relationships(to_delete)
             .await
-            .map(|_| types::Device::new(parent))
-            .map_err(|e| handle_error(e, "setting children"));
+            .map_err(|e| handle_error(e, "deleting relationships"))?;
     }
 
-    let relationship_info = RelationshipInfo {
-        parent_name: parent.clone(),
-        children_names: children,
-    };
+    // Create relationships for children requested but not currently present.
+    let to_create: Vec<Relationship> = requested_children
+        .difference(&current_children)
+        .map(|child_id| Relationship {
+            parent_id: parent.clone(),
+            child_id: child_id.clone(),
+        })
+        .collect();
 
-    api.update_relationships(relationship_info)
-        .await
-        .map(|_| types::Device::new(parent))
-        .map_err(|e| handle_error(e, "setting children"))
+    if !to_create.is_empty() {
+        api.create_relationships(to_create)
+            .await
+            .map_err(|e| handle_error(e, "creating relationships"))?;
+    }
+
+    Ok(types::Device::new(parent))
 }
 
 #[derive(Default)]
@@ -70,47 +99,41 @@ impl UnrQueries {
     ) -> Result<Vec<types::DeviceQueryResult>> {
         let names = names.unwrap_or_default();
 
-        // Validate existence by checking BaseInfo in a single batched call.
+        // Validate existence by checking entities in a single batched call.
         // Also prime the DataLoader cache for all returned devices.
         //
-        // UNR semantics: empty `device_names` means "return all rows".
+        // UNR semantics: empty `ids` means "return all rows".
         let api = ctx.data_unchecked::<Arc<dyn UnrApi>>();
         let resp = api
-            .read_base_info(names.clone())
+            .read_entities(names.clone())
             .await
-            .map_err(|e| handle_error(e, "reading base info"))?;
+            .map_err(|e| handle_error(e, "reading entities"))?;
 
-        let loader = ctx.data_unchecked::<DataLoader<loader::UnrBaseInfoLoader, HashMapCache>>();
+        let loader = ctx.data_unchecked::<DataLoader<loader::UnrEntityLoader, HashMapCache>>();
 
         // If the client requested specific names, we return a per-name union
         // (Device | NotFound). If they omitted `names`, we return all devices.
         if names.is_empty() {
-            // Prime the DataLoader cache for all returned devices.
-            for base_info in &resp.base_info {
-                loader
-                    .feed_one(base_info.device_name.clone(), base_info.clone())
-                    .await;
+            // Prime the DataLoader cache for all returned entities.
+            for entity in &resp.entities {
+                loader.feed_one(entity.id.clone(), entity.clone()).await;
             }
 
             // Return all devices (no NotFound entries).
             return Ok(resp
-                .base_info
+                .entities
                 .into_iter()
-                .map(|bi| {
-                    types::DeviceQueryResult::Device(types::Device::new(
-                        bi.device_name,
-                    ))
+                .map(|e| {
+                    types::DeviceQueryResult::Device(types::Device::new(e.id))
                 })
                 .collect());
         }
 
         let mut present: std::collections::HashSet<String> =
             std::collections::HashSet::new();
-        for base_info in resp.base_info {
-            present.insert(base_info.device_name.clone());
-            loader
-                .feed_one(base_info.device_name.clone(), base_info)
-                .await;
+        for entity in resp.entities {
+            present.insert(entity.id.clone());
+            loader.feed_one(entity.id.clone(), entity).await;
         }
 
         Ok(names
@@ -139,8 +162,8 @@ impl UnrMutations {
         let children = input.children.clone();
         let device_name = input.name.clone();
 
-        let base_info = BaseInfo {
-            device_name: device_name.clone(),
+        let entity = Entity {
+            id: device_name.clone(),
             address: input.address,
             r#type: input.r#type,
             protocol: input.protocol,
@@ -154,15 +177,12 @@ impl UnrMutations {
             && !children.is_empty()
         {
             let resp = api
-                .read_base_info(children.clone())
+                .read_entities(children.clone())
                 .await
                 .map_err(|e| handle_error(e, "validating children"))?;
 
-            let present: std::collections::HashSet<&str> = resp
-                .base_info
-                .iter()
-                .map(|bi| bi.device_name.as_str())
-                .collect();
+            let present: std::collections::HashSet<&str> =
+                resp.entities.iter().map(|e| e.id.as_str()).collect();
 
             if let Some(missing) =
                 children.iter().find(|c| !present.contains(c.as_str()))
@@ -173,12 +193,12 @@ impl UnrMutations {
             }
         }
 
-        api.create_base_info(base_info.clone())
+        api.create_entities(vec![entity.clone()])
             .await
             .map_err(|e| handle_error(e, "creating device"))?;
 
         // Add relationships (if requested).
-        // Note: this is not atomic with base_info creation; if this fails, the
+        // Note: this is not atomic with entity creation; if this fails, the
         // device exists but has no/partial relationships (acceptable).
         if let Some(children) = children
             && let Err(e) =
@@ -191,9 +211,9 @@ impl UnrMutations {
             }));
         }
 
-        // Read-your-writes: prime/overwrite BaseInfo cache for this request.
-        let loader = ctx.data_unchecked::<DataLoader<loader::UnrBaseInfoLoader, HashMapCache>>();
-        loader.feed_one(device_name.clone(), base_info).await;
+        // Read-your-writes: prime/overwrite entity cache for this request.
+        let loader = ctx.data_unchecked::<DataLoader<loader::UnrEntityLoader, HashMapCache>>();
+        loader.feed_one(device_name.clone(), entity).await;
 
         Ok(types::Device::new(device_name))
     }
@@ -203,8 +223,8 @@ impl UnrMutations {
     ) -> Result<types::Device> {
         let device_name = input.name.clone();
 
-        let base_info = BaseInfo {
-            device_name: device_name.clone(),
+        let entity = Entity {
+            id: device_name.clone(),
             address: input.address,
             r#type: input.r#type,
             protocol: input.protocol,
@@ -215,12 +235,12 @@ impl UnrMutations {
         // grpc-unr-service update does not signal missing devices. Make
         // semantics explicit by pre-checking existence.
         let exists = api
-            .read_base_info(vec![device_name.clone()])
+            .read_entities(vec![device_name.clone()])
             .await
             .map_err(|e| handle_error(e, "validating device exists"))?
-            .base_info
+            .entities
             .iter()
-            .any(|bi| bi.device_name == device_name);
+            .any(|e| e.id == device_name);
 
         if !exists {
             return Err(Error::new(format!(
@@ -228,13 +248,13 @@ impl UnrMutations {
             )));
         }
 
-        api.update_base_info(base_info.clone())
+        api.update_entities(vec![entity.clone()])
             .await
             .map_err(|e| handle_error(e, "updating device"))?;
 
-        // Read-your-writes: prime/overwrite BaseInfo cache for this request.
-        let loader = ctx.data_unchecked::<DataLoader<loader::UnrBaseInfoLoader, HashMapCache>>();
-        loader.feed_one(device_name.clone(), base_info).await;
+        // Read-your-writes: prime/overwrite entity cache for this request.
+        let loader = ctx.data_unchecked::<DataLoader<loader::UnrEntityLoader, HashMapCache>>();
+        loader.feed_one(device_name.clone(), entity).await;
 
         Ok(types::Device::new(device_name))
     }
@@ -249,7 +269,7 @@ impl UnrMutations {
         }
 
         let api = ctx.data_unchecked::<Arc<dyn UnrApi>>();
-        api.delete_base_info(names.clone())
+        api.delete_entities(names.clone())
             .await
             .map_err(|e| handle_error(e, "deleting devices"))?;
         Ok(names)
@@ -258,11 +278,11 @@ impl UnrMutations {
     async fn set_children(
         &self, ctx: &Context<'_>, parent: String, children: Vec<String>,
     ) -> Result<types::Device> {
-        // Relationship mutation doesn't change BaseInfo, but we still want
-        // read-your-writes for BaseInfo fields if the client requests them.
+        // Relationship mutation doesn't change entity data, but we still want
+        // read-your-writes for entity fields if the client requests them.
         // Ensure the loader has at least the parent cached if it exists.
         // (No-op if it doesn't.)
-        let loader = ctx.data_unchecked::<DataLoader<loader::UnrBaseInfoLoader, HashMapCache>>();
+        let loader = ctx.data_unchecked::<DataLoader<loader::UnrEntityLoader, HashMapCache>>();
         let _ = loader.load_one(parent.clone()).await;
 
         let api = ctx.data_unchecked::<Arc<dyn UnrApi>>();

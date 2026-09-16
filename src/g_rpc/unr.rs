@@ -1,21 +1,24 @@
 //! UNR gRPC Module
 //!
 //! Contains the logic for making calls to the UNR gRPC service, covering both
-//! the BaseInfo and RelationshipInfo APIs. Both clients share the same
+//! the Entity and Relationship APIs. Both clients share the same
 //! underlying [`tonic::transport::Channel`] via [`UnrConnectionAdapter`].
 
 use crate::g_rpc::{
     connection_utils::{ConnectionAdapter, ConnectionPort},
     proto::{
         google::protobuf::Empty,
-        services::{
-            base_info::{
-                BaseInfo, BaseRequest, BaseResponse,
-                base_info_service_client::BaseInfoServiceClient,
+        services::unr::{
+            entity::{
+                CreateEntityRequest, DeleteEntityRequest, Entity,
+                ReadEntityRequest, ReadEntityResponse, UpdateEntityRequest,
+                entity_service_client::EntityServiceClient,
             },
-            relationship_info::{
-                RelationshipInfo, RelationshipRequest, RelationshipResponse,
-                relationship_info_service_client::RelationshipInfoServiceClient,
+            relationship::{
+                CreateRelationshipRequest, DeleteRelationshipRequest,
+                ReadRelationshipRequest, ReadRelationshipResponse,
+                Relationship,
+                relationship_service_client::RelationshipServiceClient,
             },
         },
     },
@@ -35,12 +38,12 @@ const UNR_GRPC_HOST: &str = "UNR_GRPC_HOST";
 static UNR_CLIENT: LazyLock<ConnectionPort<UnrConnectionAdapter>> =
     LazyLock::new(|| ConnectionPort::new(UNR_GRPC_HOST));
 
-/// Makes a request to the UNR gRPC service to create a new `BaseInfo` record.
-pub async fn create_base_info(base_info: BaseInfo) -> Result<Empty, Status> {
+/// Makes a request to the UNR gRPC service to create new [`Entity`] records.
+pub async fn create_entities(entities: Vec<Entity>) -> Result<Empty, Status> {
     let do_create = |mut client: UnrConnectionAdapter| async move {
         client
-            .base_info_conn
-            .create(base_info)
+            .entity_conn
+            .create(CreateEntityRequest { entities })
             .await
             .map(Response::into_inner)
             .map(Into::into)
@@ -48,15 +51,15 @@ pub async fn create_base_info(base_info: BaseInfo) -> Result<Empty, Status> {
     UNR_CLIENT.run_with_client(do_create).await
 }
 
-/// Makes a request to the UNR gRPC service to read `BaseInfo` records for the given device names.
-/// If `device_names` is empty, the service returns all rows.
-pub async fn read_base_info(
-    device_names: Vec<String>,
-) -> Result<BaseResponse, Status> {
+/// Makes a request to the UNR gRPC service to read [`Entity`] records for the given IDs.
+/// If `ids` is empty, the service returns all rows.
+pub async fn read_entities(
+    ids: Vec<String>,
+) -> Result<ReadEntityResponse, Status> {
     let do_read = |mut client: UnrConnectionAdapter| async move {
         client
-            .base_info_conn
-            .read(BaseRequest { device_names })
+            .entity_conn
+            .read(ReadEntityRequest { ids })
             .await
             .map(Response::into_inner)
             .map(Into::into)
@@ -64,12 +67,12 @@ pub async fn read_base_info(
     UNR_CLIENT.run_with_client(do_read).await
 }
 
-/// Makes a request to the UNR gRPC service to update an existing `BaseInfo` record.
-pub async fn update_base_info(base_info: BaseInfo) -> Result<Empty, Status> {
+/// Makes a request to the UNR gRPC service to update existing [`Entity`] records.
+pub async fn update_entities(entities: Vec<Entity>) -> Result<Empty, Status> {
     let do_update = |mut client: UnrConnectionAdapter| async move {
         client
-            .base_info_conn
-            .update(base_info)
+            .entity_conn
+            .update(UpdateEntityRequest { entities })
             .await
             .map(Response::into_inner)
             .map(Into::into)
@@ -77,14 +80,12 @@ pub async fn update_base_info(base_info: BaseInfo) -> Result<Empty, Status> {
     UNR_CLIENT.run_with_client(do_update).await
 }
 
-/// Makes a request to the UNR gRPC service to delete `BaseInfo` records for the given device names.
-pub async fn delete_base_info(
-    device_names: Vec<String>,
-) -> Result<Empty, Status> {
+/// Makes a request to the UNR gRPC service to delete [`Entity`] records for the given IDs.
+pub async fn delete_entities(ids: Vec<String>) -> Result<Empty, Status> {
     let do_delete = |mut client: UnrConnectionAdapter| async move {
         client
-            .base_info_conn
-            .delete(BaseRequest { device_names })
+            .entity_conn
+            .delete(DeleteEntityRequest { ids })
             .await
             .map(Response::into_inner)
             .map(Into::into)
@@ -92,14 +93,29 @@ pub async fn delete_base_info(
     UNR_CLIENT.run_with_client(do_delete).await
 }
 
-/// Makes a request to the UNR gRPC service to get all children associated with a parent.
+/// Makes a request to the UNR gRPC service to create the given [`Relationship`] records.
+pub async fn create_relationships(
+    relationships: Vec<Relationship>,
+) -> Result<Empty, Status> {
+    let do_create = |mut client: UnrConnectionAdapter| async move {
+        client
+            .relationship_conn
+            .create(CreateRelationshipRequest { relationships })
+            .await
+            .map(Response::into_inner)
+            .map(Into::into)
+    };
+    UNR_CLIENT.run_with_client(do_create).await
+}
+
+/// Makes a request to the UNR gRPC service to read relationship metadata for the given entity IDs.
 pub async fn read_relationships(
-    parent_name: String,
-) -> Result<RelationshipResponse, Status> {
+    ids: Vec<String>,
+) -> Result<ReadRelationshipResponse, Status> {
     let do_read = |mut client: UnrConnectionAdapter| async move {
         client
-            .relationship_info_conn
-            .read(RelationshipRequest { parent_name })
+            .relationship_conn
+            .read(ReadRelationshipRequest { id: ids })
             .await
             .map(Response::into_inner)
             .map(Into::into)
@@ -107,29 +123,14 @@ pub async fn read_relationships(
     UNR_CLIENT.run_with_client(do_read).await
 }
 
-/// Makes a request to the UNR gRPC service to replace an existing parent's list of children (if any) with the provided list.
-pub async fn update_relationships(
-    relationship_info: RelationshipInfo,
-) -> Result<Empty, Status> {
-    let do_update = |mut client: UnrConnectionAdapter| async move {
-        client
-            .relationship_info_conn
-            .update(relationship_info)
-            .await
-            .map(Response::into_inner)
-            .map(Into::into)
-    };
-    UNR_CLIENT.run_with_client(do_update).await
-}
-
-/// Makes a request to the UNR gRPC service to remove all children from a parent's relationship list.
+/// Makes a request to the UNR gRPC service to delete the given [`Relationship`] records.
 pub async fn delete_relationships(
-    parent_name: String,
+    relationships: Vec<Relationship>,
 ) -> Result<Empty, Status> {
     let do_delete = |mut client: UnrConnectionAdapter| async move {
         client
-            .relationship_info_conn
-            .delete(RelationshipRequest { parent_name })
+            .relationship_conn
+            .delete(DeleteRelationshipRequest { relationships })
             .await
             .map(Response::into_inner)
             .map(Into::into)
@@ -141,20 +142,20 @@ pub async fn delete_relationships(
 /// supplied by the UNR service. Both clients share the same [`Channel`].
 #[derive(Clone)]
 struct UnrConnectionAdapter {
-    pub base_info_conn: BaseInfoServiceClient<Channel>,
-    pub relationship_info_conn: RelationshipInfoServiceClient<Channel>,
+    pub entity_conn: EntityServiceClient<Channel>,
+    pub relationship_conn: RelationshipServiceClient<Channel>,
 }
 
 impl ConnectionAdapter for UnrConnectionAdapter {
     async fn new(host: String) -> Result<Self, Error> {
-        let (base_info_conn, relationship_info_conn) = try_join!(
-            BaseInfoServiceClient::connect(host.clone()),
-            RelationshipInfoServiceClient::connect(host)
+        let (entity_conn, relationship_conn) = try_join!(
+            EntityServiceClient::connect(host.clone()),
+            RelationshipServiceClient::connect(host)
         )?;
 
         Ok(Self {
-            base_info_conn,
-            relationship_info_conn,
+            entity_conn,
+            relationship_conn,
         })
     }
 }

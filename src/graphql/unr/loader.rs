@@ -1,4 +1,4 @@
-use crate::g_rpc::proto::services::base_info::BaseInfo;
+use crate::g_rpc::proto::services::unr::entity::Entity;
 use async_graphql::dataloader::Loader;
 use std::{collections::HashMap, sync::Arc};
 
@@ -15,38 +15,38 @@ impl std::fmt::Display for LoaderError {
 
 impl std::error::Error for LoaderError {}
 
-/// Batch loader for UNR BaseInfo records.
+/// Batch loader for UNR Entity records.
 ///
-/// Keys are UNR device names.
+/// Keys are UNR entity IDs.
 #[derive(Clone)]
-pub struct UnrBaseInfoLoader {
+pub struct UnrEntityLoader {
     pub api: Arc<dyn UnrApi>,
 }
 
-impl UnrBaseInfoLoader {
+impl UnrEntityLoader {
     pub fn new(api: Arc<dyn UnrApi>) -> Self {
         Self { api }
     }
 }
 
-impl Loader<String> for UnrBaseInfoLoader {
-    type Value = BaseInfo;
+impl Loader<String> for UnrEntityLoader {
+    type Value = Entity;
     type Error = LoaderError;
 
     async fn load(
         &self, keys: &[String],
     ) -> Result<HashMap<String, Self::Value>, Self::Error> {
         self.api
-            .read_base_info(keys.to_vec())
+            .read_entities(keys.to_vec())
             .await
             .map_err(|e| {
-                tracing::warn!("UnrBaseInfoLoader: gRPC error: {e:?}");
+                tracing::warn!("UnrEntityLoader: gRPC error: {e:?}");
                 LoaderError(e.to_string())
             })
             .map(|resp| {
-                resp.base_info
+                resp.entities
                     .into_iter()
-                    .map(|base_info| (base_info.device_name.clone(), base_info))
+                    .map(|entity| (entity.id.clone(), entity))
                     .collect()
             })
     }
