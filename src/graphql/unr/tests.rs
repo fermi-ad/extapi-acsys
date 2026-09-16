@@ -279,7 +279,6 @@ async fn set_children_non_empty_creates_relationships() {
 async fn set_children_existing_relationship_is_replaced() {
     let api = Arc::new(FakeUnrApi::default());
 
-    // pre-create relationship via v6 edge API
     api.create_relationships(vec![Relationship {
         parent_id: "P".to_string(),
         child_id: "OLD".to_string(),
@@ -1079,7 +1078,6 @@ async fn mutation_set_children_replaces_existing_with_diff() {
     .await
     .unwrap();
 
-    // pre-create relationship via v6 edge API
     api.create_relationships(vec![Relationship {
         parent_id: "A".to_string(),
         child_id: "OLD".to_string(),
