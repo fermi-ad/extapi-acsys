@@ -194,13 +194,13 @@ fn create_bbm_router() -> Router {
 // Creates the portion of the site map that handles the Device Database
 // GraphQL API.
 
-fn create_devdb_router(grpc_config: GrpcConfig) -> Router {
+fn create_devdb_router(devdb_config: GrpcConfig) -> Router {
     const Q_ENDPOINT: &str = "/devdb";
 
     let schema =
         Schema::build(devdb::DevDBQueries, EmptyMutation, EmptySubscription)
             .register_output_type::<devdb::types::DeviceProperty>()
-            .data(grpc_config)
+            .data(devdb_config)
             .finish();
 
     let graphiql = axum::response::Html(
