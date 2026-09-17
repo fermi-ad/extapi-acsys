@@ -1,59 +1,61 @@
 //! Timeline Generator gRPC Module
 
-use crate::g_rpc::proto::google::protobuf::Empty;
+use crate::{
+    config::GrpcConfig,
+    g_rpc::{proto::google::protobuf::Empty, utils::handle_rpc_error},
+};
 
 use super::proto::services::tlg_placement::{
     TlgDevices, TlgPlacementResponse,
     tlg_placement_mutation_service_client::TlgPlacementMutationServiceClient,
     tlg_placement_service_client::TlgPlacementServiceClient,
 };
-use rust_env_var_lib::env_var;
-use tonic::{Status, transport};
+use rust_grpc_lib::auth::ForwardedToken;
+use tonic::{Response, Status};
 
-const TLG_HOST: &str = "TLG_GRPC_HOST";
+pub async fn get_version(
+    tlg_config: &GrpcConfig, token: ForwardedToken,
+) -> Result<String, Status> {
+    let mut client = TlgPlacementServiceClient::from_endpoint_with_provider(
+        &tlg_config.host_addr,
+        token,
+    )
+    .map_err(|err| handle_rpc_error(err, "TLG Service"))?;
 
-// Local helper function to get a connection to the gRPC service.
-
-async fn get_service_client()
--> Result<TlgPlacementServiceClient<transport::Channel>, Status> {
-    let host: String = env_var::expect(TLG_HOST);
-    TlgPlacementServiceClient::connect(host)
-        .await
-        .map_err(|_| Status::unavailable("TLG service unavailable"))
-}
-
-async fn get_mutation_service_client()
--> Result<TlgPlacementMutationServiceClient<transport::Channel>, Status> {
-    let host: String = env_var::expect(TLG_HOST);
-    TlgPlacementMutationServiceClient::connect(host)
-        .await
-        .map_err(|_| Status::unavailable("TLG service unavailable"))
-}
-
-pub async fn get_version() -> Result<String, Status> {
-    get_service_client()
-        .await?
+    client
         .get_version(Empty {})
         .await
         .map(|v| v.into_inner().version)
 }
 
 pub async fn diagnostics(
-    devs: TlgDevices,
+    tlg_config: &GrpcConfig, token: ForwardedToken, devs: TlgDevices,
 ) -> Result<TlgPlacementResponse, Status> {
-    get_mutation_service_client()
-        .await?
+    let mut client =
+        TlgPlacementMutationServiceClient::from_endpoint_with_provider(
+            &tlg_config.host_addr,
+            token,
+        )
+        .map_err(|err| handle_rpc_error(err, "TLG Mutation Service"))?;
+
+    client
         .diagnostics_inline(devs)
         .await
-        .map(|v| v.into_inner())
+        .map(Response::into_inner)
 }
 
 pub async fn placement(
-    devs: TlgDevices,
+    tlg_config: &GrpcConfig, token: ForwardedToken, devs: TlgDevices,
 ) -> Result<TlgPlacementResponse, Status> {
-    get_mutation_service_client()
-        .await?
+    let mut client =
+        TlgPlacementMutationServiceClient::from_endpoint_with_provider(
+            &tlg_config.host_addr,
+            token,
+        )
+        .map_err(|err| handle_rpc_error(err, "TLG Mutation Service"))?;
+
+    client
         .placement_inline(devs)
         .await
-        .map(|v| v.into_inner())
+        .map(Response::into_inner)
 }

@@ -4,7 +4,7 @@
 //! added to this module so that messages common to several services
 //! are only generated and compiled once.
 
-mod connection_utils;
+mod utils;
 
 pub mod alarms_db;
 pub mod alarms_svc;

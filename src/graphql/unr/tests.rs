@@ -1,10 +1,13 @@
 use super::*;
-use crate::g_rpc::proto::{
-    google::protobuf::Empty,
-    services::unr::{
-        entity::{Entity, ReadEntityResponse},
-        relationship::{
-            ReadRelationshipResponse, Relationship, RelationshipDetails,
+use crate::{
+    config::GrpcConfig,
+    g_rpc::proto::{
+        google::protobuf::Empty,
+        services::unr::{
+            entity::{Entity, ReadEntityResponse},
+            relationship::{
+                ReadRelationshipResponse, Relationship, RelationshipDetails,
+            },
         },
     },
 };
@@ -60,7 +63,8 @@ impl FakeUnrApi {
 #[async_trait]
 impl UnrApi for FakeUnrApi {
     async fn create_entities(
-        &self, new_entities: Vec<Entity>,
+        &self, _conf: &GrpcConfig, _token: ForwardedToken,
+        new_entities: Vec<Entity>,
     ) -> Result<Empty, Status> {
         self.check_fail()?;
 
@@ -75,7 +79,7 @@ impl UnrApi for FakeUnrApi {
     }
 
     async fn read_entities(
-        &self, ids: Vec<String>,
+        &self, _conf: &GrpcConfig, _token: ForwardedToken, ids: Vec<String>,
     ) -> Result<ReadEntityResponse, Status> {
         self.check_fail()?;
 
@@ -98,7 +102,7 @@ impl UnrApi for FakeUnrApi {
     }
 
     async fn update_entities(
-        &self, updated: Vec<Entity>,
+        &self, _conf: &GrpcConfig, _token: ForwardedToken, updated: Vec<Entity>,
     ) -> Result<Empty, Status> {
         self.check_fail()?;
 
@@ -111,7 +115,9 @@ impl UnrApi for FakeUnrApi {
         Ok(Empty {})
     }
 
-    async fn delete_entities(&self, ids: Vec<String>) -> Result<Empty, Status> {
+    async fn delete_entities(
+        &self, _conf: &GrpcConfig, _token: ForwardedToken, ids: Vec<String>,
+    ) -> Result<Empty, Status> {
         self.check_fail()?;
 
         let mut store = self.entities.lock().unwrap();
@@ -122,7 +128,8 @@ impl UnrApi for FakeUnrApi {
     }
 
     async fn create_relationships(
-        &self, relationships: Vec<Relationship>,
+        &self, _conf: &GrpcConfig, _token: ForwardedToken,
+        relationships: Vec<Relationship>,
     ) -> Result<Empty, Status> {
         self.check_fail()?;
 
@@ -139,7 +146,7 @@ impl UnrApi for FakeUnrApi {
     }
 
     async fn read_relationships(
-        &self, ids: Vec<String>,
+        &self, _conf: &GrpcConfig, _token: ForwardedToken, ids: Vec<String>,
     ) -> Result<ReadRelationshipResponse, Status> {
         self.check_fail()?;
 
@@ -172,7 +179,8 @@ impl UnrApi for FakeUnrApi {
     }
 
     async fn delete_relationships(
-        &self, relationships: Vec<Relationship>,
+        &self, _conf: &GrpcConfig, _token: ForwardedToken,
+        relationships: Vec<Relationship>,
     ) -> Result<Empty, Status> {
         self.check_fail()?;
 
@@ -186,6 +194,16 @@ impl UnrApi for FakeUnrApi {
     }
 }
 
+fn testing_config() -> GrpcConfig {
+    GrpcConfig {
+        host_addr: String::new(),
+    }
+}
+
+fn testing_token() -> ForwardedToken {
+    ForwardedToken::new("")
+}
+
 fn schema_with_api(
     api: Arc<dyn UnrApi>,
 ) -> Schema<UnrQueries, UnrMutations, EmptySubscription> {
@@ -194,10 +212,11 @@ fn schema_with_api(
             // Tests execute the schema directly (bypassing the HTTP handler), so
             // attach a loader here to emulate request-scoped injection.
             .data(DataLoader::with_cache(
-                loader::UnrEntityLoader::new(api),
+                loader::UnrEntityLoader::new(api, testing_config(), testing_token()),
                 tokio::spawn,
                 HashMapCache::default(),
             ))
+            .data(testing_config())
             .finish()
 }
 
@@ -209,7 +228,7 @@ fn mk_request_scoped_loader(
     api: Arc<dyn UnrApi>,
 ) -> DataLoader<loader::UnrEntityLoader, HashMapCache> {
     DataLoader::with_cache(
-        loader::UnrEntityLoader::new(api),
+        loader::UnrEntityLoader::new(api, testing_config(), testing_token()),
         tokio::spawn,
         HashMapCache::default(),
     )
@@ -250,8 +269,16 @@ fn handle_error_non_invalid_argument_is_generic() {
 #[tokio::test]
 async fn set_children_empty_is_idempotent() {
     let api = Arc::new(FakeUnrApi::default());
+    let config = testing_config();
     // no relationships exist
-    let got = set_children_impl(api.as_ref(), "P".to_string(), vec![]).await;
+    let got = set_children_impl(
+        api.as_ref(),
+        &config,
+        testing_token(),
+        "P".to_string(),
+        vec![],
+    )
+    .await;
     assert!(got.is_ok());
     assert_eq!(got.unwrap().name, "P");
 }
@@ -259,8 +286,11 @@ async fn set_children_empty_is_idempotent() {
 #[tokio::test]
 async fn set_children_non_empty_creates_relationships() {
     let api = Arc::new(FakeUnrApi::default());
+    let config = testing_config();
     let got = set_children_impl(
         api.as_ref(),
+        &config,
+        testing_token(),
         "P".to_string(),
         vec!["C1".to_string(), "C2".to_string()],
     )
@@ -268,7 +298,10 @@ async fn set_children_non_empty_creates_relationships() {
     .unwrap();
     assert_eq!(got.name, "P");
 
-    let resp = api.read_relationships(vec!["P".to_string()]).await.unwrap();
+    let resp = api
+        .read_relationships(&config, testing_token(), vec!["P".to_string()])
+        .await
+        .unwrap();
     let entry = resp.entries.iter().find(|e| e.id == "P").unwrap();
     let mut children = entry.children.clone();
     children.sort();
@@ -278,19 +311,33 @@ async fn set_children_non_empty_creates_relationships() {
 #[tokio::test]
 async fn set_children_existing_relationship_is_replaced() {
     let api = Arc::new(FakeUnrApi::default());
+    let config = testing_config();
 
-    api.create_relationships(vec![Relationship {
-        parent_id: "P".to_string(),
-        child_id: "OLD".to_string(),
-    }])
+    api.create_relationships(
+        &config,
+        testing_token(),
+        vec![Relationship {
+            parent_id: "P".to_string(),
+            child_id: "OLD".to_string(),
+        }],
+    )
     .await
     .unwrap();
 
-    set_children_impl(api.as_ref(), "P".to_string(), vec!["NEW".to_string()])
+    set_children_impl(
+        api.as_ref(),
+        &config,
+        testing_token(),
+        "P".to_string(),
+        vec!["NEW".to_string()],
+    )
+    .await
+    .unwrap();
+
+    let resp = api
+        .read_relationships(&config, testing_token(), vec!["P".to_string()])
         .await
         .unwrap();
-
-    let resp = api.read_relationships(vec!["P".to_string()]).await.unwrap();
     let entry = resp.entries.iter().find(|e| e.id == "P").unwrap();
     assert_eq!(entry.children, vec!["NEW".to_string()]);
 }
@@ -298,16 +345,21 @@ async fn set_children_existing_relationship_is_replaced() {
 #[tokio::test]
 async fn loader_dedupes_keys_and_maps_by_entity_id() {
     let api = Arc::new(FakeUnrApi::default());
-    api.create_entities(vec![Entity {
-        id: "A".to_string(),
-        address: "ADDR".to_string(),
-        r#type: "TYPE".to_string(),
-        protocol: "PROTO".to_string(),
-    }])
+    let config = testing_config();
+    api.create_entities(
+        &config,
+        testing_token(),
+        vec![Entity {
+            id: "A".to_string(),
+            address: "ADDR".to_string(),
+            r#type: "TYPE".to_string(),
+            protocol: "PROTO".to_string(),
+        }],
+    )
     .await
     .unwrap();
 
-    let loader = loader::UnrEntityLoader::new(api);
+    let loader = loader::UnrEntityLoader::new(api, config, testing_token());
     let out = loader
         .load(&["A".to_string(), "A".to_string(), "B".to_string()])
         .await
@@ -323,7 +375,8 @@ async fn loader_transport_errors_bubble_up() {
     // Fail the next UNR call (read_entities).
     *api.fail_after.lock().unwrap() = Some((0, Code::Unavailable));
 
-    let loader = loader::UnrEntityLoader::new(api);
+    let loader =
+        loader::UnrEntityLoader::new(api, testing_config(), testing_token());
     let err = loader
         .load(&["A".to_string()])
         .await
@@ -339,12 +392,17 @@ async fn loader_transport_errors_bubble_up() {
 #[tokio::test]
 async fn dataloader_cache_is_used_within_single_request() {
     let api = Arc::new(FakeUnrApi::default());
-    api.create_entities(vec![Entity {
-        id: "D".to_string(),
-        address: "ADDR".to_string(),
-        r#type: "TYPE".to_string(),
-        protocol: "PROTO".to_string(),
-    }])
+    let config = testing_config();
+    api.create_entities(
+        &config,
+        testing_token(),
+        vec![Entity {
+            id: "D".to_string(),
+            address: "ADDR".to_string(),
+            r#type: "TYPE".to_string(),
+            protocol: "PROTO".to_string(),
+        }],
+    )
     .await
     .unwrap();
 
@@ -374,12 +432,17 @@ async fn dataloader_cache_is_used_within_single_request() {
 #[tokio::test]
 async fn dataloader_cache_does_not_carry_over_across_requests() {
     let api = Arc::new(FakeUnrApi::default());
-    api.create_entities(vec![Entity {
-        id: "D".to_string(),
-        address: "ADDR".to_string(),
-        r#type: "TYPE".to_string(),
-        protocol: "PROTO".to_string(),
-    }])
+    let config = testing_config();
+    api.create_entities(
+        &config,
+        testing_token(),
+        vec![Entity {
+            id: "D".to_string(),
+            address: "ADDR".to_string(),
+            r#type: "TYPE".to_string(),
+            protocol: "PROTO".to_string(),
+        }],
+    )
     .await
     .unwrap();
 
@@ -418,16 +481,26 @@ async fn dataloader_cache_does_not_carry_over_across_requests() {
 #[tokio::test]
 async fn http_handler_injects_request_scoped_loader_no_cache_bleed() {
     let api = Arc::new(FakeUnrApi::default());
-    api.create_entities(vec![Entity {
-        id: "D".to_string(),
-        address: "ADDR".to_string(),
-        r#type: "TYPE".to_string(),
-        protocol: "PROTO".to_string(),
-    }])
+    let config = testing_config();
+    api.create_entities(
+        &config,
+        testing_token(),
+        vec![Entity {
+            id: "D".to_string(),
+            address: "ADDR".to_string(),
+            r#type: "TYPE".to_string(),
+            protocol: "PROTO".to_string(),
+        }],
+    )
     .await
     .unwrap();
 
-    let mut app = crate::graphql::create_unr_router_with_api(api.clone());
+    let mut app = crate::graphql::create_unr_router_with_api(
+        api.clone(),
+        GrpcConfig {
+            host_addr: String::new(),
+        },
+    );
 
     let gql = r#"{ "query": "query { devices(names:[\"D\"]) { __typename ... on Device { name address type protocol } } }" }"#;
 
@@ -490,12 +563,17 @@ async fn http_handler_injects_request_scoped_loader_no_cache_bleed() {
 #[tokio::test]
 async fn device_fields_resolve_from_loader_and_strip_empty() {
     let api = Arc::new(FakeUnrApi::default());
-    api.create_entities(vec![Entity {
-        id: "D".to_string(),
-        address: "".to_string(),
-        r#type: "T".to_string(),
-        protocol: "".to_string(),
-    }])
+    let config = testing_config();
+    api.create_entities(
+        &config,
+        testing_token(),
+        vec![Entity {
+            id: "D".to_string(),
+            address: "".to_string(),
+            r#type: "T".to_string(),
+            protocol: "".to_string(),
+        }],
+    )
     .await
     .unwrap();
 
@@ -525,21 +603,30 @@ async fn device_fields_resolve_from_loader_and_strip_empty() {
 #[tokio::test]
 async fn device_children_resolves_relationships() {
     let api = Arc::new(FakeUnrApi::default());
+    let config = testing_config();
 
     // devices() validates existence via entities; ensure parent exists.
-    api.create_entities(vec![Entity {
-        id: "P".to_string(),
-        address: "ADDR".to_string(),
-        r#type: "TYPE".to_string(),
-        protocol: "PROTO".to_string(),
-    }])
+    api.create_entities(
+        &config,
+        testing_token(),
+        vec![Entity {
+            id: "P".to_string(),
+            address: "ADDR".to_string(),
+            r#type: "TYPE".to_string(),
+            protocol: "PROTO".to_string(),
+        }],
+    )
     .await
     .unwrap();
 
-    api.create_relationships(vec![Relationship {
-        parent_id: "P".to_string(),
-        child_id: "C".to_string(),
-    }])
+    api.create_relationships(
+        &config,
+        testing_token(),
+        vec![Relationship {
+            parent_id: "P".to_string(),
+            child_id: "C".to_string(),
+        }],
+    )
     .await
     .unwrap();
 
@@ -567,28 +654,37 @@ async fn device_children_resolves_relationships() {
 async fn device_parent_resolves_relationship() {
     let api = Arc::new(FakeUnrApi::default());
 
+    let config = testing_config();
     // Seed parent and child entities.
-    api.create_entities(vec![
-        Entity {
-            id: "PARENT".to_string(),
-            address: "ADDR".to_string(),
-            r#type: "TYPE".to_string(),
-            protocol: "PROTO".to_string(),
-        },
-        Entity {
-            id: "CHILD".to_string(),
-            address: "ADDR".to_string(),
-            r#type: "TYPE".to_string(),
-            protocol: "PROTO".to_string(),
-        },
-    ])
+    api.create_entities(
+        &config,
+        testing_token(),
+        vec![
+            Entity {
+                id: "PARENT".to_string(),
+                address: "ADDR".to_string(),
+                r#type: "TYPE".to_string(),
+                protocol: "PROTO".to_string(),
+            },
+            Entity {
+                id: "CHILD".to_string(),
+                address: "ADDR".to_string(),
+                r#type: "TYPE".to_string(),
+                protocol: "PROTO".to_string(),
+            },
+        ],
+    )
     .await
     .unwrap();
 
-    api.create_relationships(vec![Relationship {
-        parent_id: "PARENT".to_string(),
-        child_id: "CHILD".to_string(),
-    }])
+    api.create_relationships(
+        &config,
+        testing_token(),
+        vec![Relationship {
+            parent_id: "PARENT".to_string(),
+            child_id: "CHILD".to_string(),
+        }],
+    )
     .await
     .unwrap();
 
@@ -615,13 +711,18 @@ async fn device_parent_resolves_relationship() {
 #[tokio::test]
 async fn device_parent_is_null_when_no_parent() {
     let api = Arc::new(FakeUnrApi::default());
+    let config = testing_config();
 
-    api.create_entities(vec![Entity {
-        id: "ORPHAN".to_string(),
-        address: "ADDR".to_string(),
-        r#type: "TYPE".to_string(),
-        protocol: "PROTO".to_string(),
-    }])
+    api.create_entities(
+        &config,
+        testing_token(),
+        vec![Entity {
+            id: "ORPHAN".to_string(),
+            address: "ADDR".to_string(),
+            r#type: "TYPE".to_string(),
+            protocol: "PROTO".to_string(),
+        }],
+    )
     .await
     .unwrap();
 
@@ -648,12 +749,18 @@ async fn device_parent_is_null_when_no_parent() {
 #[tokio::test]
 async fn devices_query_returns_not_found_for_requested_name() {
     let api = Arc::new(FakeUnrApi::default());
-    api.create_entities(vec![Entity {
-        id: "A".to_string(),
-        address: "ADDR".to_string(),
-        r#type: "TYPE".to_string(),
-        protocol: "PROTO".to_string(),
-    }])
+    let config = testing_config();
+
+    api.create_entities(
+        &config,
+        testing_token(),
+        vec![Entity {
+            id: "A".to_string(),
+            address: "ADDR".to_string(),
+            r#type: "TYPE".to_string(),
+            protocol: "PROTO".to_string(),
+        }],
+    )
     .await
     .unwrap();
 
@@ -685,20 +792,25 @@ async fn devices_query_returns_not_found_for_requested_name() {
 #[tokio::test]
 async fn devices_query_without_names_returns_all_devices() {
     let api = Arc::new(FakeUnrApi::default());
-    api.create_entities(vec![
-        Entity {
-            id: "A".to_string(),
-            address: "ADDR".to_string(),
-            r#type: "TYPE".to_string(),
-            protocol: "PROTO".to_string(),
-        },
-        Entity {
-            id: "B".to_string(),
-            address: "ADDR".to_string(),
-            r#type: "TYPE".to_string(),
-            protocol: "PROTO".to_string(),
-        },
-    ])
+    let config = testing_config();
+    api.create_entities(
+        &config,
+        testing_token(),
+        vec![
+            Entity {
+                id: "A".to_string(),
+                address: "ADDR".to_string(),
+                r#type: "TYPE".to_string(),
+                protocol: "PROTO".to_string(),
+            },
+            Entity {
+                id: "B".to_string(),
+                address: "ADDR".to_string(),
+                r#type: "TYPE".to_string(),
+                protocol: "PROTO".to_string(),
+            },
+        ],
+    )
     .await
     .unwrap();
 
@@ -733,14 +845,19 @@ async fn devices_query_without_names_returns_all_devices() {
 async fn mutation_create_device_works() {
     let api: Arc<dyn UnrApi> = Arc::new(FakeUnrApi::default());
     let schema = schema_with_api(api.clone());
+    let config = testing_config();
 
     // Seed child so createDevice's child pre-validation passes.
-    api.create_entities(vec![Entity {
-        id: "C".to_string(),
-        address: "".to_string(),
-        r#type: "".to_string(),
-        protocol: "".to_string(),
-    }])
+    api.create_entities(
+        &config,
+        testing_token(),
+        vec![Entity {
+            id: "C".to_string(),
+            address: "".to_string(),
+            r#type: "".to_string(),
+            protocol: "".to_string(),
+        }],
+    )
     .await
     .unwrap();
 
@@ -781,9 +898,13 @@ async fn mutation_create_device_missing_child_fails_without_creating_parent() {
             .await;
 
     assert!(!r.errors.is_empty(), "expected error");
+    let config = testing_config();
 
     // Ensure parent was not created.
-    let resp = api.read_entities(vec!["A".to_string()]).await.unwrap();
+    let resp = api
+        .read_entities(&config, testing_token(), vec!["A".to_string()])
+        .await
+        .unwrap();
     assert!(resp.entities.is_empty());
 }
 
@@ -792,14 +913,19 @@ async fn mutation_create_device_relationship_failure_includes_partial_success_ex
  {
     let api = Arc::new(FakeUnrApi::default());
     let schema = schema_with_api(api.clone());
+    let config = testing_config();
 
     // Seed child so pre-validation passes.
-    api.create_entities(vec![Entity {
-        id: "C".to_string(),
-        address: "".to_string(),
-        r#type: "".to_string(),
-        protocol: "".to_string(),
-    }])
+    api.create_entities(
+        &config,
+        testing_token(),
+        vec![Entity {
+            id: "C".to_string(),
+            address: "".to_string(),
+            r#type: "".to_string(),
+            protocol: "".to_string(),
+        }],
+    )
     .await
     .unwrap();
 
@@ -838,7 +964,10 @@ async fn mutation_create_device_relationship_failure_includes_partial_success_ex
     );
 
     // Entity was created successfully.
-    let resp = api.read_entities(vec!["A".to_string()]).await.unwrap();
+    let resp = api
+        .read_entities(&config, testing_token(), vec!["A".to_string()])
+        .await
+        .unwrap();
     assert_eq!(resp.entities.len(), 1);
 }
 
@@ -874,14 +1003,19 @@ async fn mutation_create_device_returns_written_fields() {
 async fn mutation_update_device_works() {
     let api: Arc<dyn UnrApi> = Arc::new(FakeUnrApi::default());
     let schema = schema_with_api(api.clone());
+    let config = testing_config();
 
     // seed
-    api.create_entities(vec![Entity {
-        id: "A".to_string(),
-        address: "ADDR".to_string(),
-        r#type: "TYPE".to_string(),
-        protocol: "PROTO".to_string(),
-    }])
+    api.create_entities(
+        &config,
+        testing_token(),
+        vec![Entity {
+            id: "A".to_string(),
+            address: "ADDR".to_string(),
+            r#type: "TYPE".to_string(),
+            protocol: "PROTO".to_string(),
+        }],
+    )
     .await
     .unwrap();
 
@@ -921,14 +1055,19 @@ async fn mutation_update_device_missing_device_fails() {
 async fn mutation_update_device_returns_updated_fields() {
     let api: Arc<dyn UnrApi> = Arc::new(FakeUnrApi::default());
     let schema = schema_with_api(api.clone());
+    let config = testing_config();
 
     // seed
-    api.create_entities(vec![Entity {
-        id: "A".to_string(),
-        address: "ADDR".to_string(),
-        r#type: "TYPE".to_string(),
-        protocol: "PROTO".to_string(),
-    }])
+    api.create_entities(
+        &config,
+        testing_token(),
+        vec![Entity {
+            id: "A".to_string(),
+            address: "ADDR".to_string(),
+            r#type: "TYPE".to_string(),
+            protocol: "PROTO".to_string(),
+        }],
+    )
     .await
     .unwrap();
 
@@ -959,14 +1098,19 @@ async fn mutation_update_device_returns_updated_fields() {
 async fn mutation_set_children_creates_relationship() {
     let api: Arc<dyn UnrApi> = Arc::new(FakeUnrApi::default());
     let schema = schema_with_api(api.clone());
+    let config = testing_config();
 
     // seed entity so setChildren can prime loader
-    api.create_entities(vec![Entity {
-        id: "A".to_string(),
-        address: "ADDR".to_string(),
-        r#type: "TYPE".to_string(),
-        protocol: "PROTO".to_string(),
-    }])
+    api.create_entities(
+        &config,
+        testing_token(),
+        vec![Entity {
+            id: "A".to_string(),
+            address: "ADDR".to_string(),
+            r#type: "TYPE".to_string(),
+            protocol: "PROTO".to_string(),
+        }],
+    )
     .await
     .unwrap();
 
@@ -985,7 +1129,10 @@ async fn mutation_set_children_creates_relationship() {
     assert_eq!(v["setChildren"]["name"], "A");
 
     // verify relationship stored
-    let resp = api.read_relationships(vec!["A".to_string()]).await.unwrap();
+    let resp = api
+        .read_relationships(&config, testing_token(), vec!["A".to_string()])
+        .await
+        .unwrap();
     let entry = resp.entries.iter().find(|e| e.id == "A").unwrap();
     assert_eq!(entry.children, vec!["C2".to_string()]);
 }
@@ -994,14 +1141,19 @@ async fn mutation_set_children_creates_relationship() {
 async fn mutation_set_children_empty_not_found_is_ok() {
     let api: Arc<dyn UnrApi> = Arc::new(FakeUnrApi::default());
     let schema = schema_with_api(api.clone());
+    let config = testing_config();
 
     // seed entity so setChildren can prime loader
-    api.create_entities(vec![Entity {
-        id: "A".to_string(),
-        address: "ADDR".to_string(),
-        r#type: "TYPE".to_string(),
-        protocol: "PROTO".to_string(),
-    }])
+    api.create_entities(
+        &config,
+        testing_token(),
+        vec![Entity {
+            id: "A".to_string(),
+            address: "ADDR".to_string(),
+            r#type: "TYPE".to_string(),
+            protocol: "PROTO".to_string(),
+        }],
+    )
     .await
     .unwrap();
 
@@ -1019,7 +1171,10 @@ async fn mutation_set_children_empty_not_found_is_ok() {
     let v = json_data(r);
     assert_eq!(v["setChildren"]["name"], "A");
 
-    let resp = api.read_relationships(vec!["A".to_string()]).await.unwrap();
+    let resp = api
+        .read_relationships(&config, testing_token(), vec!["A".to_string()])
+        .await
+        .unwrap();
     let entry = resp.entries.iter().find(|e| e.id == "A").unwrap();
     assert!(entry.children.is_empty());
 }
@@ -1028,22 +1183,31 @@ async fn mutation_set_children_empty_not_found_is_ok() {
 async fn mutation_set_children_empty_deletes_existing_relationship() {
     let api: Arc<dyn UnrApi> = Arc::new(FakeUnrApi::default());
     let schema = schema_with_api(api.clone());
+    let config = testing_config();
 
     // seed entity so setChildren can prime loader
-    api.create_entities(vec![Entity {
-        id: "A".to_string(),
-        address: "ADDR".to_string(),
-        r#type: "TYPE".to_string(),
-        protocol: "PROTO".to_string(),
-    }])
+    api.create_entities(
+        &config,
+        testing_token(),
+        vec![Entity {
+            id: "A".to_string(),
+            address: "ADDR".to_string(),
+            r#type: "TYPE".to_string(),
+            protocol: "PROTO".to_string(),
+        }],
+    )
     .await
     .unwrap();
 
     // create then delete should remove relationship
-    api.create_relationships(vec![Relationship {
-        parent_id: "A".to_string(),
-        child_id: "C".to_string(),
-    }])
+    api.create_relationships(
+        &config,
+        testing_token(),
+        vec![Relationship {
+            parent_id: "A".to_string(),
+            child_id: "C".to_string(),
+        }],
+    )
     .await
     .unwrap();
 
@@ -1058,7 +1222,10 @@ async fn mutation_set_children_empty_deletes_existing_relationship() {
         .await;
     assert!(r.errors.is_empty(), "errors: {:?}", r.errors);
 
-    let resp = api.read_relationships(vec!["A".to_string()]).await.unwrap();
+    let resp = api
+        .read_relationships(&config, testing_token(), vec!["A".to_string()])
+        .await
+        .unwrap();
     let entry = resp.entries.iter().find(|e| e.id == "A").unwrap();
     assert!(entry.children.is_empty());
 }
@@ -1067,21 +1234,30 @@ async fn mutation_set_children_empty_deletes_existing_relationship() {
 async fn mutation_set_children_replaces_existing_with_diff() {
     let api = Arc::new(FakeUnrApi::default());
     let schema = schema_with_api(api.clone());
+    let config = testing_config();
 
     // seed entity so setChildren can prime loader
-    api.create_entities(vec![Entity {
-        id: "A".to_string(),
-        address: "ADDR".to_string(),
-        r#type: "TYPE".to_string(),
-        protocol: "PROTO".to_string(),
-    }])
+    api.create_entities(
+        &config,
+        testing_token(),
+        vec![Entity {
+            id: "A".to_string(),
+            address: "ADDR".to_string(),
+            r#type: "TYPE".to_string(),
+            protocol: "PROTO".to_string(),
+        }],
+    )
     .await
     .unwrap();
 
-    api.create_relationships(vec![Relationship {
-        parent_id: "A".to_string(),
-        child_id: "OLD".to_string(),
-    }])
+    api.create_relationships(
+        &config,
+        testing_token(),
+        vec![Relationship {
+            parent_id: "A".to_string(),
+            child_id: "OLD".to_string(),
+        }],
+    )
     .await
     .unwrap();
 
@@ -1096,7 +1272,10 @@ async fn mutation_set_children_replaces_existing_with_diff() {
         .await;
     assert!(r.errors.is_empty(), "errors: {:?}", r.errors);
 
-    let resp = api.read_relationships(vec!["A".to_string()]).await.unwrap();
+    let resp = api
+        .read_relationships(&config, testing_token(), vec!["A".to_string()])
+        .await
+        .unwrap();
     let entry = resp.entries.iter().find(|e| e.id == "A").unwrap();
     assert_eq!(entry.children, vec!["NEW".to_string()]);
 }
@@ -1105,14 +1284,19 @@ async fn mutation_set_children_replaces_existing_with_diff() {
 async fn mutation_delete_devices_works() {
     let api: Arc<dyn UnrApi> = Arc::new(FakeUnrApi::default());
     let schema = schema_with_api(api.clone());
+    let config = testing_config();
 
     // seed
-    api.create_entities(vec![Entity {
-        id: "A".to_string(),
-        address: "ADDR".to_string(),
-        r#type: "TYPE".to_string(),
-        protocol: "PROTO".to_string(),
-    }])
+    api.create_entities(
+        &config,
+        testing_token(),
+        vec![Entity {
+            id: "A".to_string(),
+            address: "ADDR".to_string(),
+            r#type: "TYPE".to_string(),
+            protocol: "PROTO".to_string(),
+        }],
+    )
     .await
     .unwrap();
 
@@ -1131,7 +1315,10 @@ async fn mutation_delete_devices_works() {
     assert_eq!(v["deleteDevices"][0], "A");
 
     // verify deleted
-    let resp = api.read_entities(vec!["A".to_string()]).await.unwrap();
+    let resp = api
+        .read_entities(&config, testing_token(), vec!["A".to_string()])
+        .await
+        .unwrap();
     assert!(resp.entities.is_empty());
 }
 

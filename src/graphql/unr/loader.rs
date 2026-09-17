@@ -1,7 +1,10 @@
-use crate::g_rpc::proto::services::unr::entity::Entity;
-use async_graphql::dataloader::Loader;
 use std::{collections::HashMap, sync::Arc};
 
+use async_graphql::dataloader::Loader;
+use rust_grpc_lib::auth::ForwardedToken;
+
+use crate::config::GrpcConfig;
+use crate::g_rpc::proto::services::unr::entity::Entity;
 use crate::graphql::unr::api::UnrApi;
 
 #[derive(Clone, Debug)]
@@ -20,12 +23,20 @@ impl std::error::Error for LoaderError {}
 /// Keys are UNR entity IDs.
 #[derive(Clone)]
 pub struct UnrEntityLoader {
-    pub api: Arc<dyn UnrApi>,
+    api: Arc<dyn UnrApi>,
+    token: ForwardedToken,
+    unr_config: GrpcConfig,
 }
 
 impl UnrEntityLoader {
-    pub fn new(api: Arc<dyn UnrApi>) -> Self {
-        Self { api }
+    pub fn new(
+        api: Arc<dyn UnrApi>, unr_config: GrpcConfig, token: ForwardedToken,
+    ) -> Self {
+        Self {
+            api,
+            token,
+            unr_config,
+        }
     }
 }
 
@@ -37,7 +48,7 @@ impl Loader<String> for UnrEntityLoader {
         &self, keys: &[String],
     ) -> Result<HashMap<String, Self::Value>, Self::Error> {
         self.api
-            .read_entities(keys.to_vec())
+            .read_entities(&self.unr_config, self.token.clone(), keys.to_vec())
             .await
             .map_err(|e| {
                 tracing::warn!("UnrEntityLoader: gRPC error: {e:?}");

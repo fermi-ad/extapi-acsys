@@ -7,8 +7,10 @@ DEVDB_GRPC_HOST = "test host"
 DPM_GRPC_HOST = "test host"
 GRAPHQL_PORT = "42"
 GRPC_ALARMS_DB_HOST = "test host"
+GRPC_ALARMS_SERVICE_HOST = "test host"
 SCANNER_GRPC_HOST = "test host"
 TLG_GRPC_HOST = "test host"
+UNR_GRPC_HOST = "test host"
 
 [net]
 git-fetch-with-cli = true

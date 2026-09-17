@@ -1,19 +1,32 @@
-use crate::g_rpc::{
-    devdb, dpm,
-    proto::services::daq::{self, reading_reply},
-    proto::services::devdb::{PlotConfigResult, plot_config_result},
-};
+use std::{collections::HashSet, pin::Pin, sync::Arc};
 
-use async_graphql::*;
+use async_graphql::{Context, Error, Object, Result, Subscription};
+use async_stream::stream;
+use chrono::{TimeZone, Utc};
 use futures::future::{self, Either};
 use futures_util::{Stream, StreamExt, stream};
-use serde::{Deserialize, Deserializer};
-use std::{collections::HashSet, pin::Pin, sync::Arc};
+use rust_grpc_lib::auth::ForwardedToken;
+use serde::{
+    Deserialize, Deserializer,
+    de::{self, Visitor},
+};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio_util::io::StreamReader;
 use tonic::Status;
 use tracing::{error, info, instrument, warn};
 
+use crate::{
+    config::GrpcConfig,
+    g_rpc::{
+        clock, devdb,
+        dpm::{self, Connection},
+        proto::services::{
+            daq::{self, reading_reply},
+            devdb::{PlotConfigResult, plot_config_result},
+        },
+    },
+    graphql::auth_handlers::AuthInfo,
+};
 // Pull in global types.
 
 use super::types as global;
@@ -23,7 +36,13 @@ use super::types as global;
 mod datastream;
 pub mod types;
 
-use crate::g_rpc::dpm::Connection;
+#[cfg(test)]
+mod tests;
+
+pub struct AcsysConfigWrapper {
+    pub clock_config: GrpcConfig,
+    pub devdb_config: GrpcConfig,
+}
 
 // Useful function to return the current time as a floating point
 // number.
@@ -134,9 +153,9 @@ immediately or after a delay."]
 
         let mut s = dpm::acquire_devices(
             ctxt.data::<Connection>().unwrap(),
-            ctxt.data::<global::AuthInfo>()
+            ctxt.data::<AuthInfo>()
                 .ok()
-                .and_then(global::AuthInfo::token)
+                .and_then(AuthInfo::token)
                 .as_ref(),
             drfs.clone(),
         )
@@ -168,13 +187,24 @@ Returns a plot configuration associated with the specified ID. If the \
 ID is `null`, all configurations are returned. Both style of requests \
 return an array result -- it's just that specifying an ID will return \
 an array with 0 or 1 element."]
-    #[instrument(skip(self))]
+    #[instrument(skip(self, ctx))]
     async fn plot_configuration(
-        &self, id: Option<u32>,
+        &self, ctx: &Context<'_>, id: Option<u32>,
     ) -> Result<Vec<types::PlotConfig>> {
         info!("returning plot configuration(s)");
+        let acsys_config = ctx.data::<AcsysConfigWrapper>()?;
+        let token = ctx
+            .data_opt::<AuthInfo>()
+            .and_then(AuthInfo::token)
+            .unwrap_or_default();
 
-        match devdb::get_plot_config(id).await {
+        match devdb::get_plot_config(
+            &acsys_config.devdb_config,
+            ForwardedToken::new(token),
+            id,
+        )
+        .await
+        {
             Ok(PlotConfigResult {
                 result: Some(plot_config_result::Result::Config(config)),
             }) => Ok(config
@@ -213,7 +243,7 @@ that is included in the request."]
     async fn users_last_configuration(
         &self, ctxt: &Context<'_>,
     ) -> Option<Arc<str>> {
-        if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
+        if let Ok(auth) = ctxt.data::<AuthInfo>() {
             // TEMPORARY: If there isn't a JWT, use the account
             // specified by the caller.
 
@@ -236,9 +266,9 @@ impl ACSysMutations {
 Not all devices can be set -- most are read-only. To be able to set a \
 device, your SSO account must be associated with every device you may \
 want to set."]
-    #[instrument(skip(self, _ctxt, _value))]
+    #[instrument(skip(self, ctxt, value))]
     async fn set_device(
-        &self, _ctxt: &Context<'_>,
+        &self, ctxt: &Context<'_>,
         #[graphql(
             desc = "The device to be set. This parameter should be expressed \
 		    as a DRF entity. For instance, for ACNET devices, the \
@@ -246,50 +276,70 @@ want to set."]
 		    `.CONTROL`."
         )]
         device: String,
-        #[graphql(desc = "The value of the setting.")] _value: global::DevValue,
+        #[graphql(desc = "The value of the setting.")] value: global::DevValue,
     ) -> Result<global::StatusReply> {
-        if let Ok(auth) = _ctxt.data::<global::AuthInfo>() {
-            let now = tokio::time::Instant::now();
-            let result = dpm::set_device(
-                _ctxt.data::<Connection>().unwrap(),
-                auth.token(),
-                device.clone(),
-                _value.into(),
-            )
-            .await;
+        let token = ctxt.data::<AuthInfo>()?.token();
+        let now = tokio::time::Instant::now();
+        let result = dpm::set_device(
+            ctxt.data::<Connection>().unwrap(),
+            token,
+            device.clone(),
+            value.into(),
+        )
+        .await;
 
-            info!("done in {} μs", now.elapsed().as_micros());
+        info!("done in {} μs", now.elapsed().as_micros());
 
-            match result {
-                Ok(status) => Ok(global::StatusReply {
-                    status: status[0] as i16,
-                }),
-                Err(e) => Err(Error::new(format!("{}", e).as_str())),
-            }
-        } else {
-            Err(Error::new("no user credentials provided"))
+        match result {
+            Ok(status) => Ok(global::StatusReply {
+                status: status[0] as i16,
+            }),
+            Err(e) => Err(Error::new(format!("{}", e).as_str())),
         }
     }
 
     #[doc = "Add/Update a plot configuration"]
-    #[instrument(skip(self))]
+    #[instrument(skip(self, ctx))]
     async fn update_plot_configuration(
-        &self, id: Option<usize>, name: String, config: String,
+        &self, ctx: &Context<'_>, id: Option<usize>, name: String,
+        config: String,
     ) -> Result<usize> {
-        match devdb::save_plot_config(id, name, config).await {
-            Ok(id) => Ok(id),
-            Err(e) => Err(Error::new(e.to_string())),
-        }
+        let acsys_config = ctx.data::<AcsysConfigWrapper>()?;
+        let token = ctx
+            .data_opt::<AuthInfo>()
+            .and_then(AuthInfo::token)
+            .unwrap_or_default();
+
+        devdb::save_plot_config(
+            &acsys_config.devdb_config,
+            ForwardedToken::new(token),
+            id,
+            name,
+            config,
+        )
+        .await
+        .map_err(|e| Error::new(e.to_string()))
     }
 
     #[doc = "Delete a plot configuration"]
-    #[instrument(skip(self))]
+    #[instrument(skip(self, ctx))]
     async fn delete_plot_configuration(
-        &self, configuration_id: i32,
+        &self, ctx: &Context<'_>, configuration_id: i32,
     ) -> Result<global::StatusReply> {
         info!("deleting plot configuration {}", configuration_id);
+        let acsys_config = ctx.data::<AcsysConfigWrapper>()?;
+        let token = ctx
+            .data_opt::<AuthInfo>()
+            .and_then(AuthInfo::token)
+            .unwrap_or_default();
 
-        match devdb::delete_plot_config(configuration_id).await {
+        match devdb::delete_plot_config(
+            &acsys_config.devdb_config,
+            ForwardedToken::new(token),
+            configuration_id,
+        )
+        .await
+        {
             Ok(PlotConfigResult {
                 result: Some(plot_config_result::Result::ErrMsg(msg)),
             }) => {
@@ -314,7 +364,7 @@ authentication token that accompanies the request."]
     async fn users_configuration(
         &self, ctxt: &Context<'_>, _config: Arc<str>,
     ) -> Result<global::StatusReply> {
-        if let Ok(auth) = ctxt.data::<global::AuthInfo>() {
+        if let Ok(auth) = ctxt.data::<AuthInfo>() {
             if let Some(account) = auth.unsafe_account() {
                 info!("using account: {:?}", &account);
                 Ok(global::StatusReply { status: 0 })
@@ -396,8 +446,6 @@ fn deserialize_archiver_value<'de, D>(
 where
     D: Deserializer<'de>,
 {
-    use serde::de::{self, Visitor};
-
     struct ArchiverValueVisitor;
 
     impl<'de> Visitor<'de> for ArchiverValueVisitor {
@@ -470,8 +518,6 @@ pub struct ACSysSubscriptions;
 // 3339 string.
 
 fn to_iso(timestamp_f64: f64) -> String {
-    use chrono::{TimeZone, Utc};
-
     let seconds = timestamp_f64.trunc() as i64;
     let nanoseconds = {
         let nanos = (timestamp_f64.fract() * 1_000_000_000.0).round() as i64;
@@ -511,16 +557,14 @@ fn transform_event(event: ArchiverEvent) -> global::DataReply {
 
 // Private methods used by subscriptions.
 
-impl<'ctx> ACSysSubscriptions {
+impl ACSysSubscriptions {
     // Returns a stream of live data for a list of devices. If an
     // end-time is specified, the stream will end once it is reached.
 
     async fn live_data(
-        ctxt: &Context<'ctx>, drfs: &[String], start_time: f64,
+        ctxt: &Context<'_>, drfs: &[String], start_time: f64,
     ) -> Result<impl Stream<Item = global::DataReply> + Send + 'static + Unpin>
     {
-        use tokio_stream::StreamExt;
-
         // Strip any source designation and append the once-immediate.
 
         let processed_drfs: Vec<_> =
@@ -530,26 +574,29 @@ impl<'ctx> ACSysSubscriptions {
 
         match dpm::acquire_devices(
             ctxt.data::<Connection>().unwrap(),
-            ctxt.data::<global::AuthInfo>()
+            ctxt.data::<AuthInfo>()
                 .ok()
-                .and_then(global::AuthInfo::token)
+                .and_then(AuthInfo::token)
                 .as_ref(),
             processed_drfs,
         )
         .await
         {
-            Ok(s) => Ok(StreamExt::filter_map(s.into_inner(), move |v| {
-                let mut reply = xlat_reply(v);
-                let idx = reply.data[..]
-                    .partition_point(|info| info.timestamp < start_time);
+            Ok(s) => Ok(tokio_stream::StreamExt::filter_map(
+                s.into_inner(),
+                move |v| {
+                    let mut reply = xlat_reply(v);
+                    let idx = reply.data[..]
+                        .partition_point(|info| info.timestamp < start_time);
 
-                reply.data.drain(..idx);
-                if reply.data.is_empty() {
-                    None
-                } else {
-                    Some(reply)
-                }
-            })),
+                    reply.data.drain(..idx);
+                    if reply.data.is_empty() {
+                        None
+                    } else {
+                        Some(reply)
+                    }
+                },
+            )),
             Err(e) => Err(Error::new(format!("{}", e))),
         }
     }
@@ -700,11 +747,9 @@ impl<'ctx> ACSysSubscriptions {
 
     #[instrument(name = "ACNET_ARCH", skip(ctxt, device, start_time, end_time))]
     async fn archived_data(
-        ctxt: &Context<'ctx>, device: &str, start_time: f64, end_time: f64,
+        ctxt: &Context<'_>, device: &str, start_time: f64, end_time: f64,
     ) -> Result<impl Stream<Item = global::DataReply> + Send + 'static + Unpin>
     {
-        use tokio_stream::StreamExt;
-
         // If the device has a subscript, then the client wants
         // archived data for an array device. Due to quirks in the
         // array data logger, we can't specify the subscript or event.
@@ -728,18 +773,17 @@ impl<'ctx> ACSysSubscriptions {
 
         match dpm::acquire_devices(
             ctxt.data::<Connection>().unwrap(),
-            ctxt.data::<global::AuthInfo>()
+            ctxt.data::<AuthInfo>()
                 .ok()
-                .and_then(global::AuthInfo::token)
+                .and_then(AuthInfo::token)
                 .as_ref(),
             vec![drf],
         )
         .await
         {
-            Ok(s) => Ok(datastream::as_archive_stream(StreamExt::map(
-                s.into_inner(),
-                xlat_reply,
-            ))),
+            Ok(s) => Ok(datastream::as_archive_stream(
+                tokio_stream::StreamExt::map(s.into_inner(), xlat_reply),
+            )),
             Err(e) => Err(Error::new(format!("{}", e).as_str())),
         }
     }
@@ -747,7 +791,7 @@ impl<'ctx> ACSysSubscriptions {
     // A helper method to handle plots that request continuous data.
 
     async fn handle_continuous(
-        &self, ctxt: &Context<'ctx>, drfs: Vec<String>,
+        &self, ctxt: &Context<'_>, drfs: Vec<String>,
         _window_size: Option<usize>, n_acquisitions: Option<usize>,
         time_bounds: TimeBounds,
     ) -> Result<PlotStream> {
@@ -884,12 +928,14 @@ impl<'ctx> ACSysSubscriptions {
     // a clock event.
 
     async fn handle_triggered(
-        &self, ctxt: &Context<'ctx>, drfs: Vec<String>, trigger_event: u8,
+        &self, ctxt: &Context<'_>, drfs: Vec<String>, trigger_event: u8,
         start_time: Option<f64>, end_time: Option<f64>,
     ) -> Result<PlotStream> {
-        use crate::g_rpc::clock;
-        use async_stream::stream;
-
+        let acsys_config = ctxt.data::<AcsysConfigWrapper>()?;
+        let token = ctxt
+            .data_opt::<AuthInfo>()
+            .and_then(AuthInfo::token)
+            .unwrap_or_default();
         // This is an empty reply. It is the starting point that is used
         // to accumulate when the event fires.
 
@@ -922,7 +968,13 @@ impl<'ctx> ACSysSubscriptions {
         } else {
             &[0x0f]
         };
-        let mut tclk = clock::subscribe(clock_list).await?.into_inner();
+        let mut tclk = clock::subscribe(
+            &acsys_config.clock_config,
+            ForwardedToken::new(token),
+            clock_list,
+        )
+        .await?
+        .into_inner();
         let mut dev_data = self
             .accelerator_data(
                 ctxt,
@@ -1027,7 +1079,7 @@ impl<'ctx> ACSysSubscriptions {
 }
 
 #[Subscription]
-impl<'ctx> ACSysSubscriptions {
+impl ACSysSubscriptions {
     #[doc = "Retrieve data from accelerator devices.
 
 Accepts a list of DRF strings and streams the resulting data. The \
@@ -1037,7 +1089,7 @@ retrieve data from archivers and dates in the future will return \
 live data."]
     #[instrument(skip(self, ctxt, drfs, validate_timestamp))]
     async fn accelerator_data(
-        &self, ctxt: &Context<'ctx>,
+        &self, ctxt: &Context<'_>,
         #[graphql(
             desc = "A array of DRF strings. Each entry of the returned stream \
 		    will have a index to associate the reading with the DRF \
@@ -1174,7 +1226,7 @@ returns data for all the devices in one reply. Since the data is \
 correlated, all the devices are collected on the same event."]
     #[instrument(skip(self, ctxt, drf_list))]
     async fn start_plot(
-        &self, ctxt: &Context<'ctx>,
+        &self, ctxt: &Context<'_>,
         #[graphql(
             desc = "List of DRF strings that indicate the devices and return \
 		    rates in which the client is interested."
@@ -1247,782 +1299,5 @@ correlated, all the devices are collected on the same event."]
             )
             .await
         }
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    // -----------------------------------------------------------------------
-    // strip_event
-
-    #[test]
-    fn test_removing_event() {
-        use super::strip_event;
-
-        assert_eq!(strip_event("abc"), "abc");
-        assert_eq!(strip_event("abc@e,23"), "abc");
-        assert_eq!(strip_event("abc @e,23"), "abc");
-
-        assert_eq!(strip_event(""), "");
-        assert_eq!(strip_event("@"), "");
-        assert_eq!(strip_event(" @"), "");
-    }
-
-    // Multiple `@` characters — only the first one is the delimiter.
-    #[test]
-    fn test_removing_event_multiple_at_signs() {
-        use super::strip_event;
-
-        assert_eq!(strip_event("abc@e,23@extra"), "abc");
-    }
-
-    // Trailing whitespace before `@` is trimmed.
-    #[test]
-    fn test_removing_event_trailing_whitespace_trimmed() {
-        use super::strip_event;
-
-        assert_eq!(strip_event("M:OUTTMP  @p,1000000u"), "M:OUTTMP");
-        assert_eq!(strip_event("M:OUTTMP\t@p,1000000u"), "M:OUTTMP");
-    }
-
-    // A DRF with a source specifier but no event — strip_event leaves the
-    // source part intact.
-    #[test]
-    fn test_removing_event_leaves_source_intact() {
-        use super::strip_event;
-
-        assert_eq!(strip_event("abc<-LOGGER"), "abc<-LOGGER");
-    }
-
-    // -----------------------------------------------------------------------
-    // strip_source
-
-    #[test]
-    fn test_removing_source() {
-        use super::strip_source;
-
-        assert_eq!(strip_source("abc"), "abc");
-        assert_eq!(strip_source("abc@e,23"), "abc@e,23");
-        assert_eq!(strip_source("abc<-JUNK"), "abc");
-        assert_eq!(strip_source("abc <-JUNK"), "abc");
-        assert_eq!(strip_source("abc@e,23<-JUNK"), "abc@e,23");
-        assert_eq!(strip_source("abc@e,23 <-JUNK"), "abc@e,23");
-
-        assert_eq!(strip_source(""), "");
-        assert_eq!(strip_source("<"), "");
-        assert_eq!(strip_source(" <"), "");
-        assert_eq!(strip_source("abc@e,23<-JUNK<-MOREJUNK"), "abc@e,23");
-        assert_eq!(strip_source("abc@e,23 <-JUNK<-MOREJUNK"), "abc@e,23");
-    }
-
-    // strip_source on a string with only a source specifier.
-    #[test]
-    fn test_removing_source_only_source() {
-        use super::strip_source;
-
-        assert_eq!(strip_source("<-LOGGER"), "");
-    }
-
-    // -----------------------------------------------------------------------
-    // device_name
-
-    #[test]
-    fn test_getting_device_name() {
-        use super::device_name;
-
-        assert_eq!(device_name("abc"), "abc");
-        assert_eq!(device_name("abc[]"), "abc[]");
-        assert_eq!(device_name("abc@e,2"), "abc");
-        assert_eq!(device_name("abc<-LOGGER"), "abc");
-        assert_eq!(device_name("abc.READING"), "abc.READING");
-    }
-
-    // Empty string returns empty string.
-    #[test]
-    fn test_getting_device_name_empty() {
-        use super::device_name;
-
-        assert_eq!(device_name(""), "");
-    }
-
-    // Trailing whitespace before the delimiter is trimmed.
-    #[test]
-    fn test_getting_device_name_trailing_whitespace_trimmed() {
-        use super::device_name;
-
-        assert_eq!(device_name("M:OUTTMP @e,2"), "M:OUTTMP");
-        assert_eq!(device_name("M:OUTTMP <-LOGGER"), "M:OUTTMP");
-    }
-
-    // A subscript followed by an event — the subscript is part of the name.
-    #[test]
-    fn test_getting_device_name_subscript_with_event() {
-        use super::device_name;
-
-        assert_eq!(device_name("abc[3]@e,2"), "abc[3]");
-    }
-
-    // A subscript followed by a source — the subscript is part of the name.
-    #[test]
-    fn test_getting_device_name_subscript_with_source() {
-        use super::device_name;
-
-        assert_eq!(device_name("abc[3]<-LOGGER"), "abc[3]");
-    }
-
-    // Both `@` and `<` present — the first delimiter wins.
-    #[test]
-    fn test_getting_device_name_event_before_source() {
-        use super::device_name;
-
-        assert_eq!(device_name("abc@e,2<-LOGGER"), "abc");
-    }
-
-    // -----------------------------------------------------------------------
-    // add_event
-
-    #[test]
-    fn test_add_event_specification() {
-        use super::add_event;
-
-        assert_eq!(add_event(None, None)("M:OUTTMP"), "M:OUTTMP@p,1000000u");
-        assert_eq!(add_event(Some(1234), None)("M:OUTTMP"), "M:OUTTMP@p,1234u");
-
-        assert_eq!(add_event(None, Some(0x02))("M:OUTTMP"), "M:OUTTMP@e,2,e");
-        assert_eq!(
-            add_event(Some(12345), Some(0x8f))("M:OUTTMP"),
-            "M:OUTTMP@e,8F,e,12"
-        );
-        assert_eq!(
-            add_event(Some(12499), Some(0x8f))("M:OUTTMP"),
-            "M:OUTTMP@e,8F,e,12"
-        );
-        assert_eq!(
-            add_event(Some(12500), Some(0x8f))("M:OUTTMP"),
-            "M:OUTTMP@e,8F,e,13"
-        );
-    }
-
-    // delay=Some(0) is treated as "no delay" → falls back to 1_000_000 µs.
-    #[test]
-    fn test_add_event_zero_delay_uses_default() {
-        use super::add_event;
-
-        assert_eq!(add_event(Some(0), None)("M:OUTTMP"), "M:OUTTMP@p,1000000u");
-    }
-
-    // Rounding boundary: 499 µs rounds down to 0 ms.
-    #[test]
-    fn test_add_event_delay_rounds_down() {
-        use super::add_event;
-
-        assert_eq!(
-            add_event(Some(499), Some(0x01))("M:OUTTMP"),
-            "M:OUTTMP@e,1,e,0"
-        );
-    }
-
-    // Rounding boundary: 500 µs rounds up to 1 ms.
-    #[test]
-    fn test_add_event_delay_rounds_up() {
-        use super::add_event;
-
-        assert_eq!(
-            add_event(Some(500), Some(0x01))("M:OUTTMP"),
-            "M:OUTTMP@e,1,e,1"
-        );
-    }
-
-    // Event code 0x0F is formatted in uppercase hex.
-    #[test]
-    fn test_add_event_hex_formatting() {
-        use super::add_event;
-
-        assert_eq!(add_event(None, Some(0x0f))("M:OUTTMP"), "M:OUTTMP@e,F,e");
-        assert_eq!(add_event(None, Some(0xff))("M:OUTTMP"), "M:OUTTMP@e,FF,e");
-    }
-
-    // The closure can be applied to different device names.
-    #[test]
-    fn test_add_event_closure_reusable() {
-        use super::add_event;
-
-        let ev = add_event(Some(2000), None);
-        assert_eq!(ev("M:OUTTMP"), "M:OUTTMP@p,2000u");
-        assert_eq!(ev("G:AMANDA"), "G:AMANDA@p,2000u");
-    }
-
-    // -----------------------------------------------------------------------
-    // flush
-
-    #[test]
-    fn test_flush() {
-        const POINT_DATA: &[global::DataInfo] = &[
-            global::DataInfo {
-                timestamp: 1.0,
-                result: global::DataType::Scalar(global::Scalar {
-                    scalar_value: 10.0,
-                }),
-            },
-            global::DataInfo {
-                timestamp: 2.0,
-                result: global::DataType::Scalar(global::Scalar {
-                    scalar_value: 11.0,
-                }),
-            },
-            global::DataInfo {
-                timestamp: 3.0,
-                result: global::DataType::Scalar(global::Scalar {
-                    scalar_value: 12.0,
-                }),
-            },
-            global::DataInfo {
-                timestamp: 4.0,
-                result: global::DataType::Scalar(global::Scalar {
-                    scalar_value: 13.0,
-                }),
-            },
-            global::DataInfo {
-                timestamp: 5.0,
-                result: global::DataType::Scalar(global::Scalar {
-                    scalar_value: 14.0,
-                }),
-            },
-        ];
-
-        let mut buf = types::PlotReplyData {
-            plot_id: "test".to_owned(),
-            timestamp: 0.0,
-            trigger_timestamp: None,
-            data: vec![types::PlotChannelData {
-                channel_rate: "Unknown".into(),
-                channel_units: "V".to_owned(),
-                status_string: None,
-                channel_status: 0,
-                channel_data: POINT_DATA.to_owned(),
-            }],
-        };
-
-        ACSysSubscriptions::flush(&mut buf, 0.0);
-
-        assert_eq!(buf.trigger_timestamp, None);
-        assert_eq!(buf.data[0].channel_data, POINT_DATA);
-
-        ACSysSubscriptions::flush(&mut buf, 3.5);
-
-        assert_eq!(buf.trigger_timestamp, None);
-        assert_eq!(buf.data[0].channel_data, &POINT_DATA[3..]);
-
-        ACSysSubscriptions::flush(&mut buf, 10.0);
-
-        assert_eq!(buf.trigger_timestamp, None);
-        assert!(buf.data[0].channel_data.is_empty());
-    }
-
-    // flush on an already-empty channel_data is a no-op.
-    #[test]
-    fn test_flush_empty_channel_data_is_noop() {
-        let mut buf = types::PlotReplyData {
-            plot_id: "test".to_owned(),
-            timestamp: 0.0,
-            trigger_timestamp: Some(42.0),
-            data: vec![types::PlotChannelData {
-                channel_rate: "Unknown".into(),
-                channel_units: "V".to_owned(),
-                status_string: None,
-                channel_status: 0,
-                channel_data: vec![],
-            }],
-        };
-
-        ACSysSubscriptions::flush(&mut buf, 5.0);
-
-        // trigger_timestamp is always reset to None.
-        assert_eq!(buf.trigger_timestamp, None);
-        assert!(buf.data[0].channel_data.is_empty());
-    }
-
-    // flush resets trigger_timestamp to None regardless of its prior value.
-    #[test]
-    fn test_flush_resets_trigger_timestamp() {
-        let mut buf = types::PlotReplyData {
-            plot_id: "test".to_owned(),
-            timestamp: 0.0,
-            trigger_timestamp: Some(99.0),
-            data: vec![types::PlotChannelData {
-                channel_rate: "Unknown".into(),
-                channel_units: "V".to_owned(),
-                status_string: None,
-                channel_status: 0,
-                channel_data: vec![global::DataInfo {
-                    timestamp: 1.0,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 0.5,
-                    }),
-                }],
-            }],
-        };
-
-        ACSysSubscriptions::flush(&mut buf, 0.0);
-        assert_eq!(buf.trigger_timestamp, None);
-    }
-
-    // flush with a timestamp exactly equal to a data point's timestamp
-    // removes that point (partition_point uses `<`, so equal timestamps
-    // are NOT removed — they remain).
-    #[test]
-    fn test_flush_timestamp_exactly_at_data_point() {
-        let point = global::DataInfo {
-            timestamp: 3.0,
-            result: global::DataType::Scalar(global::Scalar {
-                scalar_value: 1.5,
-            }),
-        };
-        let mut buf = types::PlotReplyData {
-            plot_id: "test".to_owned(),
-            timestamp: 0.0,
-            trigger_timestamp: None,
-            data: vec![types::PlotChannelData {
-                channel_rate: "Unknown".into(),
-                channel_units: "V".to_owned(),
-                status_string: None,
-                channel_status: 0,
-                channel_data: vec![point.clone()],
-            }],
-        };
-
-        // ts == point.timestamp → partition_point returns 0 (not < 3.0) →
-        // nothing is drained → point survives.
-        ACSysSubscriptions::flush(&mut buf, 3.0);
-        assert_eq!(buf.data[0].channel_data, vec![point]);
-    }
-
-    // flush operates independently on each channel.
-    #[test]
-    fn test_flush_multiple_channels() {
-        let make_point = |ts: f64| global::DataInfo {
-            timestamp: ts,
-            result: global::DataType::Scalar(global::Scalar {
-                scalar_value: ts / 2.0,
-            }),
-        };
-        let mut buf = types::PlotReplyData {
-            plot_id: "test".to_owned(),
-            timestamp: 0.0,
-            trigger_timestamp: None,
-            data: vec![
-                types::PlotChannelData {
-                    channel_rate: "Unknown".into(),
-                    channel_units: "V".to_owned(),
-                    status_string: None,
-                    channel_status: 0,
-                    channel_data: vec![
-                        make_point(1.0),
-                        make_point(2.0),
-                        make_point(3.0),
-                    ],
-                },
-                types::PlotChannelData {
-                    channel_rate: "Unknown".into(),
-                    channel_units: "A".to_owned(),
-                    status_string: None,
-                    channel_status: 0,
-                    channel_data: vec![make_point(10.0), make_point(20.0)],
-                },
-            ],
-        };
-
-        // Flush at ts=1.5: removes point at 1.0 from channel 0; channel 1
-        // has no points below 1.5 so it is unchanged.
-        ACSysSubscriptions::flush(&mut buf, 1.5);
-
-        assert_eq!(
-            buf.data[0].channel_data,
-            vec![make_point(2.0), make_point(3.0)]
-        );
-        assert_eq!(
-            buf.data[1].channel_data,
-            vec![make_point(10.0), make_point(20.0)]
-        );
-    }
-
-    // -----------------------------------------------------------------------
-    // prep_outgoing
-
-    #[test]
-    fn test_partitioning() {
-        const POINT_DATA: &[global::DataInfo] = &[
-            global::DataInfo {
-                timestamp: 1.0,
-                result: global::DataType::Scalar(global::Scalar {
-                    scalar_value: 10.0,
-                }),
-            },
-            global::DataInfo {
-                timestamp: 2.0,
-                result: global::DataType::Scalar(global::Scalar {
-                    scalar_value: 11.0,
-                }),
-            },
-            global::DataInfo {
-                timestamp: 3.0,
-                result: global::DataType::Scalar(global::Scalar {
-                    scalar_value: 12.0,
-                }),
-            },
-            global::DataInfo {
-                timestamp: 4.0,
-                result: global::DataType::Scalar(global::Scalar {
-                    scalar_value: 13.0,
-                }),
-            },
-            global::DataInfo {
-                timestamp: 5.0,
-                result: global::DataType::Scalar(global::Scalar {
-                    scalar_value: 14.0,
-                }),
-            },
-        ];
-
-        let mut buf = types::PlotReplyData {
-            plot_id: "test".to_owned(),
-            timestamp: 0.0,
-            trigger_timestamp: None,
-            data: vec![types::PlotChannelData {
-                channel_rate: "Unknown".into(),
-                channel_units: "V".to_owned(),
-                status_string: None,
-                channel_status: 0,
-                channel_data: POINT_DATA.to_owned(),
-            }],
-        };
-
-        let mut rem = buf.clone();
-
-        ACSysSubscriptions::prep_outgoing(&mut rem, &mut buf, 0.5, 0.0);
-
-        assert!(buf.data[0].channel_data.is_empty());
-        assert_eq!(buf.trigger_timestamp, Some(0.5));
-        assert_eq!(rem.data[0].channel_data, POINT_DATA);
-
-        buf = rem.clone();
-
-        ACSysSubscriptions::prep_outgoing(&mut rem, &mut buf, 0.5, 3.5);
-
-        assert_eq!(buf.trigger_timestamp, Some(0.5));
-        assert_eq!(
-            buf.data[0].channel_data,
-            &[
-                global::DataInfo {
-                    timestamp: 0.5,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 10.0,
-                    }),
-                },
-                global::DataInfo {
-                    timestamp: 1.5,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 11.0,
-                    }),
-                },
-                global::DataInfo {
-                    timestamp: 2.5,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 12.0,
-                    }),
-                }
-            ],
-        );
-        assert_eq!(rem.data[0].channel_data, &POINT_DATA[3..]);
-
-        buf = rem.clone();
-
-        ACSysSubscriptions::prep_outgoing(&mut rem, &mut buf, 0.5, 10.0);
-
-        assert_eq!(buf.trigger_timestamp, Some(0.5));
-        assert_eq!(
-            buf.data[0].channel_data,
-            &[
-                global::DataInfo {
-                    timestamp: 3.5,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 13.0,
-                    }),
-                },
-                global::DataInfo {
-                    timestamp: 4.5,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 14.0,
-                    }),
-                },
-            ]
-        );
-        assert!(rem.data[0].channel_data.is_empty());
-    }
-
-    #[test]
-    fn test_partitioning_with_status() {
-        const POINT_DATA: &[global::DataInfo] = &[
-            global::DataInfo {
-                timestamp: 0.75,
-                result: global::DataType::StatusReply(global::StatusReply {
-                    status: -17 * 256 + 17,
-                }),
-            },
-            global::DataInfo {
-                timestamp: 1.0,
-                result: global::DataType::Scalar(global::Scalar {
-                    scalar_value: 10.0,
-                }),
-            },
-            global::DataInfo {
-                timestamp: 2.0,
-                result: global::DataType::Scalar(global::Scalar {
-                    scalar_value: 11.0,
-                }),
-            },
-            global::DataInfo {
-                timestamp: 3.0,
-                result: global::DataType::Scalar(global::Scalar {
-                    scalar_value: 12.0,
-                }),
-            },
-            global::DataInfo {
-                timestamp: 4.0,
-                result: global::DataType::Scalar(global::Scalar {
-                    scalar_value: 13.0,
-                }),
-            },
-            global::DataInfo {
-                timestamp: 5.0,
-                result: global::DataType::Scalar(global::Scalar {
-                    scalar_value: 14.0,
-                }),
-            },
-        ];
-
-        let mut buf = types::PlotReplyData {
-            plot_id: "test".to_owned(),
-            timestamp: 0.0,
-            trigger_timestamp: None,
-            data: vec![types::PlotChannelData {
-                channel_rate: "Unknown".into(),
-                channel_units: "V".to_owned(),
-                status_string: None,
-                channel_status: 0,
-                channel_data: POINT_DATA.to_owned(),
-            }],
-        };
-
-        let mut rem = buf.clone();
-
-        ACSysSubscriptions::prep_outgoing(&mut rem, &mut buf, 0.5, 0.0);
-
-        assert!(buf.data[0].channel_data.is_empty());
-        assert_eq!(buf.trigger_timestamp, Some(0.5));
-        assert_eq!(rem.data[0].channel_data, POINT_DATA);
-
-        buf = rem.clone();
-
-        ACSysSubscriptions::prep_outgoing(&mut rem, &mut buf, 0.5, 3.5);
-
-        assert_eq!(buf.trigger_timestamp, Some(0.5));
-        assert_eq!(
-            buf.data[0].channel_data,
-            &[
-                global::DataInfo {
-                    timestamp: 0.5,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 10.0,
-                    }),
-                },
-                global::DataInfo {
-                    timestamp: 1.5,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 11.0,
-                    }),
-                },
-                global::DataInfo {
-                    timestamp: 2.5,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 12.0,
-                    }),
-                }
-            ],
-        );
-        assert_eq!(rem.data[0].channel_data, &POINT_DATA[4..]);
-
-        buf = rem.clone();
-
-        ACSysSubscriptions::prep_outgoing(&mut rem, &mut buf, 0.5, 10.0);
-
-        assert_eq!(buf.trigger_timestamp, Some(0.5));
-        assert_eq!(
-            buf.data[0].channel_data,
-            &[
-                global::DataInfo {
-                    timestamp: 3.5,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 13.0,
-                    }),
-                },
-                global::DataInfo {
-                    timestamp: 4.5,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 14.0,
-                    }),
-                },
-            ]
-        );
-        assert!(rem.data[0].channel_data.is_empty());
-    }
-
-    // prep_outgoing with empty channel_data in both buffers — nothing moves,
-    // trigger_timestamp is still set.
-    #[test]
-    fn test_prep_outgoing_empty_channels() {
-        let make_buf = || types::PlotReplyData {
-            plot_id: "test".to_owned(),
-            timestamp: 0.0,
-            trigger_timestamp: None,
-            data: vec![types::PlotChannelData {
-                channel_rate: "Unknown".into(),
-                channel_units: "V".to_owned(),
-                status_string: None,
-                channel_status: 0,
-                channel_data: vec![],
-            }],
-        };
-
-        let mut out = make_buf();
-        let mut rem = make_buf();
-
-        ACSysSubscriptions::prep_outgoing(&mut rem, &mut out, 5.0, 10.0);
-
-        assert_eq!(out.trigger_timestamp, Some(5.0));
-        assert!(out.data[0].channel_data.is_empty());
-        assert!(rem.data[0].channel_data.is_empty());
-    }
-
-    // prep_outgoing sets trigger_timestamp to ev_ts on the outgoing buffer.
-    #[test]
-    fn test_prep_outgoing_sets_trigger_timestamp() {
-        let make_point = |ts: f64| global::DataInfo {
-            timestamp: ts,
-            result: global::DataType::Scalar(global::Scalar {
-                scalar_value: ts / 2.0,
-            }),
-        };
-        let mut out = types::PlotReplyData {
-            plot_id: "test".to_owned(),
-            timestamp: 0.0,
-            trigger_timestamp: None,
-            data: vec![types::PlotChannelData {
-                channel_rate: "Unknown".into(),
-                channel_units: "V".to_owned(),
-                status_string: None,
-                channel_status: 0,
-                channel_data: vec![make_point(1.0), make_point(2.0)],
-            }],
-        };
-        let mut rem = out.clone();
-
-        ACSysSubscriptions::prep_outgoing(&mut rem, &mut out, 42.0, 100.0);
-
-        assert_eq!(out.trigger_timestamp, Some(42.0));
-    }
-
-    // prep_outgoing with ts beyond all data — everything moves to `out`,
-    // `rem` is left empty.
-    #[test]
-    fn test_prep_outgoing_ts_beyond_all_data() {
-        let make_point = |ts: f64| global::DataInfo {
-            timestamp: ts,
-            result: global::DataType::Scalar(global::Scalar {
-                scalar_value: ts / 2.0,
-            }),
-        };
-        let mut out = types::PlotReplyData {
-            plot_id: "test".to_owned(),
-            timestamp: 0.0,
-            trigger_timestamp: None,
-            data: vec![types::PlotChannelData {
-                channel_rate: "Unknown".into(),
-                channel_units: "V".to_owned(),
-                status_string: None,
-                channel_status: 0,
-                channel_data: vec![
-                    make_point(1.0),
-                    make_point(2.0),
-                    make_point(3.0),
-                ],
-            }],
-        };
-        let mut rem = out.clone();
-
-        // ts = 9999.0 is beyond all data → all points go to out, rem is empty.
-        ACSysSubscriptions::prep_outgoing(&mut rem, &mut out, 10.0, 9999.0);
-
-        assert!(rem.data[0].channel_data.is_empty());
-        // Timestamps are shifted by ev_ts (10.0).
-        assert_eq!(
-            out.data[0].channel_data,
-            vec![
-                global::DataInfo {
-                    timestamp: -9.0,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 0.5,
-                    }),
-                },
-                global::DataInfo {
-                    timestamp: -8.0,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 1.0,
-                    }),
-                },
-                global::DataInfo {
-                    timestamp: -7.0,
-                    result: global::DataType::Scalar(global::Scalar {
-                        scalar_value: 1.5,
-                    }),
-                },
-            ]
-        );
-    }
-
-    // prep_outgoing with ts before all data — nothing moves to out, all
-    // data stays in rem.
-    #[test]
-    fn test_prep_outgoing_ts_before_all_data() {
-        let make_point = |ts: f64| global::DataInfo {
-            timestamp: ts,
-            result: global::DataType::Scalar(global::Scalar {
-                scalar_value: ts / 2.0,
-            }),
-        };
-        let mut out = types::PlotReplyData {
-            plot_id: "test".to_owned(),
-            timestamp: 0.0,
-            trigger_timestamp: None,
-            data: vec![types::PlotChannelData {
-                channel_rate: "Unknown".into(),
-                channel_units: "V".to_owned(),
-                status_string: None,
-                channel_status: 0,
-                channel_data: vec![make_point(10.0), make_point(20.0)],
-            }],
-        };
-        let mut rem = out.clone();
-
-        // ts = 0.0 is before all data → nothing partitioned into out.
-        ACSysSubscriptions::prep_outgoing(&mut rem, &mut out, 5.0, 0.0);
-
-        assert!(out.data[0].channel_data.is_empty());
-        assert_eq!(
-            rem.data[0].channel_data,
-            vec![make_point(10.0), make_point(20.0)]
-        );
     }
 }

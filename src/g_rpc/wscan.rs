@@ -1,53 +1,53 @@
 //! This module implements the client side of the wire scan gRPC
 //! protocol.
 
-use crate::g_rpc::proto::scanner::{
-    DetectorRequest, ScanProgress, ScanRequest, ScanResult,
-    scanner_client::ScannerClient,
+use crate::{
+    config::GrpcConfig,
+    g_rpc::{
+        proto::scanner::{
+            DetectorRequest, ScanProgress, ScanRequest, ScanResult,
+            scanner_client::ScannerClient,
+        },
+        utils::handle_rpc_error,
+    },
 };
-use rust_env_var_lib::env_var;
-use tonic::{Response, Status, Streaming, transport};
-
-const WIRE_SCANNER_HOST: &str = "SCANNER_GRPC_HOST";
-
-// Local helper function to get a connection to the gRPC service.
-
-async fn get_client() -> Result<ScannerClient<transport::Channel>, Status> {
-    let host: String = env_var::expect(WIRE_SCANNER_HOST);
-    ScannerClient::connect(host)
-        .await
-        .map_err(|_| Status::unavailable("wire-scanner service unavailable"))
-}
+use rust_grpc_lib::auth::ForwardedToken;
+use tonic::{Response, Status, Streaming};
 
 pub async fn start_scan(
-    id: String, pos_start: f32, pos_end: f32, pos_step: f32, samp_dur: f32,
-    pps: i32,
+    scanner_config: &GrpcConfig, token: ForwardedToken, req: ScanRequest,
 ) -> Result<Response<Streaming<ScanResult>>, Status> {
-    get_client()
-        .await?
-        .start_scan(ScanRequest {
-            detector_id: id,
-            position_start: pos_start,
-            position_end: pos_end,
-            position_step: pos_step,
-            sampling_duration: samp_dur,
-            pulses_per_sample: pps,
-        })
-        .await
+    let mut client = ScannerClient::from_endpoint_with_provider(
+        &scanner_config.host_addr,
+        token,
+    )
+    .map_err(|err| handle_rpc_error(err, "Scanner"))?;
+
+    client.start_scan(req).await
 }
 
 pub async fn get_progress(
-    id: String,
+    scanner_config: &GrpcConfig, token: ForwardedToken, id: String,
 ) -> Result<Response<ScanProgress>, Status> {
-    get_client()
-        .await?
+    let mut client = ScannerClient::from_endpoint_with_provider(
+        &scanner_config.host_addr,
+        token,
+    )
+    .map_err(|err| handle_rpc_error(err, "Scanner"))?;
+
+    client
         .get_progress(DetectorRequest { detector_id: id })
         .await
 }
 
-pub async fn abort_scan(id: String) -> Result<Response<ScanProgress>, Status> {
-    get_client()
-        .await?
-        .abort_scan(DetectorRequest { detector_id: id })
-        .await
+pub async fn abort_scan(
+    scanner_config: &GrpcConfig, token: ForwardedToken, id: String,
+) -> Result<Response<ScanProgress>, Status> {
+    let mut client = ScannerClient::from_endpoint_with_provider(
+        &scanner_config.host_addr,
+        token,
+    )
+    .map_err(|err| handle_rpc_error(err, "Scanner"))?;
+
+    client.abort_scan(DetectorRequest { detector_id: id }).await
 }

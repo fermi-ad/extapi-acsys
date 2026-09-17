@@ -1,10 +1,18 @@
-use crate::g_rpc::proto::services::unr::entity::Entity;
 use std::sync::Arc;
 
-use super::{api::UnrApi, handle_error, loader};
 use async_graphql::{
     Context, Error, InputObject, Result, SimpleObject, Union,
     dataloader::{DataLoader, HashMapCache},
+};
+use rust_grpc_lib::auth::ForwardedToken;
+
+use crate::{
+    config::GrpcConfig,
+    g_rpc::proto::services::unr::entity::Entity,
+    graphql::{
+        auth_handlers::AuthInfo,
+        unr::{api::UnrApi, handle_error, loader},
+    },
 };
 
 /// Input for creating a device.
@@ -50,7 +58,8 @@ impl Device {
 
     #[graphql(skip)]
     async fn load_entity(&self, ctx: &Context<'_>) -> Result<Option<Entity>> {
-        let loader = ctx.data_unchecked::<DataLoader<loader::UnrEntityLoader, HashMapCache>>();
+        let loader =
+            ctx.data::<DataLoader<loader::UnrEntityLoader, HashMapCache>>()?;
         loader
             .load_one(self.name.clone())
             .await
@@ -73,9 +82,19 @@ impl Device {
     }
 
     async fn children(&self, ctx: &Context<'_>) -> Result<Vec<Device>> {
-        let api = ctx.data_unchecked::<Arc<dyn UnrApi>>();
+        let api = ctx.data::<Arc<dyn UnrApi>>()?;
+        let unr_config = ctx.data::<GrpcConfig>()?;
+        let token = ctx
+            .data_opt::<AuthInfo>()
+            .and_then(|info| info.token())
+            .unwrap_or_default();
+
         let resp = api
-            .read_relationships(vec![self.name.clone()])
+            .read_relationships(
+                unr_config,
+                ForwardedToken::new(token),
+                vec![self.name.clone()],
+            )
             .await
             .map_err(|e| handle_error(e, "reading relationship"))?;
 
@@ -88,9 +107,19 @@ impl Device {
     }
 
     async fn parent(&self, ctx: &Context<'_>) -> Result<Option<Device>> {
-        let api = ctx.data_unchecked::<Arc<dyn UnrApi>>();
+        let api = ctx.data::<Arc<dyn UnrApi>>()?;
+        let unr_config = ctx.data::<GrpcConfig>()?;
+        let token = ctx
+            .data_opt::<AuthInfo>()
+            .and_then(|info| info.token())
+            .unwrap_or_default();
+
         let resp = api
-            .read_relationships(vec![self.name.clone()])
+            .read_relationships(
+                unr_config,
+                ForwardedToken::new(token),
+                vec![self.name.clone()],
+            )
             .await
             .map_err(|e| handle_error(e, "reading relationship"))?;
 
