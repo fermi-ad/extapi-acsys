@@ -25,7 +25,7 @@ use serde_json::{Value, json};
 use tracing::{field::Empty, instrument};
 
 use crate::{
-    config::GrpcConfig,
+    config::ExtapiGlobalConfig,
     graphql::unr::{
         UnrMutations, UnrQueries, api::UnrApi, loader::UnrEntityLoader,
     },
@@ -46,19 +46,19 @@ where
 
 type UnrSchema = Schema<UnrQueries, UnrMutations, EmptySubscription>;
 
-#[instrument(name = "GRAPHQL", skip(schema, api, unr_config, req, auth),
+#[instrument(name = "GRAPHQL", skip(schema, api, global_config, req, auth),
 	     fields(who = Empty))]
 pub async fn unr_graphql_handler(
-    State((schema, api, unr_config)): State<(
+    State((schema, api, global_config)): State<(
         UnrSchema,
         Arc<dyn UnrApi>,
-        GrpcConfig,
+        Arc<ExtapiGlobalConfig>,
     )>,
     auth: AuthInfo, req: GraphQLRequest,
 ) -> GraphQLResponse {
     let token = auth.token().unwrap_or_default();
     let decorated_request = with_auth(req, auth).data(DataLoader::with_cache(
-        UnrEntityLoader::new(api, unr_config, ForwardedToken::new(token)),
+        UnrEntityLoader::new(api, global_config, ForwardedToken::new(token)),
         tokio::spawn,
         HashMapCache::default(),
     ));

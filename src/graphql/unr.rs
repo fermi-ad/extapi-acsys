@@ -5,7 +5,7 @@
 use std::{collections::HashSet, sync::Arc};
 
 use crate::{
-    config::GrpcConfig,
+    config::{ExtapiGlobalConfig, GrpcConfig},
     g_rpc::proto::services::unr::{entity::Entity, relationship::Relationship},
     graphql::auth_handlers::AuthInfo,
 };
@@ -107,14 +107,14 @@ impl UnrQueries {
         //
         // UNR semantics: empty `ids` means "return all rows".
         let api = ctx.data::<Arc<dyn UnrApi>>()?;
-        let unr_config = ctx.data::<GrpcConfig>()?;
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
         let token = ctx
             .data_opt::<AuthInfo>()
             .and_then(|info| info.token())
             .unwrap_or_default();
         let resp = api
             .read_entities(
-                unr_config,
+                &global_config.unr,
                 ForwardedToken::new(token),
                 names.clone(),
             )
@@ -172,7 +172,7 @@ impl UnrMutations {
         &self, ctx: &Context<'_>, input: types::CreateDeviceInput,
     ) -> Result<types::Device> {
         let api = ctx.data::<Arc<dyn UnrApi>>()?;
-        let unr_config = ctx.data::<GrpcConfig>()?;
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
         let token = ctx
             .data_opt::<AuthInfo>()
             .and_then(|info| info.token())
@@ -195,7 +195,7 @@ impl UnrMutations {
         {
             let resp = api
                 .read_entities(
-                    unr_config,
+                    &global_config.unr,
                     ForwardedToken::new(token.clone()),
                     children.clone(),
                 )
@@ -218,7 +218,7 @@ impl UnrMutations {
         }
 
         api.create_entities(
-            unr_config,
+            &global_config.unr,
             ForwardedToken::new(token.clone()),
             vec![entity],
         )
@@ -231,7 +231,7 @@ impl UnrMutations {
         if let Some(children) = children
             && let Err(e) = set_children_impl(
                 api.as_ref(),
-                unr_config,
+                &global_config.unr,
                 ForwardedToken::new(token),
                 device_name.clone(),
                 children,
@@ -251,7 +251,7 @@ impl UnrMutations {
         &self, ctx: &Context<'_>, input: types::UpdateDeviceInput,
     ) -> Result<types::Device> {
         let api = ctx.data::<Arc<dyn UnrApi>>()?;
-        let unr_config = ctx.data::<GrpcConfig>()?;
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
         let token = ctx
             .data_opt::<AuthInfo>()
             .and_then(|info| info.token())
@@ -270,7 +270,7 @@ impl UnrMutations {
         // semantics explicit by pre-checking existence.
         let exists = api
             .read_entities(
-                unr_config,
+                &global_config.unr,
                 ForwardedToken::new(token.clone()),
                 vec![device_name.clone()],
             )
@@ -287,7 +287,7 @@ impl UnrMutations {
         }
 
         api.update_entities(
-            unr_config,
+            &global_config.unr,
             ForwardedToken::new(token),
             vec![entity.clone()],
         )
@@ -306,7 +306,7 @@ impl UnrMutations {
         &self, ctx: &Context<'_>, names: Vec<String>,
     ) -> Result<Vec<String>> {
         let api = ctx.data::<Arc<dyn UnrApi>>()?;
-        let unr_config = ctx.data::<GrpcConfig>()?;
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
         let token = ctx
             .data_opt::<AuthInfo>()
             .and_then(|info| info.token())
@@ -319,7 +319,7 @@ impl UnrMutations {
         }
 
         api.delete_entities(
-            unr_config,
+            &global_config.unr,
             ForwardedToken::new(token),
             names.clone(),
         )
@@ -340,7 +340,7 @@ impl UnrMutations {
         let _ = loader.load_one(parent.clone()).await;
 
         let api = ctx.data::<Arc<dyn UnrApi>>()?;
-        let unr_config = ctx.data::<GrpcConfig>()?;
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
         let token = ctx
             .data_opt::<AuthInfo>()
             .and_then(|info| info.token())
@@ -348,7 +348,7 @@ impl UnrMutations {
 
         set_children_impl(
             api.as_ref(),
-            unr_config,
+            &global_config.unr,
             ForwardedToken::new(token),
             parent,
             children,

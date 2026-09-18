@@ -22,7 +22,7 @@ fn global_config_populates_when_all_vals_present() {
         tlg,
         unr,
         wscan,
-    } = get_global_config()
+    } = &*get_global_config()
         .expect("All test env vars are set in .cargo/config.toml");
 
     assert_eq!(alarms_db.host_addr, "test host");

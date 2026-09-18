@@ -4,11 +4,9 @@
 //! schemas and resolvers, and starts the web server that receives GraphQL queries.
 
 use crate::{
-    config::{ExtapiGlobalConfig, GrpcConfig, KafkaConfig},
+    config::ExtapiGlobalConfig,
     g_rpc::dpm::build_connection,
     graphql::{
-        acsys::AcsysConfigWrapper,
-        alarms::AlarmConfigWrapper,
         auth_handlers::{
             graphql_handler, graphql_ws_handler, unr_graphql_handler,
         },
@@ -66,16 +64,9 @@ async fn base_page() -> Html<&'static str> {
 
 // Creates the portion of the site map that handles the ACSys GraphQL API.
 
-async fn create_acsys_router(
-    clock_config: GrpcConfig, devdb_config: GrpcConfig,
-) -> Router {
+async fn create_acsys_router(global_config: Arc<ExtapiGlobalConfig>) -> Router {
     const Q_ENDPOINT: &str = "/acsys";
     const S_ENDPOINT: &str = "/acsys/s";
-
-    let acsys_config = AcsysConfigWrapper {
-        clock_config,
-        devdb_config,
-    };
 
     let schema = Schema::build(
         acsys::ACSysQueries,
@@ -87,7 +78,7 @@ async fn create_acsys_router(
             .await
             .expect("couldn't make connection to DPM"),
     )
-    .data(acsys_config)
+    .data(global_config)
     .finish();
 
     let graphiql = axum::response::Html(
@@ -107,16 +98,8 @@ async fn create_acsys_router(
         .route(S_ENDPOINT, get(graphql_ws_handler).with_state(schema))
 }
 
-fn create_alarms_router(
-    alarms_db: GrpcConfig, alarms_kafka: KafkaConfig, alarms_svc: GrpcConfig,
-) -> Router {
+fn create_alarms_router(global_config: Arc<ExtapiGlobalConfig>) -> Router {
     const Q_ENDPOINT: &str = "/alarms";
-
-    let alarm_config = AlarmConfigWrapper {
-        alarms_db,
-        alarms_kafka,
-        alarms_svc,
-    };
 
     #[cfg(feature = "kafka")]
     {
@@ -127,7 +110,7 @@ fn create_alarms_router(
             alarms::AlarmsMutations,
             alarms::AlarmsSubscriptions,
         )
-        .data(alarm_config)
+        .data(global_config)
         .finish();
         let graphiql = axum::response::Html(
             async_graphql::http::GraphiQLSource::build()
@@ -153,7 +136,7 @@ fn create_alarms_router(
             alarms::AlarmsMutations,
             EmptySubscription,
         )
-        .data(alarm_config)
+        .data(global_config)
         .finish();
         let graphiql = axum::response::Html(
             async_graphql::http::GraphiQLSource::build()
@@ -194,13 +177,13 @@ fn create_bbm_router() -> Router {
 // Creates the portion of the site map that handles the Device Database
 // GraphQL API.
 
-fn create_devdb_router(devdb_config: GrpcConfig) -> Router {
+fn create_devdb_router(global_config: Arc<ExtapiGlobalConfig>) -> Router {
     const Q_ENDPOINT: &str = "/devdb";
 
     let schema =
         Schema::build(devdb::DevDBQueries, EmptyMutation, EmptySubscription)
             .register_output_type::<devdb::types::DeviceProperty>()
-            .data(devdb_config)
+            .data(global_config)
             .finish();
 
     let graphiql = axum::response::Html(
@@ -211,14 +194,12 @@ fn create_devdb_router(devdb_config: GrpcConfig) -> Router {
 
     Router::new().route(
         Q_ENDPOINT,
-        get(graphiql)
-            .post(graphql_handler)
-            .with_state(schema.clone()),
+        get(graphiql).post(graphql_handler).with_state(schema),
     )
 }
 
 fn create_unr_router_with_api(
-    api: Arc<dyn UnrApi>, unr_config: GrpcConfig,
+    api: Arc<dyn UnrApi>, global_config: Arc<ExtapiGlobalConfig>,
 ) -> Router {
     const Q_ENDPOINT: &str = "/unr";
 
@@ -228,7 +209,7 @@ fn create_unr_router_with_api(
         .limit_depth(4)
         .limit_complexity(200)
         .data(api.clone())
-        .data(unr_config.clone())
+        .data(global_config.clone())
         .finish();
 
     let graphiql = axum::response::Html(
@@ -239,15 +220,17 @@ fn create_unr_router_with_api(
 
     Router::new().route(
         Q_ENDPOINT,
-        get(graphiql)
-            .post(unr_graphql_handler)
-            .with_state((schema, api, unr_config)),
+        get(graphiql).post(unr_graphql_handler).with_state((
+            schema,
+            api,
+            global_config,
+        )),
     )
 }
 
-fn create_unr_router(unr_config: GrpcConfig) -> Router {
+fn create_unr_router(global_config: Arc<ExtapiGlobalConfig>) -> Router {
     let api = Arc::new(GrpcUnrApi);
-    create_unr_router_with_api(api, unr_config)
+    create_unr_router_with_api(api, global_config)
 }
 
 fn create_faas_router() -> Router {
@@ -269,12 +252,12 @@ fn create_faas_router() -> Router {
     )
 }
 
-fn create_tlg_router(tlg_config: GrpcConfig) -> Router {
+fn create_tlg_router(global_config: Arc<ExtapiGlobalConfig>) -> Router {
     const Q_ENDPOINT: &str = "/tlg";
 
     let schema =
         Schema::build(tlg::TlgQueries, tlg::TlgMutations, EmptySubscription)
-            .data(tlg_config)
+            .data(global_config)
             .finish();
 
     let graphiql = axum::response::Html(
@@ -292,7 +275,7 @@ fn create_tlg_router(tlg_config: GrpcConfig) -> Router {
 // Creates the portion of the site map that handles the Wire Scanner GraphQL
 // API.
 
-fn create_wscan_router(wscan_config: GrpcConfig) -> Router {
+fn create_wscan_router(global_config: Arc<ExtapiGlobalConfig>) -> Router {
     const Q_ENDPOINT: &str = "/wscan";
     const S_ENDPOINT: &str = "/wscan/s";
 
@@ -301,7 +284,7 @@ fn create_wscan_router(wscan_config: GrpcConfig) -> Router {
         scanner::ScannerMutations,
         scanner::ScannerSubscriptions,
     )
-    .data(wscan_config)
+    .data(global_config)
     .finish();
 
     let graphiql = axum::response::Html(
@@ -322,27 +305,17 @@ fn create_wscan_router(wscan_config: GrpcConfig) -> Router {
 }
 
 // Creates the web site for the various GraphQL APIs.
-async fn create_site(global_config: ExtapiGlobalConfig) -> Router {
+async fn create_site(global_config: Arc<ExtapiGlobalConfig>) -> Router {
     Router::new()
         .route("/", get(base_page))
-        .merge(
-            create_acsys_router(
-                global_config.clock,
-                global_config.devdb.clone(),
-            )
-            .await,
-        )
-        .merge(create_alarms_router(
-            global_config.alarms_db,
-            global_config.alarms_kafka,
-            global_config.alarms_svc,
-        ))
+        .merge(create_acsys_router(Arc::clone(&global_config)).await)
+        .merge(create_alarms_router(Arc::clone(&global_config)))
         .merge(create_bbm_router())
-        .merge(create_devdb_router(global_config.devdb))
+        .merge(create_devdb_router(Arc::clone(&global_config)))
         .merge(create_faas_router())
-        .merge(create_tlg_router(global_config.tlg))
-        .merge(create_unr_router(global_config.unr))
-        .merge(create_wscan_router(global_config.wscan))
+        .merge(create_tlg_router(Arc::clone(&global_config)))
+        .merge(create_unr_router(Arc::clone(&global_config)))
+        .merge(create_wscan_router(global_config))
         .layer(
             CorsLayer::new()
                 .allow_methods([Method::OPTIONS, Method::GET, Method::POST])
@@ -361,7 +334,7 @@ async fn create_site(global_config: ExtapiGlobalConfig) -> Router {
 // configuration information from the submodules. All accesses are
 // wrapped with CORS support from the `warp` crate.
 
-pub async fn start_service(port: u16, global_config: ExtapiGlobalConfig) {
+pub async fn start_service(port: u16, global_config: Arc<ExtapiGlobalConfig>) {
     let bind_addr = SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), port);
 
     // Load TLS certificate information. If there's an error, we panic.

@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use async_graphql::dataloader::Loader;
 use rust_grpc_lib::auth::ForwardedToken;
 
-use crate::config::GrpcConfig;
+use crate::config::ExtapiGlobalConfig;
 use crate::g_rpc::proto::services::unr::entity::Entity;
 use crate::graphql::unr::api::UnrApi;
 
@@ -24,18 +24,19 @@ impl std::error::Error for LoaderError {}
 #[derive(Clone)]
 pub struct UnrEntityLoader {
     api: Arc<dyn UnrApi>,
+    global_config: Arc<ExtapiGlobalConfig>,
     token: ForwardedToken,
-    unr_config: GrpcConfig,
 }
 
 impl UnrEntityLoader {
     pub fn new(
-        api: Arc<dyn UnrApi>, unr_config: GrpcConfig, token: ForwardedToken,
+        api: Arc<dyn UnrApi>, global_config: Arc<ExtapiGlobalConfig>,
+        token: ForwardedToken,
     ) -> Self {
         Self {
             api,
+            global_config,
             token,
-            unr_config,
         }
     }
 }
@@ -48,7 +49,11 @@ impl Loader<String> for UnrEntityLoader {
         &self, keys: &[String],
     ) -> Result<HashMap<String, Self::Value>, Self::Error> {
         self.api
-            .read_entities(&self.unr_config, self.token.clone(), keys.to_vec())
+            .read_entities(
+                &self.global_config.unr,
+                self.token.clone(),
+                keys.to_vec(),
+            )
             .await
             .map_err(|e| {
                 tracing::warn!("UnrEntityLoader: gRPC error: {e:?}");

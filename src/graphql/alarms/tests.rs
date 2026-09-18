@@ -3,47 +3,34 @@ use async_graphql::Schema;
 use rust_pubsub_lib::{KafkaPublisher, KafkaTestHarness, Message, Publisher};
 #[cfg(feature = "kafka")]
 use serde_json::json;
+use std::sync::LazyLock;
 #[cfg(feature = "kafka")]
 use std::time::Duration;
 #[cfg(feature = "kafka")]
 use tokio::time::timeout;
 
+use crate::config::get_test_config;
 #[cfg(feature = "kafka")]
-use crate::g_rpc::proto::common::alarm::status::{Severity, Source, State};
+use crate::{
+    config::KafkaConfig,
+    g_rpc::proto::common::alarm::status::{Severity, Source, State},
+};
 
 use super::*;
 
-fn test_config() -> AlarmConfigWrapper {
-    AlarmConfigWrapper {
-        alarms_db: GrpcConfig {
-            host_addr: "".into(),
-        },
-        alarms_kafka: KafkaConfig {
-            host_addr: "".into(),
-            topic: "".into(),
-        },
-        alarms_svc: GrpcConfig {
-            host_addr: "".into(),
-        },
-    }
-}
+static CONFIG: LazyLock<Arc<ExtapiGlobalConfig>> =
+    LazyLock::new(|| Arc::new(get_test_config()));
 
 #[cfg(feature = "kafka")]
 fn test_populated_config(
     kafka_host: String, kafka_topic: String,
-) -> AlarmConfigWrapper {
-    AlarmConfigWrapper {
-        alarms_db: GrpcConfig {
-            host_addr: "".into(),
-        },
-        alarms_kafka: KafkaConfig {
-            host_addr: kafka_host,
-            topic: kafka_topic,
-        },
-        alarms_svc: GrpcConfig {
-            host_addr: "".into(),
-        },
-    }
+) -> Arc<ExtapiGlobalConfig> {
+    let mut populated = get_test_config();
+    populated.alarms_kafka = KafkaConfig {
+        host_addr: kafka_host,
+        topic: kafka_topic,
+    };
+    Arc::new(populated)
 }
 
 async fn test_query_returns_err(gql_query: &str, err_msg: &str) {
@@ -53,7 +40,7 @@ async fn test_query_returns_err(gql_query: &str, err_msg: &str) {
     let subscription = async_graphql::EmptySubscription;
 
     let schema = Schema::build(AlarmsQueries, AlarmsMutations, subscription)
-        .data(test_config())
+        .data(CONFIG.clone())
         .finish();
     let result = schema.execute(gql_query).await;
     let err = result.errors.first().unwrap();

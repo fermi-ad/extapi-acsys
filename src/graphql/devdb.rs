@@ -1,5 +1,7 @@
+use std::sync::Arc;
+
 use crate::{
-    config::GrpcConfig,
+    config::ExtapiGlobalConfig,
     g_rpc::{
         devdb,
         proto::services::devdb::{
@@ -10,7 +12,7 @@ use crate::{
     graphql::auth_handlers::AuthInfo,
 };
 
-use async_graphql::{Context, Error, Object};
+use async_graphql::{Context, Object};
 use rust_grpc_lib::auth::ForwardedToken;
 use tokio::time::Instant;
 use tracing::info;
@@ -153,8 +155,8 @@ impl DevDBQueries {
       failed."]
     async fn device_info(
         &self, ctx: &Context<'_>, devices: Vec<String>,
-    ) -> Result<types::DeviceInfoReply, Error> {
-        let devdb_config = ctx.data::<GrpcConfig>()?;
+    ) -> async_graphql::Result<types::DeviceInfoReply> {
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
         let token = ctx
             .data_opt::<AuthInfo>()
             .and_then(AuthInfo::token)
@@ -162,7 +164,7 @@ impl DevDBQueries {
 
         let now = Instant::now();
         let result = devdb::get_device_info(
-            devdb_config,
+            &global_config.devdb,
             ForwardedToken::new(token),
             &devices,
         )

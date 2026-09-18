@@ -1,5 +1,7 @@
+use std::sync::Arc;
+
 use crate::{
-    config::GrpcConfig,
+    config::ExtapiGlobalConfig,
     g_rpc::{
         proto::scanner::{ScanRequest, ScanResult},
         wscan,
@@ -42,14 +44,14 @@ impl ScannerQueries {
         &self, ctx: &Context<'_>,
         #[graphql(desc = "Specifies which scanner station to query.")] id: ID,
     ) -> Result<types::ScanCurrentState> {
-        let scanner_config = ctx.data::<GrpcConfig>()?;
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
         let token = ctx
             .data_opt::<AuthInfo>()
             .and_then(AuthInfo::token)
             .unwrap_or_default();
 
         wscan::get_progress(
-            scanner_config,
+            &global_config.wscan,
             ForwardedToken::new(token),
             id.0.clone(),
         )
@@ -77,17 +79,19 @@ impl ScannerMutations {
 	     obtained from a previous `request_scan` command or from a scan \
 	     progress query."]
     async fn abort_scan(&self, ctx: &Context<'_>, id: ID) -> Result<bool> {
-        let scanner_config = ctx.data::<GrpcConfig>()?;
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
         let token = ctx
             .data_opt::<AuthInfo>()
             .and_then(AuthInfo::token)
             .unwrap_or_default();
 
-        Ok(
-            wscan::abort_scan(scanner_config, ForwardedToken::new(token), id.0)
-                .await
-                .is_ok(),
+        Ok(wscan::abort_scan(
+            &global_config.wscan,
+            ForwardedToken::new(token),
+            id.0,
         )
+        .await
+        .is_ok())
     }
 }
 
@@ -101,14 +105,14 @@ impl ScannerSubscriptions {
         &self, ctx: &Context<'_>, id: ID,
     ) -> Result<impl Stream<Item = types::ScanResult>> {
         info!("requesting scan at station {}", &id.0);
-        let scanner_config = ctx.data::<GrpcConfig>()?;
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
         let token = ctx
             .data_opt::<AuthInfo>()
             .and_then(AuthInfo::token)
             .unwrap_or_default();
 
         wscan::start_scan(
-            scanner_config,
+            &global_config.wscan,
             ForwardedToken::new(token),
             ScanRequest {
                 detector_id: id.0,

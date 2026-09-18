@@ -7,7 +7,7 @@ use async_graphql::{
 use rust_grpc_lib::auth::ForwardedToken;
 
 use crate::{
-    config::GrpcConfig,
+    config::ExtapiGlobalConfig,
     g_rpc::proto::services::unr::entity::Entity,
     graphql::{
         auth_handlers::AuthInfo,
@@ -83,7 +83,7 @@ impl Device {
 
     async fn children(&self, ctx: &Context<'_>) -> Result<Vec<Device>> {
         let api = ctx.data::<Arc<dyn UnrApi>>()?;
-        let unr_config = ctx.data::<GrpcConfig>()?;
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
         let token = ctx
             .data_opt::<AuthInfo>()
             .and_then(|info| info.token())
@@ -91,7 +91,7 @@ impl Device {
 
         let resp = api
             .read_relationships(
-                unr_config,
+                &global_config.unr,
                 ForwardedToken::new(token),
                 vec![self.name.clone()],
             )
@@ -108,7 +108,7 @@ impl Device {
 
     async fn parent(&self, ctx: &Context<'_>) -> Result<Option<Device>> {
         let api = ctx.data::<Arc<dyn UnrApi>>()?;
-        let unr_config = ctx.data::<GrpcConfig>()?;
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
         let token = ctx
             .data_opt::<AuthInfo>()
             .and_then(|info| info.token())
@@ -116,7 +116,7 @@ impl Device {
 
         let resp = api
             .read_relationships(
-                unr_config,
+                &global_config.unr,
                 ForwardedToken::new(token),
                 vec![self.name.clone()],
             )

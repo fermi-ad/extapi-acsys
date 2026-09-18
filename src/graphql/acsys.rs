@@ -16,7 +16,7 @@ use tonic::Status;
 use tracing::{error, info, instrument, warn};
 
 use crate::{
-    config::GrpcConfig,
+    config::ExtapiGlobalConfig,
     g_rpc::{
         clock, devdb,
         dpm::{self, Connection},
@@ -38,11 +38,6 @@ pub mod types;
 
 #[cfg(test)]
 mod tests;
-
-pub struct AcsysConfigWrapper {
-    pub clock_config: GrpcConfig,
-    pub devdb_config: GrpcConfig,
-}
 
 // Useful function to return the current time as a floating point
 // number.
@@ -152,7 +147,7 @@ immediately or after a delay."]
             vec![global::DataReply::default(); drfs.len()];
 
         let mut s = dpm::acquire_devices(
-            ctxt.data::<Connection>().unwrap(),
+            ctxt.data::<Connection>()?,
             ctxt.data::<AuthInfo>()
                 .ok()
                 .and_then(AuthInfo::token)
@@ -192,14 +187,14 @@ an array with 0 or 1 element."]
         &self, ctx: &Context<'_>, id: Option<u32>,
     ) -> Result<Vec<types::PlotConfig>> {
         info!("returning plot configuration(s)");
-        let acsys_config = ctx.data::<AcsysConfigWrapper>()?;
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
         let token = ctx
             .data_opt::<AuthInfo>()
             .and_then(AuthInfo::token)
             .unwrap_or_default();
 
         match devdb::get_plot_config(
-            &acsys_config.devdb_config,
+            &global_config.devdb,
             ForwardedToken::new(token),
             id,
         )
@@ -304,14 +299,14 @@ want to set."]
         &self, ctx: &Context<'_>, id: Option<usize>, name: String,
         config: String,
     ) -> Result<usize> {
-        let acsys_config = ctx.data::<AcsysConfigWrapper>()?;
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
         let token = ctx
             .data_opt::<AuthInfo>()
             .and_then(AuthInfo::token)
             .unwrap_or_default();
 
         devdb::save_plot_config(
-            &acsys_config.devdb_config,
+            &global_config.devdb,
             ForwardedToken::new(token),
             id,
             name,
@@ -327,14 +322,14 @@ want to set."]
         &self, ctx: &Context<'_>, configuration_id: i32,
     ) -> Result<global::StatusReply> {
         info!("deleting plot configuration {}", configuration_id);
-        let acsys_config = ctx.data::<AcsysConfigWrapper>()?;
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
         let token = ctx
             .data_opt::<AuthInfo>()
             .and_then(AuthInfo::token)
             .unwrap_or_default();
 
         match devdb::delete_plot_config(
-            &acsys_config.devdb_config,
+            &global_config.devdb,
             ForwardedToken::new(token),
             configuration_id,
         )
@@ -931,7 +926,7 @@ impl ACSysSubscriptions {
         &self, ctxt: &Context<'_>, drfs: Vec<String>, trigger_event: u8,
         start_time: Option<f64>, end_time: Option<f64>,
     ) -> Result<PlotStream> {
-        let acsys_config = ctxt.data::<AcsysConfigWrapper>()?;
+        let global_config = ctxt.data::<Arc<ExtapiGlobalConfig>>()?;
         let token = ctxt
             .data_opt::<AuthInfo>()
             .and_then(AuthInfo::token)
@@ -969,7 +964,7 @@ impl ACSysSubscriptions {
             &[0x0f]
         };
         let mut tclk = clock::subscribe(
-            &acsys_config.clock_config,
+            &global_config.clock,
             ForwardedToken::new(token),
             clock_list,
         )

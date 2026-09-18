@@ -2,8 +2,10 @@
 //!
 //! Provides the query implementations for the Alarms GraphQL interface.
 
+use std::sync::Arc;
+
 use crate::{
-    config::{GrpcConfig, KafkaConfig},
+    config::ExtapiGlobalConfig,
     g_rpc::{alarms_db, alarms_svc},
     graphql::{alarms::types::Alarm, auth_handlers::AuthInfo},
 };
@@ -26,12 +28,6 @@ mod tests;
 mod types;
 mod utils;
 
-pub struct AlarmConfigWrapper {
-    pub alarms_db: GrpcConfig,
-    pub alarms_kafka: KafkaConfig,
-    pub alarms_svc: GrpcConfig,
-}
-
 /// Describes the mutations (data writes/updates) allowed by the GQL interface.
 #[derive(Default)]
 pub struct AlarmsMutations;
@@ -41,14 +37,14 @@ impl AlarmsMutations {
     async fn acknowledge_alarms(
         &self, ctx: &Context<'_>, devices: Vec<String>, updated_by: String,
     ) -> Result<Vec<String>, Error> {
-        let alarms_svc_config = &ctx.data::<AlarmConfigWrapper>()?.alarms_svc;
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
         let token = ctx
             .data_opt::<AuthInfo>()
             .and_then(|info| info.token())
             .unwrap_or_default();
 
         match alarms_svc::acknowledge_alarms(
-            alarms_svc_config,
+            &global_config.alarms_svc,
             ForwardedToken::new(token),
             devices.clone(),
             updated_by,
@@ -64,14 +60,14 @@ impl AlarmsMutations {
     async fn activate_alarms(
         &self, ctx: &Context<'_>, devices: Vec<String>, updated_by: String,
     ) -> Result<Vec<String>, Error> {
-        let alarms_svc_config = &ctx.data::<AlarmConfigWrapper>()?.alarms_svc;
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
         let token = ctx
             .data_opt::<AuthInfo>()
             .and_then(|info| info.token())
             .unwrap_or_default();
 
         match alarms_svc::activate_alarms(
-            alarms_svc_config,
+            &global_config.alarms_svc,
             ForwardedToken::new(token),
             devices.clone(),
             updated_by,
@@ -87,14 +83,14 @@ impl AlarmsMutations {
     async fn bypass_alarms(
         &self, ctx: &Context<'_>, devices: Vec<String>, updated_by: String,
     ) -> Result<Vec<String>, Error> {
-        let alarms_svc_config = &ctx.data::<AlarmConfigWrapper>()?.alarms_svc;
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
         let token = ctx
             .data_opt::<AuthInfo>()
             .and_then(|info| info.token())
             .unwrap_or_default();
 
         match alarms_svc::bypass_alarms(
-            alarms_svc_config,
+            &global_config.alarms_svc,
             ForwardedToken::new(token),
             devices.clone(),
             updated_by,
@@ -112,14 +108,14 @@ impl AlarmsMutations {
         end_time: Option<DateTime<Utc>>, timer_type: String,
         updated_by: String,
     ) -> Result<AlarmTimer, Error> {
-        let alarms_db_config = &ctx.data::<AlarmConfigWrapper>()?.alarms_db;
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
         let token = ctx
             .data_opt::<AuthInfo>()
             .and_then(|info| info.token())
             .unwrap_or_default();
 
         match alarms_db::timers::create(
-            alarms_db_config,
+            &global_config.alarms_db,
             ForwardedToken::new(token),
             device,
             end_time,
@@ -137,14 +133,14 @@ impl AlarmsMutations {
     async fn delete_alarm_timer(
         &self, ctx: &Context<'_>, device: String, timer_type: String,
     ) -> Result<String, Error> {
-        let alarms_db_config = &ctx.data::<AlarmConfigWrapper>()?.alarms_db;
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
         let token = ctx
             .data_opt::<AuthInfo>()
             .and_then(|info| info.token())
             .unwrap_or_default();
 
         match alarms_db::timers::delete(
-            alarms_db_config,
+            &global_config.alarms_db,
             ForwardedToken::new(token),
             device.clone(),
             timer_type,
@@ -161,14 +157,14 @@ impl AlarmsMutations {
         &self, ctx: &Context<'_>, devices: Vec<String>, updated_by: String,
         wake: DateTime<Utc>,
     ) -> Result<Vec<String>, Error> {
-        let alarms_svc_config = &ctx.data::<AlarmConfigWrapper>()?.alarms_svc;
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
         let token = ctx
             .data_opt::<AuthInfo>()
             .and_then(|info| info.token())
             .unwrap_or_default();
 
         match alarms_svc::snooze_alarms(
-            alarms_svc_config,
+            &global_config.alarms_svc,
             ForwardedToken::new(token),
             devices.clone(),
             updated_by,
@@ -188,14 +184,14 @@ impl AlarmsMutations {
         end_time: Option<DateTime<Utc>>, timer_type: String,
         updated_by: String,
     ) -> Result<AlarmTimer, Error> {
-        let alarms_db_config = &ctx.data::<AlarmConfigWrapper>()?.alarms_db;
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
         let token = ctx
             .data_opt::<AuthInfo>()
             .and_then(|info| info.token())
             .unwrap_or_default();
 
         match alarms_db::timers::update(
-            alarms_db_config,
+            &global_config.alarms_db,
             ForwardedToken::new(token),
             device,
             end_time,
@@ -219,14 +215,14 @@ impl AlarmsQueries {
     async fn alarms_group_metadata(
         &self, ctx: &Context<'_>,
     ) -> Result<Vec<AlarmGroupMetadatum>, Error> {
-        let alarms_db_config = &ctx.data::<AlarmConfigWrapper>()?.alarms_db;
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
         let token = ctx
             .data_opt::<AuthInfo>()
             .and_then(|info| info.token())
             .unwrap_or_default();
 
         match alarms_db::groups::read_metadata(
-            alarms_db_config,
+            &global_config.alarms_db,
             ForwardedToken::new(token),
         )
         .await
@@ -247,14 +243,14 @@ impl AlarmsQueries {
     async fn alarms_groups(
         &self, ctx: &Context<'_>, groups: Vec<String>,
     ) -> Result<Vec<AlarmGroup>, Error> {
-        let alarms_db_config = &ctx.data::<AlarmConfigWrapper>()?.alarms_db;
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
         let token = ctx
             .data_opt::<AuthInfo>()
             .and_then(|info| info.token())
             .unwrap_or_default();
 
         match alarms_db::groups::read_groups(
-            alarms_db_config,
+            &global_config.alarms_db,
             ForwardedToken::new(token),
             groups,
         )
@@ -276,14 +272,14 @@ impl AlarmsQueries {
     async fn alarms_user_layouts(
         &self, ctx: &Context<'_>,
     ) -> Result<Vec<UserLayout>, Error> {
-        let alarms_db_config = &ctx.data::<AlarmConfigWrapper>()?.alarms_db;
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
         let token = ctx
             .data_opt::<AuthInfo>()
             .and_then(|info| info.token())
             .unwrap_or_default();
 
         match alarms_db::layouts::read_layouts(
-            alarms_db_config,
+            &global_config.alarms_db,
             ForwardedToken::new(token),
         )
         .await
@@ -304,30 +300,33 @@ impl AlarmsQueries {
     async fn alarms_snapshot(
         &self, ctx: &Context<'_>,
     ) -> Result<Vec<Alarm>, Error> {
-        let alarms_svc_config = &ctx.data::<AlarmConfigWrapper>()?.alarms_svc;
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
         let token = ctx
             .data_opt::<AuthInfo>()
             .and_then(|info| info.token())
             .unwrap_or_default();
 
-        alarms_svc::get_snapshot(alarms_svc_config, ForwardedToken::new(token))
-            .await
-            .map(|statuses| statuses.into_iter().map(Alarm::from).collect())
-            .or_else(|e| handle_error(e, "getting alarm snapshot"))
+        alarms_svc::get_snapshot(
+            &global_config.alarms_svc,
+            ForwardedToken::new(token),
+        )
+        .await
+        .map(|statuses| statuses.into_iter().map(Alarm::from).collect())
+        .or_else(|e| handle_error(e, "getting alarm snapshot"))
     }
 
     /// Reads all alarms timers of the specified [`TimerType`](crate::g_rpc::proto::services::alarms::TimerType) for the given user.
     async fn alarms_timers(
         &self, ctx: &Context<'_>, timer_type: String, user: String,
     ) -> Result<Vec<AlarmTimer>, Error> {
-        let alarms_db_config = &ctx.data::<AlarmConfigWrapper>()?.alarms_db;
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
         let token = ctx
             .data_opt::<AuthInfo>()
             .and_then(|info| info.token())
             .unwrap_or_default();
 
         match alarms_db::timers::read(
-            alarms_db_config,
+            &global_config.alarms_db,
             ForwardedToken::new(token),
             timer_type,
             user,
@@ -359,10 +358,10 @@ impl AlarmsSubscriptions {
     async fn alarms(
         &self, ctx: &Context<'_>,
     ) -> Result<impl Stream<Item = Alarm>, Error> {
-        let kafka_config = &ctx.data::<AlarmConfigWrapper>()?.alarms_kafka;
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
         let stream = KafkaSubscriber::new(
-            kafka_config.host_addr.clone(),
-            kafka_config.topic.clone(),
+            global_config.alarms_kafka.host_addr.clone(),
+            global_config.alarms_kafka.topic.clone(),
         )
         .get_stream::<StringMessage>()
         .await;
