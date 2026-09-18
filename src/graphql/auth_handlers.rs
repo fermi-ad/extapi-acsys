@@ -173,14 +173,22 @@ impl IntoResponse for Unauthorized {
 }
 
 fn websocket_init_handler(value: Value) -> Ready<async_graphql::Result<Data>> {
-    let token = value
+    let extracted_token = value
         .as_object()
         .and_then(|payload| payload.get("Authorization"))
-        .and_then(Value::as_str)
-        .and_then(|token_val| {
-            (token_val.starts_with("Bearer "))
-                .then(|| token_val.replace("Bearer ", ""))
-        });
+        .and_then(Value::as_str);
+
+    if let Some(token_val) = extracted_token
+        && !token_val.starts_with("Bearer ")
+    {
+        return ready(Err(async_graphql::Error::new(
+            "Unauthorized: must use Bearer token scheme",
+        )));
+    }
+
+    let token = extracted_token
+        .and_then(|token_val| token_val.strip_prefix("Bearer "))
+        .map(str::to_string);
 
     let mut data = Data::default();
     data.insert(AuthInfo {
