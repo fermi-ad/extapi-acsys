@@ -141,10 +141,6 @@ where
     async fn from_request_parts(
         parts: &mut Parts, state: &S,
     ) -> Result<Self, Self::Rejection> {
-        if !parts.headers.contains_key(header::AUTHORIZATION) {
-            return Ok(AuthInfo { bearer_token: None });
-        }
-
         match TypedHeader::<Authorization<Bearer>>::from_request_parts(
             parts, state,
         )
@@ -153,6 +149,9 @@ where
             Ok(TypedHeader(auth)) => Ok(AuthInfo {
                 bearer_token: Some(auth.token().to_owned()),
             }),
+            Err(e) if e.reason().is_missing() => {
+                Ok(AuthInfo { bearer_token: None })
+            }
             Err(_) => Err(Unauthorized),
         }
     }
