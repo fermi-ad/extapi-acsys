@@ -2,10 +2,12 @@
 //!
 //! Provides a resource/graph-oriented GraphQL schema for UNR data.
 
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
-use crate::g_rpc::proto::services::unr::{
-    entity::Entity, relationship::Relationship,
+use crate::{
+    config::{ExtapiGlobalConfig, GrpcConfig},
+    g_rpc::proto::services::unr::{entity::Entity, relationship::Relationship},
+    graphql::auth_handlers::AuthInfo,
 };
 
 use self::api::UnrApi;
@@ -13,6 +15,7 @@ use async_graphql::{
     Context, Error, ErrorExtensions, Object, Result,
     dataloader::{DataLoader, HashMapCache},
 };
+use rust_grpc_lib::auth::ForwardedToken;
 use tonic::{Code, Status};
 use tracing::error;
 use uuid::Uuid;
@@ -38,23 +41,23 @@ fn handle_error(e: Status, gerund: &str) -> Error {
 }
 
 async fn set_children_impl(
-    api: &dyn UnrApi, parent: String, children: Vec<String>,
+    api: &dyn UnrApi, unr_config: &GrpcConfig, token: ForwardedToken,
+    parent: String, children: Vec<String>,
 ) -> Result<types::Device> {
     // Read the current children for this parent.
     let resp = api
-        .read_relationships(vec![parent.clone()])
+        .read_relationships(unr_config, token.clone(), vec![parent.clone()])
         .await
         .map_err(|e| handle_error(e, "reading current relationships"))?;
 
-    let current_children: std::collections::HashSet<String> = resp
+    let current_children: HashSet<String> = resp
         .entries
         .into_iter()
         .find(|entry| entry.id == parent)
         .map(|entry| entry.children.into_iter().collect())
         .unwrap_or_default();
 
-    let requested_children: std::collections::HashSet<String> =
-        children.into_iter().collect();
+    let requested_children: HashSet<String> = children.into_iter().collect();
 
     // Delete relationships for children present in current but not requested.
     let to_delete: Vec<Relationship> = current_children
@@ -66,7 +69,7 @@ async fn set_children_impl(
         .collect();
 
     if !to_delete.is_empty() {
-        api.delete_relationships(to_delete)
+        api.delete_relationships(unr_config, token.clone(), to_delete)
             .await
             .map_err(|e| handle_error(e, "deleting relationships"))?;
     }
@@ -81,7 +84,7 @@ async fn set_children_impl(
         .collect();
 
     if !to_create.is_empty() {
-        api.create_relationships(to_create)
+        api.create_relationships(unr_config, token, to_create)
             .await
             .map_err(|e| handle_error(e, "creating relationships"))?;
     }
@@ -103,13 +106,23 @@ impl UnrQueries {
         // Also prime the DataLoader cache for all returned devices.
         //
         // UNR semantics: empty `ids` means "return all rows".
-        let api = ctx.data_unchecked::<Arc<dyn UnrApi>>();
+        let api = ctx.data::<Arc<dyn UnrApi>>()?;
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
+        let token = ctx
+            .data_opt::<AuthInfo>()
+            .and_then(|info| info.token())
+            .unwrap_or_default();
         let resp = api
-            .read_entities(names.clone())
+            .read_entities(
+                &global_config.unr,
+                ForwardedToken::new(token),
+                names.clone(),
+            )
             .await
             .map_err(|e| handle_error(e, "reading entities"))?;
 
-        let loader = ctx.data_unchecked::<DataLoader<loader::UnrEntityLoader, HashMapCache>>();
+        let loader =
+            ctx.data::<DataLoader<loader::UnrEntityLoader, HashMapCache>>()?;
 
         // If the client requested specific names, we return a per-name union
         // (Device | NotFound). If they omitted `names`, we return all devices.
@@ -129,8 +142,7 @@ impl UnrQueries {
                 .collect());
         }
 
-        let mut present: std::collections::HashSet<String> =
-            std::collections::HashSet::new();
+        let mut present = HashSet::new();
         for entity in resp.entities {
             present.insert(entity.id.clone());
             loader.feed_one(entity.id.clone(), entity).await;
@@ -159,6 +171,13 @@ impl UnrMutations {
     async fn create_device(
         &self, ctx: &Context<'_>, input: types::CreateDeviceInput,
     ) -> Result<types::Device> {
+        let api = ctx.data::<Arc<dyn UnrApi>>()?;
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
+        let token = ctx
+            .data_opt::<AuthInfo>()
+            .and_then(|info| info.token())
+            .unwrap_or_default();
+
         let children = input.children.clone();
         let device_name = input.name.clone();
 
@@ -169,20 +188,25 @@ impl UnrMutations {
             protocol: input.protocol,
         };
 
-        let api = ctx.data_unchecked::<Arc<dyn UnrApi>>();
-
         // Pre-validate children existence before creating anything.
         // This avoids partially-completed writes when a child doesn't exist.
         if let Some(children) = children.as_ref()
             && !children.is_empty()
         {
             let resp = api
-                .read_entities(children.clone())
+                .read_entities(
+                    &global_config.unr,
+                    ForwardedToken::new(token.clone()),
+                    children.clone(),
+                )
                 .await
                 .map_err(|e| handle_error(e, "validating children"))?;
 
-            let present: std::collections::HashSet<&str> =
-                resp.entities.iter().map(|e| e.id.as_str()).collect();
+            let present: HashSet<&str> = resp
+                .entities
+                .iter()
+                .map(|entity| entity.id.as_str())
+                .collect();
 
             if let Some(missing) =
                 children.iter().find(|c| !present.contains(c.as_str()))
@@ -193,17 +217,26 @@ impl UnrMutations {
             }
         }
 
-        api.create_entities(vec![entity.clone()])
-            .await
-            .map_err(|e| handle_error(e, "creating device"))?;
+        api.create_entities(
+            &global_config.unr,
+            ForwardedToken::new(token.clone()),
+            vec![entity],
+        )
+        .await
+        .map_err(|e| handle_error(e, "creating device"))?;
 
         // Add relationships (if requested).
         // Note: this is not atomic with entity creation; if this fails, the
         // device exists but has no/partial relationships (acceptable).
         if let Some(children) = children
-            && let Err(e) =
-                set_children_impl(api.as_ref(), device_name.clone(), children)
-                    .await
+            && let Err(e) = set_children_impl(
+                api.as_ref(),
+                &global_config.unr,
+                ForwardedToken::new(token),
+                device_name.clone(),
+                children,
+            )
+            .await
         {
             return Err(e.extend_with(|_, ext| {
                 ext.set("deviceCreated", true);
@@ -211,16 +244,19 @@ impl UnrMutations {
             }));
         }
 
-        // Read-your-writes: prime/overwrite entity cache for this request.
-        let loader = ctx.data_unchecked::<DataLoader<loader::UnrEntityLoader, HashMapCache>>();
-        loader.feed_one(device_name.clone(), entity).await;
-
         Ok(types::Device::new(device_name))
     }
 
     async fn update_device(
         &self, ctx: &Context<'_>, input: types::UpdateDeviceInput,
     ) -> Result<types::Device> {
+        let api = ctx.data::<Arc<dyn UnrApi>>()?;
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
+        let token = ctx
+            .data_opt::<AuthInfo>()
+            .and_then(|info| info.token())
+            .unwrap_or_default();
+
         let device_name = input.name.clone();
 
         let entity = Entity {
@@ -230,12 +266,14 @@ impl UnrMutations {
             protocol: input.protocol,
         };
 
-        let api = ctx.data_unchecked::<Arc<dyn UnrApi>>();
-
         // grpc-unr-service update does not signal missing devices. Make
         // semantics explicit by pre-checking existence.
         let exists = api
-            .read_entities(vec![device_name.clone()])
+            .read_entities(
+                &global_config.unr,
+                ForwardedToken::new(token.clone()),
+                vec![device_name.clone()],
+            )
             .await
             .map_err(|e| handle_error(e, "validating device exists"))?
             .entities
@@ -248,12 +286,17 @@ impl UnrMutations {
             )));
         }
 
-        api.update_entities(vec![entity.clone()])
-            .await
-            .map_err(|e| handle_error(e, "updating device"))?;
+        api.update_entities(
+            &global_config.unr,
+            ForwardedToken::new(token),
+            vec![entity.clone()],
+        )
+        .await
+        .map_err(|e| handle_error(e, "updating device"))?;
 
-        // Read-your-writes: prime/overwrite entity cache for this request.
-        let loader = ctx.data_unchecked::<DataLoader<loader::UnrEntityLoader, HashMapCache>>();
+        // Read-your-writes: prime/overwrite BaseInfo cache for this request.
+        let loader =
+            ctx.data::<DataLoader<loader::UnrEntityLoader, HashMapCache>>()?;
         loader.feed_one(device_name.clone(), entity).await;
 
         Ok(types::Device::new(device_name))
@@ -262,16 +305,26 @@ impl UnrMutations {
     async fn delete_devices(
         &self, ctx: &Context<'_>, names: Vec<String>,
     ) -> Result<Vec<String>> {
+        let api = ctx.data::<Arc<dyn UnrApi>>()?;
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
+        let token = ctx
+            .data_opt::<AuthInfo>()
+            .and_then(|info| info.token())
+            .unwrap_or_default();
+
         if names.is_empty() {
             return Err(Error::new(
                 "deleteDevices requires at least one device name",
             ));
         }
 
-        let api = ctx.data_unchecked::<Arc<dyn UnrApi>>();
-        api.delete_entities(names.clone())
-            .await
-            .map_err(|e| handle_error(e, "deleting devices"))?;
+        api.delete_entities(
+            &global_config.unr,
+            ForwardedToken::new(token),
+            names.clone(),
+        )
+        .await
+        .map_err(|e| handle_error(e, "deleting devices"))?;
         Ok(names)
     }
 
@@ -282,10 +335,24 @@ impl UnrMutations {
         // read-your-writes for entity fields if the client requests them.
         // Ensure the loader has at least the parent cached if it exists.
         // (No-op if it doesn't.)
-        let loader = ctx.data_unchecked::<DataLoader<loader::UnrEntityLoader, HashMapCache>>();
+        let loader =
+            ctx.data::<DataLoader<loader::UnrEntityLoader, HashMapCache>>()?;
         let _ = loader.load_one(parent.clone()).await;
 
-        let api = ctx.data_unchecked::<Arc<dyn UnrApi>>();
-        set_children_impl(api.as_ref(), parent, children).await
+        let api = ctx.data::<Arc<dyn UnrApi>>()?;
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
+        let token = ctx
+            .data_opt::<AuthInfo>()
+            .and_then(|info| info.token())
+            .unwrap_or_default();
+
+        set_children_impl(
+            api.as_ref(),
+            &global_config.unr,
+            ForwardedToken::new(token),
+            parent,
+            children,
+        )
+        .await
     }
 }

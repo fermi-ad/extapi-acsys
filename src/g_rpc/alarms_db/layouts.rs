@@ -2,25 +2,33 @@
 //!
 //! Provides functions for interacting with alarms user layouts.
 
-use crate::g_rpc::{
-    alarms_db::AlarmsDbConnectionAdapter,
-    proto::{
-        google::protobuf::Empty, services::alarm_user_layouts::UserLayouts,
+use crate::{
+    config::GrpcConfig,
+    g_rpc::{
+        proto::{
+            google::protobuf::Empty,
+            services::alarm_user_layouts::{
+                UserLayouts,
+                user_layouts_service_client::UserLayoutsServiceClient,
+            },
+        },
+        utils::handle_rpc_error,
     },
 };
+use rust_grpc_lib::auth::ForwardedToken;
 use tonic::{Response, Status};
 
 /// Requests all [`UserLayouts`] from the database.
-pub async fn read_layouts() -> Result<UserLayouts, Status> {
-    super::ALARMS_DB_CLIENT
-        .run_with_client(get_user_layouts)
+pub async fn read_layouts(
+    alarms_db_config: &GrpcConfig, token: ForwardedToken,
+) -> Result<UserLayouts, Status> {
+    let mut client = UserLayoutsServiceClient::from_endpoint_with_provider(
+        &alarms_db_config.host_addr,
+        token,
+    )
+    .map_err(|err| handle_rpc_error(err, "Alarms DB"))?;
+    client
+        .get_user_layouts(Empty {})
         .await
-}
-
-// Named function (rather than a closure) so it can be passed directly
-// to `run_with_client` without capturing.
-async fn get_user_layouts(
-    mut client: AlarmsDbConnectionAdapter,
-) -> Result<Response<UserLayouts>, Status> {
-    client.layouts_conn.get_user_layouts(Empty {}).await
+        .map(Response::into_inner)
 }

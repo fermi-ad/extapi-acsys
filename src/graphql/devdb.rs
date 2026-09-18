@@ -1,12 +1,19 @@
-use crate::g_rpc::{
-    devdb,
-    proto::services::devdb::{
-        DigitalControlItem, DigitalExtStatusItem, DigitalStatusItem, InfoEntry,
-        info_entry,
+use std::sync::Arc;
+
+use crate::{
+    config::ExtapiGlobalConfig,
+    g_rpc::{
+        devdb,
+        proto::services::devdb::{
+            DigitalControlItem, DigitalExtStatusItem, DigitalStatusItem,
+            InfoEntry, info_entry,
+        },
     },
+    graphql::auth_handlers::AuthInfo,
 };
 
-use async_graphql::Object;
+use async_graphql::{Context, Object};
+use rust_grpc_lib::auth::ForwardedToken;
 use tokio::time::Instant;
 use tracing::info;
 
@@ -23,7 +30,7 @@ pub mod types;
 
 fn to_dig_ctrl(item: &DigitalControlItem) -> types::DigControlEntry {
     types::DigControlEntry {
-        value: item.value as i32,
+        value: item.value.cast_signed(),
         short_name: item.short_name.clone(),
         long_name: item.long_name.clone(),
     }
@@ -147,14 +154,25 @@ impl DevDBQueries {
       device's information or an error status indicating why the query \
       failed."]
     async fn device_info(
-        &self, devices: Vec<String>,
-    ) -> types::DeviceInfoReply {
+        &self, ctx: &Context<'_>, devices: Vec<String>,
+    ) -> async_graphql::Result<types::DeviceInfoReply> {
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
+        let token = ctx
+            .data_opt::<AuthInfo>()
+            .and_then(AuthInfo::token)
+            .unwrap_or_default();
+
         let now = Instant::now();
-        let result = devdb::get_device_info(&devices).await;
+        let result = devdb::get_device_info(
+            &global_config.devdb,
+            ForwardedToken::new(token),
+            &devices,
+        )
+        .await;
         let rpc_time = now.elapsed().as_micros();
 
         let reply = match result {
-            Ok(s) => s.into_inner().set.iter().map(to_info_result).collect(),
+            Ok(s) => s.set.iter().map(to_info_result).collect(),
             Err(e) => {
                 let err_msg = format!("{}", e);
 
@@ -180,6 +198,6 @@ impl DevDBQueries {
             rpc_time,
             total_time - rpc_time
         );
-        types::DeviceInfoReply { result: reply }
+        Ok(types::DeviceInfoReply { result: reply })
     }
 }

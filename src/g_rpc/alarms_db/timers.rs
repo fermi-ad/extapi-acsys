@@ -2,17 +2,22 @@
 //!
 //! Provides functions for interacting with alarms timers.
 
-use crate::g_rpc::{
-    alarms_db::AlarmsDbConnectionAdapter,
-    proto::{
-        google::protobuf::{Empty, Timestamp},
-        services::alarm_timers::{
-            AlarmTimer, AlarmTimers, DeleteRequest, ReadRequest, TimerType,
+use crate::{
+    config::GrpcConfig,
+    g_rpc::{
+        proto::{
+            google::protobuf::{Empty, Timestamp},
+            services::alarm_timers::{
+                AlarmTimer, AlarmTimers, DeleteRequest, ReadRequest, TimerType,
+                alarm_timer_service_client::AlarmTimerServiceClient,
+            },
         },
+        utils::handle_rpc_error,
     },
 };
 use chrono::{DateTime, Timelike, Utc};
-use tonic::Status;
+use rust_grpc_lib::auth::ForwardedToken;
+use tonic::{Response, Status};
 
 /// Creates a new [`AlarmTimer`] in the database.
 ///
@@ -25,9 +30,15 @@ use tonic::Status;
 /// Returns the created [`AlarmTimer`] as submitted (the server
 /// responds with `Empty`; no server-side fields are reflected back).
 pub async fn create(
-    device: String, end_time: Option<DateTime<Utc>>, timer_type: String,
-    updated_by: String,
+    alarms_db_config: &GrpcConfig, token: ForwardedToken, device: String,
+    end_time: Option<DateTime<Utc>>, timer_type: String, updated_by: String,
 ) -> Result<AlarmTimer, Status> {
+    let mut client = AlarmTimerServiceClient::from_endpoint_with_provider(
+        &alarms_db_config.host_addr,
+        token,
+    )
+    .map_err(|err| handle_rpc_error(err, "Alarms DB"))?;
+
     let timer = AlarmTimer {
         device,
         end_time: datetime_to_timestamp(end_time),
@@ -36,13 +47,8 @@ pub async fn create(
         updated_by,
     };
     let returned_copy = timer.clone();
-    let do_create = |mut client: AlarmsDbConnectionAdapter| async move {
-        client.timers_conn.create(timer).await
-    };
-    super::ALARMS_DB_CLIENT
-        .run_with_client(do_create)
-        .await
-        .map(|_| returned_copy)
+
+    client.create(timer).await.map(|_| returned_copy)
 }
 
 /// Deletes the specified [`AlarmTimer`] from the database.
@@ -51,30 +57,40 @@ pub async fn create(
 /// (e.g. `"TimerType_SNOOZE"`). Unrecognised values are silently
 /// treated as [`TimerType::Unknown`].
 pub async fn delete(
-    device: String, timer_type: String,
+    alarms_db_config: &GrpcConfig, token: ForwardedToken, device: String,
+    timer_type: String,
 ) -> Result<Empty, Status> {
+    let mut client = AlarmTimerServiceClient::from_endpoint_with_provider(
+        &alarms_db_config.host_addr,
+        token,
+    )
+    .map_err(|err| handle_rpc_error(err, "Alarms DB"))?;
+
     let request = DeleteRequest {
         device,
         timer_type: string_to_timer_type(&timer_type) as i32,
     };
-    let do_delete = |mut client: AlarmsDbConnectionAdapter| async move {
-        client.timers_conn.delete(request).await
-    };
-    super::ALARMS_DB_CLIENT.run_with_client(do_delete).await
+
+    client.delete(request).await.map(Response::into_inner)
 }
 
 /// Reads all [`AlarmTimers`] of the specified [`TimerType`] for a given user.
 pub async fn read(
-    timer_type: String, user: String,
+    alarms_db_config: &GrpcConfig, token: ForwardedToken, timer_type: String,
+    user: String,
 ) -> Result<AlarmTimers, Status> {
+    let mut client = AlarmTimerServiceClient::from_endpoint_with_provider(
+        &alarms_db_config.host_addr,
+        token,
+    )
+    .map_err(|err| handle_rpc_error(err, "Alarms DB"))?;
+
     let request = ReadRequest {
         timer_type: string_to_timer_type(&timer_type) as i32,
         user,
     };
-    let do_read = |mut client: AlarmsDbConnectionAdapter| async move {
-        client.timers_conn.read(request).await
-    };
-    super::ALARMS_DB_CLIENT.run_with_client(do_read).await
+
+    client.read(request).await.map(Response::into_inner)
 }
 
 /// Updates an [`AlarmTimer`] in the database.
@@ -88,9 +104,15 @@ pub async fn read(
 /// Returns the updated [`AlarmTimer`] as submitted (the server
 /// responds with `Empty`; no server-side fields are reflected back).
 pub async fn update(
-    device: String, end_time: Option<DateTime<Utc>>, timer_type: String,
-    updated_by: String,
+    alarms_db_config: &GrpcConfig, token: ForwardedToken, device: String,
+    end_time: Option<DateTime<Utc>>, timer_type: String, updated_by: String,
 ) -> Result<AlarmTimer, Status> {
+    let mut client = AlarmTimerServiceClient::from_endpoint_with_provider(
+        &alarms_db_config.host_addr,
+        token,
+    )
+    .map_err(|err| handle_rpc_error(err, "Alarms DB"))?;
+
     let timer = AlarmTimer {
         device,
         end_time: datetime_to_timestamp(end_time),
@@ -99,13 +121,8 @@ pub async fn update(
         updated_by,
     };
     let returned_copy = timer.clone();
-    let do_update = |mut client: AlarmsDbConnectionAdapter| async move {
-        client.timers_conn.update(timer).await
-    };
-    super::ALARMS_DB_CLIENT
-        .run_with_client(do_update)
-        .await
-        .map(|_| returned_copy)
+
+    client.update(timer).await.map(|_| returned_copy)
 }
 
 fn datetime_to_timestamp(datetime: Option<DateTime<Utc>>) -> Option<Timestamp> {
