@@ -76,11 +76,17 @@ async fn unr_graphql_handler(
     State((schema, api)): State<(UnrSchema, Arc<dyn unr::api::UnrApi>)>,
     headers: HeaderMap, req: GraphQLRequest,
 ) -> GraphQLResponse {
-    let request = with_auth(req, &headers).data(DataLoader::with_cache(
-        unr::loader::UnrEntityLoader::new(api),
-        tokio::spawn,
-        HashMapCache::default(),
-    ));
+    let request = with_auth(req, &headers)
+        .data(DataLoader::with_cache(
+            unr::loader::UnrEntityLoader::new(api.clone()),
+            tokio::spawn,
+            HashMapCache::default(),
+        ))
+        .data(DataLoader::with_cache(
+            unr::loader::UnrRelationshipLoader::new(api),
+            tokio::spawn,
+            HashMapCache::default(),
+        ));
 
     schema.execute(request).await.into()
 }
