@@ -50,9 +50,6 @@ impl Loader<String> for UnrEntityLoader {
     }
 }
 
-/// Batch loader for UNR Relationship records.
-///
-/// Keys are UNR entity IDs.
 #[derive(Clone)]
 pub struct UnrRelationshipLoader {
     pub api: Arc<dyn UnrApi>,
