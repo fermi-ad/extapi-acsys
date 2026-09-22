@@ -190,15 +190,20 @@ fn schema_with_api(
     api: Arc<dyn UnrApi>,
 ) -> Schema<UnrQueries, UnrMutations, EmptySubscription> {
     Schema::build(UnrQueries, UnrMutations, EmptySubscription)
-            .data(api.clone())
-            // Tests execute the schema directly (bypassing the HTTP handler), so
-            // attach a loader here to emulate request-scoped injection.
-            .data(DataLoader::with_cache(
-                loader::UnrEntityLoader::new(api),
-                tokio::spawn,
-                HashMapCache::default(),
-            ))
-            .finish()
+        .data(api.clone())
+        // Tests execute the schema directly (bypassing the HTTP handler), so
+        // attach loaders here to emulate request-scoped injection.
+        .data(DataLoader::with_cache(
+            loader::UnrEntityLoader::new(api.clone()),
+            tokio::spawn,
+            HashMapCache::default(),
+        ))
+        .data(DataLoader::with_cache(
+            loader::UnrRelationshipLoader::new(api),
+            tokio::spawn,
+            HashMapCache::default(),
+        ))
+        .finish()
 }
 
 fn json_data(result: async_graphql::Response) -> Value {
