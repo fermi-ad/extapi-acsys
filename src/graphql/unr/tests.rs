@@ -38,6 +38,8 @@ struct FakeUnrApi {
 
     /// Count how many times `read_entities` was called.
     read_entities_calls: Mutex<usize>,
+    /// Count how many times `read_relationships` was called.
+    read_relationships_calls: Mutex<usize>,
 }
 
 impl FakeUnrApi {
@@ -143,6 +145,8 @@ impl UnrApi for FakeUnrApi {
     ) -> Result<ReadRelationshipResponse, Status> {
         self.check_fail()?;
 
+        *self.read_relationships_calls.lock().unwrap() += 1;
+
         let edges = self.edges.lock().unwrap();
         let mut entries: Vec<RelationshipDetails> = Vec::new();
 
@@ -190,15 +194,20 @@ fn schema_with_api(
     api: Arc<dyn UnrApi>,
 ) -> Schema<UnrQueries, UnrMutations, EmptySubscription> {
     Schema::build(UnrQueries, UnrMutations, EmptySubscription)
-            .data(api.clone())
-            // Tests execute the schema directly (bypassing the HTTP handler), so
-            // attach a loader here to emulate request-scoped injection.
-            .data(DataLoader::with_cache(
-                loader::UnrEntityLoader::new(api),
-                tokio::spawn,
-                HashMapCache::default(),
-            ))
-            .finish()
+        .data(api.clone())
+        // Tests execute the schema directly (bypassing the HTTP handler), so
+        // attach loaders here to emulate request-scoped injection.
+        .data(DataLoader::with_cache(
+            loader::UnrEntityLoader::new(api.clone()),
+            tokio::spawn,
+            HashMapCache::default(),
+        ))
+        .data(DataLoader::with_cache(
+            loader::UnrRelationshipLoader::new(api),
+            tokio::spawn,
+            HashMapCache::default(),
+        ))
+        .finish()
 }
 
 fn json_data(result: async_graphql::Response) -> Value {
@@ -1166,4 +1175,133 @@ async fn mutation_returns_err_on_bad_connection() {
             "Error creating device.",
         )
         .await;
+}
+
+#[tokio::test]
+async fn relationship_loader_batches_multiple_devices_into_one_call() {
+    let api = Arc::new(FakeUnrApi::default());
+
+    api.create_entities(vec![
+        Entity {
+            id: "A".to_string(),
+            address: "ADDR".to_string(),
+            r#type: "TYPE".to_string(),
+            protocol: "PROTO".to_string(),
+        },
+        Entity {
+            id: "B".to_string(),
+            address: "ADDR".to_string(),
+            r#type: "TYPE".to_string(),
+            protocol: "PROTO".to_string(),
+        },
+        Entity {
+            id: "C".to_string(),
+            address: "ADDR".to_string(),
+            r#type: "TYPE".to_string(),
+            protocol: "PROTO".to_string(),
+        },
+        Entity {
+            id: "D".to_string(),
+            address: "ADDR".to_string(),
+            r#type: "TYPE".to_string(),
+            protocol: "PROTO".to_string(),
+        },
+    ])
+    .await
+    .unwrap();
+
+    api.create_relationships(vec![
+        Relationship {
+            parent_id: "A".to_string(),
+            child_id: "C".to_string(),
+        },
+        Relationship {
+            parent_id: "B".to_string(),
+            child_id: "D".to_string(),
+        },
+    ])
+    .await
+    .unwrap();
+
+    let schema = schema_with_api(api.clone());
+    let result = schema
+        .execute(
+            r#"
+                query {
+                  devices(names:["A","B"]) {
+                    __typename
+                    ... on Device { name children { name } }
+                  }
+                }
+                "#,
+        )
+        .await;
+
+    assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+    let v = json_data(result);
+    assert_eq!(v["devices"][0]["children"][0]["name"], "C");
+    assert_eq!(v["devices"][1]["children"][0]["name"], "D");
+
+    assert_eq!(*api.read_relationships_calls.lock().unwrap(), 1);
+}
+
+#[tokio::test]
+async fn relationship_loader_serves_repeated_keys_from_cache() {
+    let api = Arc::new(FakeUnrApi::default());
+
+    api.create_entities(vec![
+        Entity {
+            id: "A".to_string(),
+            address: "ADDR".to_string(),
+            r#type: "TYPE".to_string(),
+            protocol: "PROTO".to_string(),
+        },
+        Entity {
+            id: "C".to_string(),
+            address: "ADDR".to_string(),
+            r#type: "TYPE".to_string(),
+            protocol: "PROTO".to_string(),
+        },
+    ])
+    .await
+    .unwrap();
+
+    api.create_relationships(vec![Relationship {
+        parent_id: "A".to_string(),
+        child_id: "C".to_string(),
+    }])
+    .await
+    .unwrap();
+
+    // The first resolver wave loads relationships for A and C. The nested
+    // `parent` under A's children requests C again in a later wave; that
+    // lookup must be served from the DataLoader cache, not another call.
+    let schema = schema_with_api(api.clone());
+    let result = schema
+        .execute(
+            r#"
+                query {
+                  devices(names:["A","C"]) {
+                    __typename
+                    ... on Device {
+                      name
+                      children { name parent { name } }
+                      parent { name }
+                    }
+                  }
+                }
+                "#,
+        )
+        .await;
+
+    assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+    let v = json_data(result);
+    assert_eq!(v["devices"][0]["name"], "A");
+    assert_eq!(v["devices"][0]["children"][0]["name"], "C");
+    assert_eq!(v["devices"][0]["children"][0]["parent"]["name"], "A");
+    assert!(v["devices"][0]["parent"].is_null());
+    assert_eq!(v["devices"][1]["name"], "C");
+    assert_eq!(v["devices"][1]["parent"]["name"], "A");
+
+    assert_eq!(*api.read_relationships_calls.lock().unwrap(), 1);
 }

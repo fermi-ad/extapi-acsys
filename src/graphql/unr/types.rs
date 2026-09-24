@@ -1,11 +1,13 @@
-use crate::g_rpc::proto::services::unr::entity::Entity;
-use std::sync::Arc;
+use crate::g_rpc::proto::services::unr::{
+    entity::Entity, relationship::RelationshipDetails,
+};
 
-use super::{api::UnrApi, handle_error, loader};
+use super::loader;
 use async_graphql::{
     Context, Error, InputObject, Result, SimpleObject, Union,
     dataloader::{DataLoader, HashMapCache},
 };
+use uuid::Uuid;
 
 /// Input for creating a device.
 #[derive(Clone, Debug, InputObject)]
@@ -72,33 +74,34 @@ impl Device {
         Ok(entity.and_then(|entity| Self::non_empty(entity.protocol)))
     }
 
-    async fn children(&self, ctx: &Context<'_>) -> Result<Vec<Device>> {
-        let api = ctx.data_unchecked::<Arc<dyn UnrApi>>();
-        let resp = api
-            .read_relationships(vec![self.name.clone()])
-            .await
-            .map_err(|e| handle_error(e, "reading relationship"))?;
+    #[graphql(skip)]
+    async fn load_relationships(
+        &self, ctx: &Context<'_>,
+    ) -> Result<Option<RelationshipDetails>> {
+        let loader =
+            ctx.data_unchecked::<DataLoader<loader::UnrRelationshipLoader, HashMapCache>>();
+        loader.load_one(self.name.clone()).await.map_err(|e| {
+            // Include an ID in the response so the error can be correlated
+            // with server logs.
+            let err_id = Uuid::new_v4();
+            tracing::warn!("{err_id} relationship loader error: {e:?}");
+            Error::new(format!(
+                "Error reading relationship. See server logs for details. (Error ID: {err_id})"
+            ))
+        })
+    }
 
-        Ok(resp
-            .entries
-            .into_iter()
-            .find(|entry| entry.id == self.name)
-            .map(|entry| entry.children.into_iter().map(Device::new).collect())
+    async fn children(&self, ctx: &Context<'_>) -> Result<Vec<Device>> {
+        let details = self.load_relationships(ctx).await?;
+        Ok(details
+            .map(|d| d.children.into_iter().map(Device::new).collect())
             .unwrap_or_default())
     }
 
     async fn parent(&self, ctx: &Context<'_>) -> Result<Option<Device>> {
-        let api = ctx.data_unchecked::<Arc<dyn UnrApi>>();
-        let resp = api
-            .read_relationships(vec![self.name.clone()])
-            .await
-            .map_err(|e| handle_error(e, "reading relationship"))?;
-
-        Ok(resp
-            .entries
-            .into_iter()
-            .find(|entry| entry.id == self.name)
-            .and_then(|entry| Self::non_empty(entry.child_of))
+        let details = self.load_relationships(ctx).await?;
+        Ok(details
+            .and_then(|d| Self::non_empty(d.child_of))
             .map(Device::new))
     }
 }

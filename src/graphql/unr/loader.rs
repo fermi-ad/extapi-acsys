@@ -1,4 +1,6 @@
-use crate::g_rpc::proto::services::unr::entity::Entity;
+use crate::g_rpc::proto::services::unr::{
+    entity::Entity, relationship::RelationshipDetails,
+};
 use async_graphql::dataloader::Loader;
 use std::{collections::HashMap, sync::Arc};
 
@@ -47,6 +49,40 @@ impl Loader<String> for UnrEntityLoader {
                 resp.entities
                     .into_iter()
                     .map(|entity| (entity.id.clone(), entity))
+                    .collect()
+            })
+    }
+}
+
+#[derive(Clone)]
+pub struct UnrRelationshipLoader {
+    pub api: Arc<dyn UnrApi>,
+}
+
+impl UnrRelationshipLoader {
+    pub fn new(api: Arc<dyn UnrApi>) -> Self {
+        Self { api }
+    }
+}
+
+impl Loader<String> for UnrRelationshipLoader {
+    type Value = RelationshipDetails;
+    type Error = LoaderError;
+
+    async fn load(
+        &self, keys: &[String],
+    ) -> Result<HashMap<String, Self::Value>, Self::Error> {
+        self.api
+            .read_relationships(keys.to_vec())
+            .await
+            .map_err(|e| {
+                tracing::warn!("UnrRelationshipLoader: gRPC error: {e:?}");
+                LoaderError(e.to_string())
+            })
+            .map(|resp| {
+                resp.entries
+                    .into_iter()
+                    .map(|details| (details.id.clone(), details))
                     .collect()
             })
     }
