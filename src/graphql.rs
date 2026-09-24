@@ -3,93 +3,40 @@
 //! This module contains the code for the GraphQL service. It defines the various GraphQL
 //! schemas and resolvers, and starts the web server that receives GraphQL queries.
 
-use crate::g_rpc::dpm::build_connection;
-use async_graphql::{
-    EmptyMutation, EmptySubscription, ObjectType, Schema, SubscriptionType,
-    dataloader::{DataLoader, HashMapCache},
+use crate::{
+    config::ExtapiGlobalConfig,
+    g_rpc::dpm::build_connection,
+    graphql::{
+        auth_handlers::{
+            graphql_handler, graphql_ws_handler, unr_graphql_handler,
+        },
+        unr::{
+            UnrMutations, UnrQueries,
+            api::{GrpcUnrApi, UnrApi},
+        },
+    },
 };
-use async_graphql_axum::{
-    GraphQLRequest, GraphQLResponse, GraphQLSubscription,
-};
-use axum::{
-    Router,
-    extract::State,
-    http::header::{AUTHORIZATION, HeaderMap},
-    response::Html,
-    routing::get,
-};
+use async_graphql::{EmptyMutation, EmptySubscription, Schema};
+use axum::{Router, response::Html, routing::get};
 use http::{Method, header};
-#[cfg(feature = "kafka")]
-use rust_env_var_lib::env_var;
 use std::{
     net::{IpAddr, Ipv6Addr, SocketAddr},
     sync::Arc,
 };
 use tower_http::cors::{Any, CorsLayer};
-use tracing::{info, instrument};
-use types::AuthInfo;
+use tracing::info;
 
 mod acsys;
 mod alarms;
+mod auth_handlers;
 mod bbm;
 mod devdb;
+mod errors;
 mod faas;
 mod scanner;
 mod tlg;
 mod types;
 mod unr;
-
-// Generic function which adds `AuthInfo` to the context. This
-// function can be used for all the GraphQL schemas.
-
-/// Injects per-request auth data from the Authorization header.
-/// Must be called by every handler — this service is zero-trust.
-fn with_auth(
-    req: GraphQLRequest, headers: &HeaderMap,
-) -> async_graphql::Request {
-    req.into_inner().data(AuthInfo::new(
-        headers
-            .get(AUTHORIZATION)
-            .map(|v| v.to_str().unwrap().to_string()),
-    ))
-}
-
-#[instrument(name = "GRAPHQL", skip(schema, req, headers),
-	     fields(who = tracing::field::Empty))]
-async fn graphql_handler<Q, M, S>(
-    State(schema): State<Schema<Q, M, S>>, headers: HeaderMap,
-    req: GraphQLRequest,
-) -> GraphQLResponse
-where
-    Q: ObjectType + Send + Sync + 'static,
-    M: ObjectType + Send + Sync + 'static,
-    S: SubscriptionType + Send + Sync + 'static,
-{
-    schema.execute(with_auth(req, &headers)).await.into()
-}
-
-type UnrSchema = Schema<unr::UnrQueries, unr::UnrMutations, EmptySubscription>;
-
-#[instrument(name = "GRAPHQL", skip(schema, api, req, headers),
-	     fields(who = tracing::field::Empty))]
-async fn unr_graphql_handler(
-    State((schema, api)): State<(UnrSchema, Arc<dyn unr::api::UnrApi>)>,
-    headers: HeaderMap, req: GraphQLRequest,
-) -> GraphQLResponse {
-    let request = with_auth(req, &headers)
-        .data(DataLoader::with_cache(
-            unr::loader::UnrEntityLoader::new(api.clone()),
-            tokio::spawn,
-            HashMapCache::default(),
-        ))
-        .data(DataLoader::with_cache(
-            unr::loader::UnrRelationshipLoader::new(api),
-            tokio::spawn,
-            HashMapCache::default(),
-        ));
-
-    schema.execute(request).await.into()
-}
 
 // Returns an HTML document that has links to the various GraphQL APIs.
 
@@ -118,7 +65,7 @@ async fn base_page() -> Html<&'static str> {
 
 // Creates the portion of the site map that handles the ACSys GraphQL API.
 
-async fn create_acsys_router() -> Router {
+async fn create_acsys_router(global_config: Arc<ExtapiGlobalConfig>) -> Router {
     const Q_ENDPOINT: &str = "/acsys";
     const S_ENDPOINT: &str = "/acsys/s";
 
@@ -132,6 +79,7 @@ async fn create_acsys_router() -> Router {
             .await
             .expect("couldn't make connection to DPM"),
     )
+    .data(global_config)
     .finish();
 
     let graphiql = axum::response::Html(
@@ -148,10 +96,10 @@ async fn create_acsys_router() -> Router {
                 .post(graphql_handler)
                 .with_state(schema.clone()),
         )
-        .route_service(S_ENDPOINT, GraphQLSubscription::new(schema))
+        .route(S_ENDPOINT, get(graphql_ws_handler).with_state(schema))
 }
 
-fn create_alarms_router() -> Router {
+fn create_alarms_router(global_config: Arc<ExtapiGlobalConfig>) -> Router {
     const Q_ENDPOINT: &str = "/alarms";
 
     #[cfg(feature = "kafka")]
@@ -161,11 +109,9 @@ fn create_alarms_router() -> Router {
         let schema = Schema::build(
             alarms::AlarmsQueries,
             alarms::AlarmsMutations,
-            alarms::AlarmsSubscriptions::new(
-                get_alarms_host(),
-                get_alarms_topic(),
-            ),
+            alarms::AlarmsSubscriptions,
         )
+        .data(global_config)
         .finish();
         let graphiql = axum::response::Html(
             async_graphql::http::GraphiQLSource::build()
@@ -181,7 +127,7 @@ fn create_alarms_router() -> Router {
                     .post(graphql_handler)
                     .with_state(schema.clone()),
             )
-            .route_service(S_ENDPOINT, GraphQLSubscription::new(schema))
+            .route(S_ENDPOINT, get(graphql_ws_handler).with_state(schema))
     }
 
     #[cfg(not(feature = "kafka"))]
@@ -191,6 +137,7 @@ fn create_alarms_router() -> Router {
             alarms::AlarmsMutations,
             EmptySubscription,
         )
+        .data(global_config)
         .finish();
         let graphiql = axum::response::Html(
             async_graphql::http::GraphiQLSource::build()
@@ -199,9 +146,7 @@ fn create_alarms_router() -> Router {
         );
         Router::new().route(
             Q_ENDPOINT,
-            get(graphiql)
-                .post(graphql_handler)
-                .with_state(schema.clone()),
+            get(graphiql).post(graphql_handler).with_state(schema),
         )
     }
 }
@@ -233,12 +178,13 @@ fn create_bbm_router() -> Router {
 // Creates the portion of the site map that handles the Device Database
 // GraphQL API.
 
-fn create_devdb_router() -> Router {
+fn create_devdb_router(global_config: Arc<ExtapiGlobalConfig>) -> Router {
     const Q_ENDPOINT: &str = "/devdb";
 
     let schema =
         Schema::build(devdb::DevDBQueries, EmptyMutation, EmptySubscription)
             .register_output_type::<devdb::types::DeviceProperty>()
+            .data(global_config)
             .finish();
 
     let graphiql = axum::response::Html(
@@ -249,21 +195,22 @@ fn create_devdb_router() -> Router {
 
     Router::new().route(
         Q_ENDPOINT,
-        get(graphiql)
-            .post(graphql_handler)
-            .with_state(schema.clone()),
+        get(graphiql).post(graphql_handler).with_state(schema),
     )
 }
 
-fn create_unr_router_with_api(api: Arc<dyn unr::api::UnrApi>) -> Router {
+fn create_unr_router_with_api(
+    api: Arc<dyn UnrApi>, global_config: Arc<ExtapiGlobalConfig>,
+) -> Router {
     const Q_ENDPOINT: &str = "/unr";
 
-    let schema = Schema::build(unr::UnrQueries, unr::UnrMutations, EmptySubscription)
+    let schema = Schema::build(UnrQueries, UnrMutations, EmptySubscription)
         // UNR can be queried recursively via `Device.children`; cap depth/complexity
         // to prevent expensive full-graph traversals.
         .limit_depth(4)
         .limit_complexity(200)
         .data(api.clone())
+        .data(global_config.clone())
         .finish();
 
     let graphiql = axum::response::Html(
@@ -274,15 +221,17 @@ fn create_unr_router_with_api(api: Arc<dyn unr::api::UnrApi>) -> Router {
 
     Router::new().route(
         Q_ENDPOINT,
-        get(graphiql)
-            .post(unr_graphql_handler)
-            .with_state((schema, api)),
+        get(graphiql).post(unr_graphql_handler).with_state((
+            schema,
+            api,
+            global_config,
+        )),
     )
 }
 
-fn create_unr_router() -> Router {
-    let api = Arc::new(unr::api::GrpcUnrApi);
-    create_unr_router_with_api(api)
+fn create_unr_router(global_config: Arc<ExtapiGlobalConfig>) -> Router {
+    let api = Arc::new(GrpcUnrApi);
+    create_unr_router_with_api(api, global_config)
 }
 
 fn create_faas_router() -> Router {
@@ -304,11 +253,12 @@ fn create_faas_router() -> Router {
     )
 }
 
-fn create_tlg_router() -> Router {
+fn create_tlg_router(global_config: Arc<ExtapiGlobalConfig>) -> Router {
     const Q_ENDPOINT: &str = "/tlg";
 
     let schema =
         Schema::build(tlg::TlgQueries, tlg::TlgMutations, EmptySubscription)
+            .data(global_config)
             .finish();
 
     let graphiql = axum::response::Html(
@@ -326,7 +276,7 @@ fn create_tlg_router() -> Router {
 // Creates the portion of the site map that handles the Wire Scanner GraphQL
 // API.
 
-fn create_wscan_router() -> Router {
+fn create_wscan_router(global_config: Arc<ExtapiGlobalConfig>) -> Router {
     const Q_ENDPOINT: &str = "/wscan";
     const S_ENDPOINT: &str = "/wscan/s";
 
@@ -335,6 +285,7 @@ fn create_wscan_router() -> Router {
         scanner::ScannerMutations,
         scanner::ScannerSubscriptions,
     )
+    .data(global_config)
     .finish();
 
     let graphiql = axum::response::Html(
@@ -351,24 +302,21 @@ fn create_wscan_router() -> Router {
                 .post(graphql_handler)
                 .with_state(schema.clone()),
         )
-        .route_service(S_ENDPOINT, GraphQLSubscription::new(schema))
+        .route(S_ENDPOINT, get(graphql_ws_handler).with_state(schema))
 }
 
 // Creates the web site for the various GraphQL APIs.
-async fn create_site() -> Router {
-    let router = Router::new()
+async fn create_site(global_config: Arc<ExtapiGlobalConfig>) -> Router {
+    Router::new()
         .route("/", get(base_page))
-        .merge(create_acsys_router().await);
-
-    let router = router.merge(create_alarms_router());
-
-    router
+        .merge(create_acsys_router(Arc::clone(&global_config)).await)
+        .merge(create_alarms_router(Arc::clone(&global_config)))
         .merge(create_bbm_router())
-        .merge(create_devdb_router())
+        .merge(create_devdb_router(Arc::clone(&global_config)))
         .merge(create_faas_router())
-        .merge(create_tlg_router())
-        .merge(create_unr_router())
-        .merge(create_wscan_router())
+        .merge(create_tlg_router(Arc::clone(&global_config)))
+        .merge(create_unr_router(Arc::clone(&global_config)))
+        .merge(create_wscan_router(global_config))
         .layer(
             CorsLayer::new()
                 .allow_methods([Method::OPTIONS, Method::GET, Method::POST])
@@ -387,12 +335,12 @@ async fn create_site() -> Router {
 // configuration information from the submodules. All accesses are
 // wrapped with CORS support from the `warp` crate.
 
-pub async fn start_service(port: u16) {
+pub async fn start_service(port: u16, global_config: Arc<ExtapiGlobalConfig>) {
     let bind_addr = SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), port);
 
     // Load TLS certificate information. If there's an error, we panic.
 
-    let config = axum_server::tls_rustls::RustlsConfig::from_pem_file(
+    let rustls_config = axum_server::tls_rustls::RustlsConfig::from_pem_file(
         "/etc/ssl/private/acsys-proxy.fnal.gov/cert.pem",
         "/etc/ssl/private/acsys-proxy.fnal.gov/key.pem",
     )
@@ -403,34 +351,22 @@ pub async fn start_service(port: u16) {
 
     // Build up the routes for the site.
 
-    let app = create_site().await;
+    let app = create_site(global_config).await;
 
     info!("web site handlers built successfully");
 
     // Start the server.
 
-    axum_server::tls_rustls::bind_rustls(bind_addr, config)
+    axum_server::tls_rustls::bind_rustls(bind_addr, rustls_config)
         .serve(app.into_make_service())
         .await
         .unwrap();
 }
 
-#[cfg(feature = "kafka")]
-const ALARMS_KAFKA_HOST: &str = "ALARMS_KAFKA_HOST";
-#[cfg(feature = "kafka")]
-fn get_alarms_host() -> String {
-    env_var::expect(ALARMS_KAFKA_HOST)
-}
-
-#[cfg(feature = "kafka")]
-const ALARMS_KAFKA_TOPIC: &str = "ALARMS_KAFKA_TOPIC";
-#[cfg(feature = "kafka")]
-fn get_alarms_topic() -> String {
-    env_var::expect(ALARMS_KAFKA_TOPIC)
-}
-
 #[cfg(test)]
 mod tests {
+    use crate::graphql::auth_handlers::AuthInfo;
+
     use super::*;
     use async_graphql::{Context, Object};
     use axum::{
@@ -438,7 +374,7 @@ mod tests {
         http::{Request, StatusCode},
         routing::post,
     };
-    use http::header::AUTHORIZATION;
+    use http::header;
     use tower::Service;
 
     // Create a simple GraphQL site. This site is more for testing the
@@ -451,7 +387,7 @@ mod tests {
     #[Object]
     impl TestQuery {
         async fn authenticated(&self, ctxt: &Context<'_>) -> bool {
-            ctxt.data_unchecked::<AuthInfo>().has_token()
+            ctxt.data_unchecked::<AuthInfo>().token().is_some()
         }
     }
 
@@ -475,7 +411,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_authentication() {
-        let mut site = Router::new().merge(mk_test_site());
+        let mut site = mk_test_site();
         let query = r#"{ "query" : "{ authenticated }" }"#;
 
         {
@@ -510,21 +446,16 @@ mod tests {
                         .method("POST")
                         .uri("/test")
                         .header("content-type", "application/json")
-                        .header(AUTHORIZATION, "Basic MYJWTTOKEN")
+                        .header(header::AUTHORIZATION, "Basic MYJWTTOKEN")
                         .body(Body::from(query))
                         .unwrap(),
                 )
                 .await
                 .unwrap();
 
-            assert_eq!(response.status(), StatusCode::OK);
-
-            let body = response.into_body();
-
-            assert_eq!(
-                to_bytes(body, 1024).await.unwrap(),
-                b"{\"data\":{\"authenticated\":false}}"[..]
-            );
+            // The TypedHeader rejects the request before it hits the GraphQL resolver (good!)
+            // Only Bearer/OAuth 2.0 is supported.
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
         }
 
         {
@@ -535,7 +466,7 @@ mod tests {
                         .method("POST")
                         .uri("/test")
                         .header("content-type", "application/json")
-                        .header(AUTHORIZATION, "Bearer MYJWTTOKEN")
+                        .header(header::AUTHORIZATION, "Bearer MYJWTTOKEN")
                         .body(Body::from(query))
                         .unwrap(),
                 )

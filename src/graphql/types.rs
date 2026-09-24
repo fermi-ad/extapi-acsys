@@ -1,44 +1,6 @@
 use crate::g_rpc::proto::common::device;
 use async_graphql::{ComplexObject, InputObject, SimpleObject, Union};
-use base64::{Engine, engine::general_purpose::STANDARD_NO_PAD};
 use chrono::{DateTime, Duration, Utc};
-use serde_json::{self, Value};
-
-#[derive(Debug)]
-pub struct AuthInfo {
-    bearer_token: Option<String>,
-}
-
-impl AuthInfo {
-    pub fn new(info: Option<String>) -> Self {
-        AuthInfo {
-            bearer_token: info
-                .and_then(|v| v.strip_prefix("Bearer ").map(String::from)),
-        }
-    }
-
-    #[cfg(test)]
-    pub fn has_token(&self) -> bool {
-        self.bearer_token.is_some()
-    }
-
-    pub fn token(&self) -> Option<String> {
-        self.bearer_token.clone()
-    }
-
-    pub fn unsafe_account(&self) -> Option<String> {
-        self.bearer_token.as_deref().and_then(|token| {
-            let body = token.split('.').nth(1)?;
-            let json = STANDARD_NO_PAD.decode(body).ok()?;
-            let result: Value = serde_json::from_slice(&json).ok()?;
-
-            result
-                .get("preferred_username")
-                .and_then(Value::as_str)
-                .map(String::from)
-        })
-    }
-}
 
 #[doc = "Contains an informative message describing why a request resulted \
 	 in an error."]

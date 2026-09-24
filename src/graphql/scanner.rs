@@ -1,8 +1,17 @@
-use crate::g_rpc::{proto::scanner::ScanResult, wscan};
+use std::sync::Arc;
 
-use async_graphql::{Object, Subscription, types::ID};
+use crate::{
+    config::ExtapiGlobalConfig,
+    g_rpc::{
+        proto::scanner::{ScanRequest, ScanResult},
+        wscan,
+    },
+    graphql::auth_handlers::AuthInfo,
+};
+
+use async_graphql::{Context, Error, Object, Result, Subscription, types::ID};
 use futures_util::{Stream, StreamExt};
-use tonic::Status;
+use rust_grpc_lib::auth::ForwardedToken;
 use tracing::{error, info};
 
 // Pull in our local types.
@@ -32,19 +41,25 @@ impl ScannerQueries {
 
     #[doc = "Requests the progress of the motion station associated with the `id`."]
     async fn get_progress(
-        &self,
+        &self, ctx: &Context<'_>,
         #[graphql(desc = "Specifies which scanner station to query.")] id: ID,
-    ) -> types::ScanCurrentState {
-        match wscan::get_progress(id.0.clone()).await {
-            Ok(resp) => types::ScanCurrentState::from(resp.into_inner()),
-            Err(e) => types::ScanCurrentState {
-                detector_id: id,
-                state: types::ScanState::Error(types::ScanStateError {
-                    err_message: format!("error: {}", e),
-                    position: None,
-                }),
-            },
-        }
+    ) -> Result<types::ScanCurrentState> {
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
+        let token = ctx
+            .data_opt::<AuthInfo>()
+            .and_then(AuthInfo::token)
+            .unwrap_or_default();
+
+        wscan::get_progress(
+            &global_config.wscan,
+            ForwardedToken::new(token),
+            id.0.clone(),
+        )
+        .await
+        .map(|resp| types::ScanCurrentState::from(resp.into_inner()))
+        .map_err(|e| {
+            Error::new(format!("error scanning detector {}: {e}", id.0))
+        })
     }
 }
 
@@ -63,8 +78,20 @@ impl ScannerMutations {
     #[doc = "Requests that a scan be stopped. The `id` parameter is the value \
 	     obtained from a previous `request_scan` command or from a scan \
 	     progress query."]
-    async fn abort_scan(&self, id: ID) -> bool {
-        wscan::abort_scan(id.0).await.is_ok()
+    async fn abort_scan(&self, ctx: &Context<'_>, id: ID) -> Result<bool> {
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
+        let token = ctx
+            .data_opt::<AuthInfo>()
+            .and_then(AuthInfo::token)
+            .unwrap_or_default();
+
+        Ok(wscan::abort_scan(
+            &global_config.wscan,
+            ForwardedToken::new(token),
+            id.0,
+        )
+        .await
+        .is_ok())
     }
 }
 
@@ -75,21 +102,40 @@ pub struct ScannerSubscriptions;
 impl ScannerSubscriptions {
     #[doc = "Starts a scan at the specified station."]
     async fn get_scanner_state(
-        &self, id: ID,
-    ) -> Result<impl Stream<Item = types::ScanResult>, Status> {
+        &self, ctx: &Context<'_>, id: ID,
+    ) -> Result<impl Stream<Item = types::ScanResult>> {
         info!("requesting scan at station {}", &id.0);
-        wscan::start_scan(id.0, 0.0, 0.0, 0.0, 0.0, 0)
-            .await
-            .inspect_err(|e| error!("{e}"))
-            .map(|s| {
-                s.into_inner().map(Result::unwrap).map(
-                    |ScanResult { progress, voltage }| types::ScanResult {
-                        progress: types::ScanCurrentState::from(
-                            progress.unwrap(),
-                        ),
-                        voltage,
-                    },
-                )
-            })
+        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
+        let token = ctx
+            .data_opt::<AuthInfo>()
+            .and_then(AuthInfo::token)
+            .unwrap_or_default();
+
+        wscan::start_scan(
+            &global_config.wscan,
+            ForwardedToken::new(token),
+            ScanRequest {
+                detector_id: id.0,
+                position_start: 0.0,
+                position_end: 0.0,
+                position_step: 0.0,
+                sampling_duration: 0.0,
+                pulses_per_sample: 0,
+            },
+        )
+        .await
+        .map_err(|e| {
+            let message = format!("{e}");
+            error!(message);
+            Error::new(message)
+        })
+        .map(|s| {
+            s.into_inner().map(Result::unwrap).map(
+                |ScanResult { progress, voltage }| types::ScanResult {
+                    progress: types::ScanCurrentState::from(progress.unwrap()),
+                    voltage,
+                },
+            )
+        })
     }
 }

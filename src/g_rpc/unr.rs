@@ -4,158 +4,143 @@
 //! the Entity and Relationship APIs. Both clients share the same
 //! underlying [`tonic::transport::Channel`] via [`UnrConnectionAdapter`].
 
-use crate::g_rpc::{
-    connection_utils::{ConnectionAdapter, ConnectionPort},
-    proto::{
-        google::protobuf::Empty,
-        services::unr::{
-            entity::{
-                CreateEntityRequest, DeleteEntityRequest, Entity,
-                ReadEntityRequest, ReadEntityResponse, UpdateEntityRequest,
-                entity_service_client::EntityServiceClient,
-            },
-            relationship::{
-                CreateRelationshipRequest, DeleteRelationshipRequest,
-                ReadRelationshipRequest, ReadRelationshipResponse,
-                Relationship,
-                relationship_service_client::RelationshipServiceClient,
+use rust_grpc_lib::auth::ForwardedToken;
+use tonic::{Response, Status};
+
+use crate::{
+    config::GrpcConfig,
+    g_rpc::{
+        errors::handle_rpc_error,
+        proto::{
+            google::protobuf::Empty,
+            services::unr::{
+                entity::{
+                    CreateEntityRequest, DeleteEntityRequest, Entity,
+                    ReadEntityRequest, ReadEntityResponse, UpdateEntityRequest,
+                    entity_service_client::EntityServiceClient,
+                },
+                relationship::{
+                    CreateRelationshipRequest, DeleteRelationshipRequest,
+                    ReadRelationshipRequest, ReadRelationshipResponse,
+                    Relationship,
+                    relationship_service_client::RelationshipServiceClient,
+                },
             },
         },
     },
 };
-use std::sync::LazyLock;
-use tokio::try_join;
-use tonic::{
-    Response, Status,
-    transport::{Channel, Error},
-};
-
-/// The environment variable name to use when requesting the location of the UNR gRPC service.
-const UNR_GRPC_HOST: &str = "UNR_GRPC_HOST";
-
-/// A static instance of [`ConnectionPort`] wrapping [`UnrConnectionAdapter`].
-/// Utilizes [`LazyLock`] to only instantiate upon the first reference to this field.
-static UNR_CLIENT: LazyLock<ConnectionPort<UnrConnectionAdapter>> =
-    LazyLock::new(|| ConnectionPort::new(UNR_GRPC_HOST));
 
 /// Makes a request to the UNR gRPC service to create new [`Entity`] records.
-pub async fn create_entities(entities: Vec<Entity>) -> Result<Empty, Status> {
-    let do_create = |mut client: UnrConnectionAdapter| async move {
-        client
-            .entity_conn
-            .create(CreateEntityRequest { entities })
-            .await
-            .map(Response::into_inner)
-            .map(Into::into)
-    };
-    UNR_CLIENT.run_with_client(do_create).await
+pub async fn create_entities(
+    unr_config: &GrpcConfig, token: ForwardedToken, entities: Vec<Entity>,
+) -> Result<Empty, Status> {
+    let mut client = EntityServiceClient::from_endpoint_with_provider(
+        &unr_config.host_addr,
+        token,
+    )
+    .map_err(|err| handle_rpc_error(err, "UNR Service"))?;
+
+    client
+        .create(CreateEntityRequest { entities })
+        .await
+        .map(Response::into_inner)
 }
 
 /// Makes a request to the UNR gRPC service to read [`Entity`] records for the given IDs.
 /// If `ids` is empty, the service returns all rows.
 pub async fn read_entities(
-    ids: Vec<String>,
+    unr_config: &GrpcConfig, token: ForwardedToken, ids: Vec<String>,
 ) -> Result<ReadEntityResponse, Status> {
-    let do_read = |mut client: UnrConnectionAdapter| async move {
-        client
-            .entity_conn
-            .read(ReadEntityRequest { ids })
-            .await
-            .map(Response::into_inner)
-            .map(Into::into)
-    };
-    UNR_CLIENT.run_with_client(do_read).await
+    let mut client = EntityServiceClient::from_endpoint_with_provider(
+        &unr_config.host_addr,
+        token,
+    )
+    .map_err(|err| handle_rpc_error(err, "UNR Service"))?;
+
+    client
+        .read(ReadEntityRequest { ids })
+        .await
+        .map(Response::into_inner)
 }
 
 /// Makes a request to the UNR gRPC service to update existing [`Entity`] records.
-pub async fn update_entities(entities: Vec<Entity>) -> Result<Empty, Status> {
-    let do_update = |mut client: UnrConnectionAdapter| async move {
-        client
-            .entity_conn
-            .update(UpdateEntityRequest { entities })
-            .await
-            .map(Response::into_inner)
-            .map(Into::into)
-    };
-    UNR_CLIENT.run_with_client(do_update).await
+pub async fn update_entities(
+    unr_config: &GrpcConfig, token: ForwardedToken, entities: Vec<Entity>,
+) -> Result<Empty, Status> {
+    let mut client = EntityServiceClient::from_endpoint_with_provider(
+        &unr_config.host_addr,
+        token,
+    )
+    .map_err(|err| handle_rpc_error(err, "UNR Service"))?;
+
+    client
+        .update(UpdateEntityRequest { entities })
+        .await
+        .map(Response::into_inner)
 }
 
 /// Makes a request to the UNR gRPC service to delete [`Entity`] records for the given IDs.
-pub async fn delete_entities(ids: Vec<String>) -> Result<Empty, Status> {
-    let do_delete = |mut client: UnrConnectionAdapter| async move {
-        client
-            .entity_conn
-            .delete(DeleteEntityRequest { ids })
-            .await
-            .map(Response::into_inner)
-            .map(Into::into)
-    };
-    UNR_CLIENT.run_with_client(do_delete).await
+pub async fn delete_entities(
+    unr_config: &GrpcConfig, token: ForwardedToken, ids: Vec<String>,
+) -> Result<Empty, Status> {
+    let mut client = EntityServiceClient::from_endpoint_with_provider(
+        &unr_config.host_addr,
+        token,
+    )
+    .map_err(|err| handle_rpc_error(err, "UNR Service"))?;
+
+    client
+        .delete(DeleteEntityRequest { ids })
+        .await
+        .map(Response::into_inner)
 }
 
 /// Makes a request to the UNR gRPC service to create the given [`Relationship`] records.
 pub async fn create_relationships(
+    unr_config: &GrpcConfig, token: ForwardedToken,
     relationships: Vec<Relationship>,
 ) -> Result<Empty, Status> {
-    let do_create = |mut client: UnrConnectionAdapter| async move {
-        client
-            .relationship_conn
-            .create(CreateRelationshipRequest { relationships })
-            .await
-            .map(Response::into_inner)
-            .map(Into::into)
-    };
-    UNR_CLIENT.run_with_client(do_create).await
+    let mut client = RelationshipServiceClient::from_endpoint_with_provider(
+        &unr_config.host_addr,
+        token,
+    )
+    .map_err(|err| handle_rpc_error(err, "UNR Service"))?;
+
+    client
+        .create(CreateRelationshipRequest { relationships })
+        .await
+        .map(Response::into_inner)
 }
 
 /// Makes a request to the UNR gRPC service to read relationship metadata for the given entity IDs.
 pub async fn read_relationships(
-    ids: Vec<String>,
+    unr_config: &GrpcConfig, token: ForwardedToken, ids: Vec<String>,
 ) -> Result<ReadRelationshipResponse, Status> {
-    let do_read = |mut client: UnrConnectionAdapter| async move {
-        client
-            .relationship_conn
-            .read(ReadRelationshipRequest { id: ids })
-            .await
-            .map(Response::into_inner)
-            .map(Into::into)
-    };
-    UNR_CLIENT.run_with_client(do_read).await
+    let mut client = RelationshipServiceClient::from_endpoint_with_provider(
+        &unr_config.host_addr,
+        token,
+    )
+    .map_err(|err| handle_rpc_error(err, "UNR Service"))?;
+
+    client
+        .read(ReadRelationshipRequest { id: ids })
+        .await
+        .map(Response::into_inner)
 }
 
 /// Makes a request to the UNR gRPC service to delete the given [`Relationship`] records.
 pub async fn delete_relationships(
+    unr_config: &GrpcConfig, token: ForwardedToken,
     relationships: Vec<Relationship>,
 ) -> Result<Empty, Status> {
-    let do_delete = |mut client: UnrConnectionAdapter| async move {
-        client
-            .relationship_conn
-            .delete(DeleteRelationshipRequest { relationships })
-            .await
-            .map(Response::into_inner)
-            .map(Into::into)
-    };
-    UNR_CLIENT.run_with_client(do_delete).await
-}
+    let mut client = RelationshipServiceClient::from_endpoint_with_provider(
+        &unr_config.host_addr,
+        token,
+    )
+    .map_err(|err| handle_rpc_error(err, "UNR Service"))?;
 
-/// Implementation of [`ConnectionAdapter`] to hold the clients that invoke the gRPC endpoints
-/// supplied by the UNR service. Both clients share the same [`Channel`].
-#[derive(Clone)]
-struct UnrConnectionAdapter {
-    pub entity_conn: EntityServiceClient<Channel>,
-    pub relationship_conn: RelationshipServiceClient<Channel>,
-}
-
-impl ConnectionAdapter for UnrConnectionAdapter {
-    async fn new(host: String) -> Result<Self, Error> {
-        let (entity_conn, relationship_conn) = try_join!(
-            EntityServiceClient::connect(host.clone()),
-            RelationshipServiceClient::connect(host)
-        )?;
-
-        Ok(Self {
-            entity_conn,
-            relationship_conn,
-        })
-    }
+    client
+        .delete(DeleteRelationshipRequest { relationships })
+        .await
+        .map(Response::into_inner)
 }
