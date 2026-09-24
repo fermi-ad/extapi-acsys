@@ -81,6 +81,8 @@ impl Device {
         let loader =
             ctx.data_unchecked::<DataLoader<loader::UnrRelationshipLoader, HashMapCache>>();
         loader.load_one(self.name.clone()).await.map_err(|e| {
+            // Include an ID in the response so the error can be correlated
+            // with server logs.
             let err_id = Uuid::new_v4();
             tracing::warn!("{err_id} relationship loader error: {e:?}");
             Error::new(format!(

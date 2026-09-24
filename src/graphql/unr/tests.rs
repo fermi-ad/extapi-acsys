@@ -1244,3 +1244,64 @@ async fn relationship_loader_batches_multiple_devices_into_one_call() {
 
     assert_eq!(*api.read_relationships_calls.lock().unwrap(), 1);
 }
+
+#[tokio::test]
+async fn relationship_loader_serves_repeated_keys_from_cache() {
+    let api = Arc::new(FakeUnrApi::default());
+
+    api.create_entities(vec![
+        Entity {
+            id: "A".to_string(),
+            address: "ADDR".to_string(),
+            r#type: "TYPE".to_string(),
+            protocol: "PROTO".to_string(),
+        },
+        Entity {
+            id: "C".to_string(),
+            address: "ADDR".to_string(),
+            r#type: "TYPE".to_string(),
+            protocol: "PROTO".to_string(),
+        },
+    ])
+    .await
+    .unwrap();
+
+    api.create_relationships(vec![Relationship {
+        parent_id: "A".to_string(),
+        child_id: "C".to_string(),
+    }])
+    .await
+    .unwrap();
+
+    // The first resolver wave loads relationships for A and C. The nested
+    // `parent` under A's children requests C again in a later wave; that
+    // lookup must be served from the DataLoader cache, not another call.
+    let schema = schema_with_api(api.clone());
+    let result = schema
+        .execute(
+            r#"
+                query {
+                  devices(names:["A","C"]) {
+                    __typename
+                    ... on Device {
+                      name
+                      children { name parent { name } }
+                      parent { name }
+                    }
+                  }
+                }
+                "#,
+        )
+        .await;
+
+    assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+    let v = json_data(result);
+    assert_eq!(v["devices"][0]["name"], "A");
+    assert_eq!(v["devices"][0]["children"][0]["name"], "C");
+    assert_eq!(v["devices"][0]["children"][0]["parent"]["name"], "A");
+    assert!(v["devices"][0]["parent"].is_null());
+    assert_eq!(v["devices"][1]["name"], "C");
+    assert_eq!(v["devices"][1]["parent"]["name"], "A");
+
+    assert_eq!(*api.read_relationships_calls.lock().unwrap(), 1);
+}

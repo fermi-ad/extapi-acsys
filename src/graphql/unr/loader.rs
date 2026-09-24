@@ -16,6 +16,10 @@ impl std::fmt::Display for LoaderError {
 }
 
 impl std::error::Error for LoaderError {}
+
+/// Batch loader for UNR Entity records.
+///
+/// Keys are UNR entity IDs.
 #[derive(Clone)]
 pub struct UnrEntityLoader {
     pub api: Arc<dyn UnrApi>,
