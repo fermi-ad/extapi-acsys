@@ -115,7 +115,7 @@ pub async fn read_relationships(
     let do_read = |mut client: UnrConnectionAdapter| async move {
         client
             .relationship_conn
-            .read(ReadRelationshipRequest { id: ids })
+            .read(ReadRelationshipRequest { ids })
             .await
             .map(Response::into_inner)
             .map(Into::into)

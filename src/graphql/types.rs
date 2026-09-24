@@ -1,5 +1,7 @@
 use crate::g_rpc::proto::common::device;
-use async_graphql::{ComplexObject, InputObject, SimpleObject, Union};
+use async_graphql::{
+    ComplexObject, InputObject, Scalar, ScalarType, SimpleObject, Union,
+};
 use base64::{Engine, engine::general_purpose::STANDARD_NO_PAD};
 use chrono::{DateTime, Duration, Utc};
 use serde_json::{self, Value};
@@ -7,6 +9,67 @@ use serde_json::{self, Value};
 #[derive(Debug)]
 pub struct AuthInfo {
     bearer_token: Option<String>,
+}
+
+#[doc = "A signed or unsigned 64-bit integer. Values are serialized as strings \
+         so JavaScript clients do not lose precision."]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BigInt {
+    Int(i64),
+    Uint(u64),
+}
+
+impl std::fmt::Display for BigInt {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Int(value) => value.fmt(formatter),
+            Self::Uint(value) => value.fmt(formatter),
+        }
+    }
+}
+
+#[Scalar]
+impl ScalarType for BigInt {
+    fn parse(
+        value: async_graphql::Value,
+    ) -> async_graphql::InputValueResult<Self> {
+        match value {
+            async_graphql::Value::String(value) => value
+                .parse::<i64>()
+                .map(Self::Int)
+                .or_else(|_| value.parse::<u64>().map(Self::Uint))
+                .map_err(|_| {
+                    async_graphql::InputValueError::custom(
+                        "Expected a signed or unsigned 64-bit integer",
+                    )
+                }),
+            async_graphql::Value::Number(value) => {
+                value.as_i64().map(Self::Int).ok_or_else(|| {
+                    async_graphql::InputValueError::custom(
+                        "Expected an integer within the signed 64-bit range; \
+                         use a string for larger unsigned values",
+                    )
+                })
+            }
+            value => Err(async_graphql::InputValueError::expected_type(value)),
+        }
+    }
+
+    fn to_value(&self) -> async_graphql::Value {
+        async_graphql::Value::String(self.to_string())
+    }
+}
+
+#[doc = "Represents a signed or unsigned 64-bit integer value."]
+#[derive(SimpleObject, Clone, Debug, PartialEq)]
+pub struct BigIntScalar {
+    pub int_value: BigInt,
+}
+
+#[doc = "Represents an array of signed or unsigned 64-bit integer values."]
+#[derive(SimpleObject, Clone, Debug, PartialEq)]
+pub struct BigIntArray {
+    pub big_int_array_value: Vec<BigInt>,
 }
 
 impl AuthInfo {
@@ -127,6 +190,12 @@ pub enum DataType {
 	     one of the values of this enumeration. This means you can nest \
 	     `StructData` types to make arbitrarily complex types."]
     StructData(StructData),
+
+    #[doc = "Represents a signed or unsigned 64-bit integer value."]
+    BigInt(BigIntScalar),
+
+    #[doc = "Represents an array of signed or unsigned 64-bit integer values."]
+    BigIntArray(BigIntArray),
 }
 
 #[doc = "This structure holds information associated with a device's reading, \
@@ -179,6 +248,7 @@ pub struct DevValue {
     pub raw_val: Option<Vec<u8>>,
     pub text_val: Option<String>,
     pub text_array_val: Option<Vec<String>>,
+    pub big_int_val: Option<BigInt>,
 }
 
 // --------------------------------------------------------------------------
@@ -191,7 +261,7 @@ impl From<DevValue> for device::Value {
     #[inline(never)]
     fn from(val: DevValue) -> Self {
         match val {
-            // TODO: Need to make an integer a valid device type.
+            // Keep the legacy `intVal` behavior for existing clients.
             DevValue {
                 int_val: Some(v),
                 scalar_val: _,
@@ -199,6 +269,7 @@ impl From<DevValue> for device::Value {
                 raw_val: _,
                 text_val: _,
                 text_array_val: _,
+                big_int_val: _,
             } => device::Value {
                 value: Some(device::value::Value::Scalar(v as f64)),
             },
@@ -209,6 +280,7 @@ impl From<DevValue> for device::Value {
                 raw_val: _,
                 text_val: _,
                 text_array_val: _,
+                big_int_val: _,
             } => device::Value {
                 value: Some(device::value::Value::Scalar(v)),
             },
@@ -219,6 +291,7 @@ impl From<DevValue> for device::Value {
                 raw_val: _,
                 text_val: _,
                 text_array_val: _,
+                big_int_val: _,
             } => device::Value {
                 value: Some(device::value::Value::ScalarArr(
                     device::value::ScalarArray { value: v },
@@ -231,6 +304,7 @@ impl From<DevValue> for device::Value {
                 raw_val: Some(v),
                 text_val: _,
                 text_array_val: _,
+                big_int_val: _,
             } => device::Value {
                 value: Some(device::value::Value::Raw(v)),
             },
@@ -241,6 +315,7 @@ impl From<DevValue> for device::Value {
                 raw_val: None,
                 text_val: Some(v),
                 text_array_val: _,
+                big_int_val: _,
             } => device::Value {
                 value: Some(device::value::Value::Text(v)),
             },
@@ -251,6 +326,7 @@ impl From<DevValue> for device::Value {
                 raw_val: None,
                 text_val: None,
                 text_array_val: Some(v),
+                big_int_val: _,
             } => device::Value {
                 value: Some(device::value::Value::TextArr(
                     device::value::TextArray { value: v },
@@ -263,6 +339,21 @@ impl From<DevValue> for device::Value {
                 raw_val: None,
                 text_val: None,
                 text_array_val: None,
+                big_int_val: Some(v),
+            } => device::Value {
+                value: Some(match v {
+                    BigInt::Int(v) => device::value::Value::Int(v),
+                    BigInt::Uint(v) => device::value::Value::Uint(v),
+                }),
+            },
+            DevValue {
+                int_val: None,
+                scalar_val: None,
+                scalar_array_val: None,
+                raw_val: None,
+                text_val: None,
+                text_array_val: None,
+                big_int_val: None,
             } => device::Value {
                 value: Some(device::value::Value::Raw(vec![])),
             },
@@ -298,6 +389,34 @@ impl TryFrom<device::Value> for DataType {
                     text_array_value: v.value,
                 }))
             }
+            Some(device::value::Value::Int(v)) => {
+                Ok(DataType::BigInt(BigIntScalar {
+                    int_value: BigInt::Int(v),
+                }))
+            }
+            Some(device::value::Value::Uint(v)) => {
+                Ok(DataType::BigInt(BigIntScalar {
+                    int_value: BigInt::Uint(v),
+                }))
+            }
+            Some(device::value::Value::IntArr(v)) => {
+                Ok(DataType::BigIntArray(BigIntArray {
+                    big_int_array_value: v
+                        .value
+                        .into_iter()
+                        .map(BigInt::Int)
+                        .collect(),
+                }))
+            }
+            Some(device::value::Value::UintArr(v)) => {
+                Ok(DataType::BigIntArray(BigIntArray {
+                    big_int_array_value: v
+                        .value
+                        .into_iter()
+                        .map(BigInt::Uint)
+                        .collect(),
+                }))
+            }
             Some(_) => Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "received a device type we don't yet translate",
@@ -307,5 +426,274 @@ impl TryFrom<device::Value> for DataType {
                 "received a device type that is not recognized",
             )),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn big_int_serializes_signed_and_unsigned_values_as_strings() {
+        assert_eq!(
+            BigInt::Int(i64::MIN).to_value(),
+            async_graphql::Value::String(i64::MIN.to_string()),
+        );
+        assert_eq!(
+            BigInt::Uint(u64::MAX).to_value(),
+            async_graphql::Value::String(u64::MAX.to_string()),
+        );
+    }
+
+    #[test]
+    fn big_int_parses_string_and_numeric_integers() {
+        assert_eq!(
+            BigInt::parse(async_graphql::Value::String(i64::MIN.to_string()))
+                .unwrap(),
+            BigInt::Int(i64::MIN),
+        );
+        assert_eq!(
+            BigInt::parse(async_graphql::Value::String(u64::MAX.to_string()))
+                .unwrap(),
+            BigInt::Uint(u64::MAX),
+        );
+        assert_eq!(
+            BigInt::parse(async_graphql::Value::Number(42.into())).unwrap(),
+            BigInt::Int(42),
+        );
+    }
+
+    #[test]
+    fn big_int_rejects_invalid_or_out_of_range_values() {
+        assert!(
+            BigInt::parse(async_graphql::Value::String(
+                "18446744073709551616".to_string(),
+            ))
+            .is_err()
+        );
+        assert!(
+            BigInt::parse(async_graphql::Value::String("1.5".to_string()))
+                .is_err()
+        );
+        assert!(
+            BigInt::parse(async_graphql::Value::Number(u64::MAX.into()))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn device_signed_integer_converts_to_big_int() {
+        let value = device::Value {
+            value: Some(device::value::Value::Int(i64::MIN)),
+        };
+
+        assert_eq!(
+            DataType::try_from(value).unwrap(),
+            DataType::BigInt(BigIntScalar {
+                int_value: BigInt::Int(i64::MIN),
+            }),
+        );
+    }
+
+    #[test]
+    fn device_unsigned_integer_converts_to_big_int() {
+        let value = device::Value {
+            value: Some(device::value::Value::Uint(u64::MAX)),
+        };
+
+        assert_eq!(
+            DataType::try_from(value).unwrap(),
+            DataType::BigInt(BigIntScalar {
+                int_value: BigInt::Uint(u64::MAX),
+            }),
+        );
+    }
+
+    #[test]
+    fn device_integer_arrays_convert_to_big_int_array() {
+        let signed = device::Value {
+            value: Some(device::value::Value::IntArr(
+                device::value::Int64Array {
+                    value: vec![i64::MIN, i64::MAX],
+                },
+            )),
+        };
+        let unsigned = device::Value {
+            value: Some(device::value::Value::UintArr(
+                device::value::Uint64Array {
+                    value: vec![0, u64::MAX],
+                },
+            )),
+        };
+
+        assert_eq!(
+            DataType::try_from(signed).unwrap(),
+            DataType::BigIntArray(BigIntArray {
+                big_int_array_value: vec![
+                    BigInt::Int(i64::MIN),
+                    BigInt::Int(i64::MAX),
+                ],
+            }),
+        );
+        assert_eq!(
+            DataType::try_from(unsigned).unwrap(),
+            DataType::BigIntArray(BigIntArray {
+                big_int_array_value: vec![
+                    BigInt::Uint(0),
+                    BigInt::Uint(u64::MAX),
+                ],
+            }),
+        );
+    }
+
+    #[test]
+    fn big_int_input_converts_without_floating_point_precision_loss() {
+        let signed = DevValue {
+            int_val: None,
+            scalar_val: None,
+            scalar_array_val: None,
+            raw_val: None,
+            text_val: None,
+            text_array_val: None,
+            big_int_val: Some(BigInt::Int(i64::MIN)),
+        };
+        let unsigned = DevValue {
+            int_val: None,
+            scalar_val: None,
+            scalar_array_val: None,
+            raw_val: None,
+            text_val: None,
+            text_array_val: None,
+            big_int_val: Some(BigInt::Uint(9_007_199_254_740_993)),
+        };
+
+        assert_eq!(
+            device::Value::from(signed).value,
+            Some(device::value::Value::Int(i64::MIN)),
+        );
+        assert_eq!(
+            device::Value::from(unsigned).value,
+            Some(device::value::Value::Uint(9_007_199_254_740_993)),
+        );
+    }
+
+    struct CompatibilityQuery;
+
+    #[async_graphql::Object]
+    impl CompatibilityQuery {
+        async fn data(&self) -> DataInfo {
+            DataInfo {
+                timestamp: 1.5,
+                result: DataType::Scalar(Scalar { scalar_value: 42.5 }),
+            }
+        }
+
+        async fn big_int_data(&self) -> DataInfo {
+            DataInfo {
+                timestamp: 1.5,
+                result: DataType::BigInt(BigIntScalar {
+                    int_value: BigInt::Uint(u64::MAX),
+                }),
+            }
+        }
+
+        async fn big_int_array_data(&self) -> DataInfo {
+            DataInfo {
+                timestamp: 1.5,
+                result: DataType::BigIntArray(BigIntArray {
+                    big_int_array_value: vec![
+                        BigInt::Int(i64::MIN),
+                        BigInt::Uint(u64::MAX),
+                    ],
+                }),
+            }
+        }
+
+        async fn echo_big_int(&self, value: BigInt) -> BigInt {
+            value
+        }
+    }
+
+    #[tokio::test]
+    async fn existing_scalar_and_timestamp_behavior_is_unchanged() {
+        let schema = async_graphql::Schema::new(
+            CompatibilityQuery,
+            async_graphql::EmptyMutation,
+            async_graphql::EmptySubscription,
+        );
+        let response = schema
+            .execute(
+                "{ data { timestamp isoTimestamp result { \
+                 ... on Scalar { scalarValue } } } }",
+            )
+            .await;
+
+        assert!(response.errors.is_empty(), "{:?}", response.errors);
+        assert_eq!(
+            response.data,
+            async_graphql::value!({
+                "data": {
+                    "timestamp": 1.5,
+                    "isoTimestamp": "1970-01-01T00:00:01.500+00:00",
+                    "result": { "scalarValue": 42.5 },
+                }
+            }),
+        );
+    }
+
+    #[tokio::test]
+    async fn graphql_big_int_input_accepts_string_and_numeric_integers() {
+        let schema = async_graphql::Schema::new(
+            CompatibilityQuery,
+            async_graphql::EmptyMutation,
+            async_graphql::EmptySubscription,
+        );
+        let response = schema
+            .execute("{ string: echoBigInt(value: \"18446744073709551615\") number: echoBigInt(value: 42) }")
+            .await;
+
+        assert!(response.errors.is_empty(), "{:?}", response.errors);
+        assert_eq!(
+            response.data,
+            async_graphql::value!({
+                "string": u64::MAX.to_string(),
+                "number": "42",
+            }),
+        );
+    }
+
+    #[tokio::test]
+    async fn graphql_big_int_values_are_returned_as_strings() {
+        let schema = async_graphql::Schema::new(
+            CompatibilityQuery,
+            async_graphql::EmptyMutation,
+            async_graphql::EmptySubscription,
+        );
+        let response = schema
+            .execute(
+                "{ bigIntData { result { \
+                 ... on BigIntScalar { intValue } } } \
+                 bigIntArrayData { result { \
+                 ... on BigIntArray { bigIntArrayValue } } } }",
+            )
+            .await;
+
+        assert!(response.errors.is_empty(), "{:?}", response.errors);
+        assert_eq!(
+            response.data,
+            async_graphql::value!({
+                "bigIntData": {
+                    "result": { "intValue": u64::MAX.to_string() },
+                },
+                "bigIntArrayData": {
+                    "result": {
+                        "bigIntArrayValue": [
+                            i64::MIN.to_string(),
+                            u64::MAX.to_string(),
+                        ],
+                    },
+                },
+            }),
+        );
     }
 }
