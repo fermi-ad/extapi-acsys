@@ -1,13 +1,14 @@
-use crate::g_rpc::proto::services::unr::{
-    entity::Entity, relationship::RelationshipDetails,
-};
-
-use super::loader;
 use async_graphql::{
-    Context, Error, InputObject, Result, SimpleObject, Union,
+    Context, InputObject, Result, SimpleObject, Union,
     dataloader::{DataLoader, HashMapCache},
 };
-use uuid::Uuid;
+
+use crate::{
+    g_rpc::proto::services::unr::{
+        entity::Entity, relationship::RelationshipDetails,
+    },
+    graphql::{errors::handle_graphql_error, unr::loader},
+};
 
 /// Input for creating a device.
 #[derive(Clone, Debug, InputObject)]
@@ -46,49 +47,41 @@ impl Device {
 #[async_graphql::ComplexObject]
 impl Device {
     #[graphql(skip)]
-    fn non_empty(s: String) -> Option<String> {
-        (!s.is_empty()).then_some(s)
-    }
-
-    #[graphql(skip)]
     async fn load_entity(&self, ctx: &Context<'_>) -> Result<Option<Entity>> {
-        let loader = ctx.data_unchecked::<DataLoader<loader::UnrEntityLoader, HashMapCache>>();
+        let loader =
+            ctx.data::<DataLoader<loader::UnrEntityLoader, HashMapCache>>()?;
         loader
             .load_one(self.name.clone())
             .await
-            .map_err(|e| Error::new(format!("Error reading entity: {e}")))
+            .map_err(handle_graphql_error)
     }
 
     async fn address(&self, ctx: &Context<'_>) -> Result<Option<String>> {
         let entity = self.load_entity(ctx).await?;
-        Ok(entity.and_then(|entity| Self::non_empty(entity.address)))
+        Ok(entity.and_then(|entity| non_empty(entity.address)))
     }
 
     async fn r#type(&self, ctx: &Context<'_>) -> Result<Option<String>> {
         let entity = self.load_entity(ctx).await?;
-        Ok(entity.and_then(|entity| Self::non_empty(entity.r#type)))
+        Ok(entity.and_then(|entity| non_empty(entity.r#type)))
     }
 
     async fn protocol(&self, ctx: &Context<'_>) -> Result<Option<String>> {
         let entity = self.load_entity(ctx).await?;
-        Ok(entity.and_then(|entity| Self::non_empty(entity.protocol)))
+        Ok(entity.and_then(|entity| non_empty(entity.protocol)))
     }
 
     #[graphql(skip)]
     async fn load_relationships(
         &self, ctx: &Context<'_>,
     ) -> Result<Option<RelationshipDetails>> {
-        let loader =
-            ctx.data_unchecked::<DataLoader<loader::UnrRelationshipLoader, HashMapCache>>();
-        loader.load_one(self.name.clone()).await.map_err(|e| {
-            // Include an ID in the response so the error can be correlated
-            // with server logs.
-            let err_id = Uuid::new_v4();
-            tracing::warn!("{err_id} relationship loader error: {e:?}");
-            Error::new(format!(
-                "Error reading relationship. See server logs for details. (Error ID: {err_id})"
-            ))
-        })
+        let loader = ctx
+            .data::<DataLoader<loader::UnrRelationshipLoader, HashMapCache>>(
+            )?;
+        loader
+            .load_one(self.name.clone())
+            .await
+            .map_err(handle_graphql_error)
     }
 
     async fn children(&self, ctx: &Context<'_>) -> Result<Vec<Device>> {
@@ -100,9 +93,7 @@ impl Device {
 
     async fn parent(&self, ctx: &Context<'_>) -> Result<Option<Device>> {
         let details = self.load_relationships(ctx).await?;
-        Ok(details
-            .and_then(|d| Self::non_empty(d.child_of))
-            .map(Device::new))
+        Ok(details.and_then(|d| non_empty(d.child_of)).map(Device::new))
     }
 }
 
@@ -117,4 +108,8 @@ pub struct NotFound {
 pub enum DeviceQueryResult {
     Device(Device),
     NotFound(NotFound),
+}
+
+fn non_empty(s: String) -> Option<String> {
+    (!s.is_empty()).then_some(s)
 }
