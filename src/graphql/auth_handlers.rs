@@ -95,7 +95,7 @@ where
                 Ok(Message::Text(text)) => Some(text.to_string()),
                 _ => None,
             }),
-            WebSocketProtocols::GraphQLWS,
+            WebSocketProtocols::SubscriptionsTransportWS,
         )
         .on_connection_init(websocket_init_handler)
         .boxed();
