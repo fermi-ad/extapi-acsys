@@ -3,21 +3,19 @@ use std::sync::Arc;
 use async_graphql::{
     Data, EmptySubscription, ObjectType, Request, Schema, SubscriptionType,
     dataloader::{DataLoader, HashMapCache},
-    http::{WebSocket, WebSocketProtocols, WsMessage},
+    http::ALL_WEBSOCKET_PROTOCOLS,
 };
-use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
+use async_graphql_axum::{
+    GraphQLProtocol, GraphQLRequest, GraphQLResponse, GraphQLWebSocket,
+};
 use axum::{
     Json,
-    extract::{FromRequestParts, State, WebSocketUpgrade, ws::Message},
+    extract::{FromRequestParts, State, WebSocketUpgrade},
     response::{IntoResponse, Response},
 };
 use axum_extra::TypedHeader;
 use base64::{Engine, engine::general_purpose::STANDARD_NO_PAD};
-use futures::{
-    SinkExt,
-    future::{Ready, ready},
-};
-use futures_util::StreamExt;
+use futures::future::{Ready, ready};
 use headers::{Authorization, authorization::Bearer};
 use http::{StatusCode, header, request::Parts};
 use rust_grpc_lib::auth::ForwardedToken;
@@ -79,45 +77,20 @@ pub async fn unr_graphql_handler(
 }
 
 pub async fn graphql_ws_handler<Q, M, S>(
-    State(schema): State<Schema<Q, M, S>>, ws: WebSocketUpgrade,
+    State(schema): State<Schema<Q, M, S>>, protocol: GraphQLProtocol,
+    ws: WebSocketUpgrade,
 ) -> impl IntoResponse
 where
     Q: ObjectType + Send + Sync + 'static,
     M: ObjectType + Send + Sync + 'static,
     S: SubscriptionType + Send + Sync + 'static,
 {
-    ws.on_upgrade(move |socket| async move {
-        let (mut axum_sender, axum_receiver) = socket.split();
-
-        let mut ws_engine = WebSocket::new(
-            schema,
-            axum_receiver.filter_map(async |msg| match msg {
-                Ok(Message::Text(text)) => Some(text.to_string()),
-                _ => None,
-            }),
-            WebSocketProtocols::SubscriptionsTransportWS,
-        )
-        .on_connection_init(websocket_init_handler)
-        .boxed();
-
-        while let Some(gql_msg) = ws_engine.next().await {
-            match gql_msg {
-                WsMessage::Close(_, _) => {
-                    let _ = axum_sender.send(Message::Close(None)).await;
-                    break;
-                }
-                WsMessage::Text(text) => {
-                    if axum_sender
-                        .send(Message::Text(text.into()))
-                        .await
-                        .is_err()
-                    {
-                        break;
-                    }
-                }
-            }
-        }
-    })
+    ws.protocols(ALL_WEBSOCKET_PROTOCOLS)
+        .on_upgrade(move |socket| {
+            GraphQLWebSocket::new(socket, schema, protocol)
+                .on_connection_init(websocket_init_handler)
+                .serve()
+        })
 }
 
 #[derive(Debug)]
