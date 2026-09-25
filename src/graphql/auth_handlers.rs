@@ -3,23 +3,19 @@ use std::sync::Arc;
 use async_graphql::{
     Data, EmptySubscription, ObjectType, Request, Schema, SubscriptionType,
     dataloader::{DataLoader, HashMapCache},
-    http::{ALL_WEBSOCKET_PROTOCOLS, WebSocket, WebSocketProtocols, WsMessage},
+    http::ALL_WEBSOCKET_PROTOCOLS,
 };
 use async_graphql_axum::{
     GraphQLProtocol, GraphQLRequest, GraphQLResponse, GraphQLWebSocket,
 };
 use axum::{
     Json,
-    extract::{FromRequestParts, State, WebSocketUpgrade, ws::Message},
+    extract::{FromRequestParts, State, WebSocketUpgrade},
     response::{IntoResponse, Response},
 };
 use axum_extra::TypedHeader;
 use base64::{Engine, engine::general_purpose::STANDARD_NO_PAD};
-use futures::{
-    SinkExt,
-    future::{Ready, ready},
-};
-use futures_util::StreamExt;
+use futures::future::{Ready, ready};
 use headers::{Authorization, authorization::Bearer};
 use http::{StatusCode, header, request::Parts};
 use rust_grpc_lib::auth::ForwardedToken;
@@ -90,7 +86,7 @@ where
     S: SubscriptionType + Send + Sync + 'static,
 {
     ws.protocols(ALL_WEBSOCKET_PROTOCOLS)
-        .on_upgrade(move |socket| async move {
+        .on_upgrade(move |socket| {
             GraphQLWebSocket::new(socket, schema, protocol)
                 .on_connection_init(websocket_init_handler)
                 .serve()
