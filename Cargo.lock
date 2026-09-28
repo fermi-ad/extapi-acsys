@@ -835,7 +835,7 @@ dependencies = [
 
 [[package]]
 name = "extapi-acsys"
-version = "0.6.7"
+version = "0.6.8"
 dependencies = [
  "async-graphql",
  "async-graphql-axum",
@@ -1101,7 +1101,7 @@ dependencies = [
 [[package]]
 name = "grpc-macro"
 version = "0.2.0"
-source = "git+https://github.com/fermi-ad/rust-grpc-lib?tag=v6.0.0#7244e3e0e3052a7275b84475b968d47ef0566bc0"
+source = "git+https://github.com/fermi-ad/rust-grpc-lib?tag=v7.0.0#e5d02987d319b85901d240cf79149570213d1f06"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2468,8 +2468,8 @@ dependencies = [
 
 [[package]]
 name = "rust-grpc-lib"
-version = "6.0.0"
-source = "git+https://github.com/fermi-ad/rust-grpc-lib?tag=v6.0.0#7244e3e0e3052a7275b84475b968d47ef0566bc0"
+version = "7.0.0"
+source = "git+https://github.com/fermi-ad/rust-grpc-lib?tag=v7.0.0#e5d02987d319b85901d240cf79149570213d1f06"
 dependencies = [
  "grpc-macro",
  "protoc-bin-vendored",

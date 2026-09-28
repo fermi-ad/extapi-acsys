@@ -123,7 +123,7 @@ pub async fn read_relationships(
     .map_err(|err| handle_rpc_error(err, "UNR Service"))?;
 
     client
-        .read(ReadRelationshipRequest { id: ids })
+        .read(ReadRelationshipRequest { ids })
         .await
         .map(Response::into_inner)
 }
