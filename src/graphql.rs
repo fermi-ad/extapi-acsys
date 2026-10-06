@@ -30,6 +30,7 @@ mod acsys;
 mod alarms;
 mod auth_handlers;
 mod bbm;
+mod blm;
 mod devdb;
 mod errors;
 mod faas;
@@ -51,6 +52,7 @@ async fn base_page() -> Html<&'static str> {
       <li><a href="/acsys">ACSys</a> (data acquisition)</li>
       <li><a href="/alarms">Alarms</a></li>
       <li><a href="/bbm">Beam Budget monitoring</a> (WIP)</li>
+      <li><a href="/blm">Beam Loss Monitoring</a></li>
       <li><a href="/devdb">Device Database</a></li>
       <li><a href="/faas">Functions as a Service</a></li>
       <li><a href="/tlg">Timeline Generator placement</a></li>
@@ -173,6 +175,34 @@ fn create_bbm_router() -> Router {
             .post(graphql_handler)
             .with_state(schema.clone()),
     )
+}
+
+// Creates the portion of the site map that handles the BLM GraphQL API.
+
+fn create_blm_router(global_config: Arc<ExtapiGlobalConfig>) -> Router {
+    const Q_ENDPOINT: &str = "/blm";
+    const S_ENDPOINT: &str = "/blm/s";
+
+    let schema =
+        Schema::build(blm::BlmQueries, EmptyMutation, blm::BlmSubscriptions)
+            .data(global_config)
+            .finish();
+
+    let graphiql = axum::response::Html(
+        async_graphql::http::GraphiQLSource::build()
+            .endpoint(Q_ENDPOINT)
+            .subscription_endpoint(S_ENDPOINT)
+            .finish(),
+    );
+
+    Router::new()
+        .route(
+            Q_ENDPOINT,
+            get(graphiql)
+                .post(graphql_handler)
+                .with_state(schema.clone()),
+        )
+        .route(S_ENDPOINT, get(graphql_ws_handler).with_state(schema))
 }
 
 // Creates the portion of the site map that handles the Device Database
@@ -312,6 +342,7 @@ async fn create_site(global_config: Arc<ExtapiGlobalConfig>) -> Router {
         .merge(create_acsys_router(Arc::clone(&global_config)).await)
         .merge(create_alarms_router(Arc::clone(&global_config)))
         .merge(create_bbm_router())
+        .merge(create_blm_router(Arc::clone(&global_config)))
         .merge(create_devdb_router(Arc::clone(&global_config)))
         .merge(create_faas_router())
         .merge(create_tlg_router(Arc::clone(&global_config)))
