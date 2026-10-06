@@ -29,6 +29,7 @@ Depending on your environment, you may also need a C toolchain and build tooling
 The following variables exist for configuring the service at runtime:
 - `ALARMS_KAFKA_HOST` -> Hostname for the Kafka instance that supports the alarms service
 - `ALARMS_KAFKA_TOPIC` -> Topic name for alarms in Kafka
+- `BLM_GRPC_HOST` -> Hostname for the BLM gRPC service
 - `CLOCK_GRPC_HOST` -> Hostname for the clock gRPC service
 - `DEVDB_GRPC_HOST` -> Hostname for the DevDB gRPC service
 - `DPM_GRPC_HOST` -> Hostname for the DPM gRPC service
@@ -38,6 +39,12 @@ The following variables exist for configuring the service at runtime:
 - `SCANNER_GRPC_HOST` -> Hostname for the wire scanner gRPC service
 - `TLG_GRPC_HOST` -> Hostname for the TLG gRPC service
 - `UNR_GRPC_HOST` -> Hostname for the UNR gRPC service
+
+### BLM GraphQL API
+
+- `/blm` serves BLM GraphQL queries over HTTP.
+- `/blm/s` serves BLM GraphQL subscriptions over WebSocket.
+- Beamline inputs follow the beamlines defined by the BLM protobuf API.
 
 ### Error IDs in responses
 

@@ -13,6 +13,7 @@ pub fn get_global_config() -> Result<Arc<ExtapiGlobalConfig>, ConfigError> {
             "ALARMS_KAFKA_TOPIC",
         )?,
         alarms_svc: GrpcConfig::new("GRPC_ALARMS_SERVICE_HOST")?,
+        blm: GrpcConfig::new("BLM_GRPC_HOST")?,
         clock: GrpcConfig::new("CLOCK_GRPC_HOST")?,
         devdb: GrpcConfig::new("DEVDB_GRPC_HOST")?,
         tlg: GrpcConfig::new("TLG_GRPC_HOST")?,
@@ -38,6 +39,9 @@ pub fn get_test_config() -> ExtapiGlobalConfig {
         alarms_svc: GrpcConfig {
             host_addr: String::new(),
         },
+        blm: GrpcConfig {
+            host_addr: String::new(),
+        },
         clock: GrpcConfig {
             host_addr: String::new(),
         },
@@ -61,6 +65,7 @@ pub struct ExtapiGlobalConfig {
     pub alarms_db: GrpcConfig,
     pub alarms_kafka: KafkaConfig,
     pub alarms_svc: GrpcConfig,
+    pub blm: GrpcConfig,
     pub clock: GrpcConfig,
     pub devdb: GrpcConfig,
     pub tlg: GrpcConfig,

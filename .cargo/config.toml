@@ -2,6 +2,7 @@
 # Test vars (will not be used when the compiled binary is copied into the production container)
 ALARMS_KAFKA_HOST = "test host"
 ALARMS_KAFKA_TOPIC = "test topic"
+BLM_GRPC_HOST = "test host"
 CLOCK_GRPC_HOST = "test host"
 DEVDB_GRPC_HOST = "test host"
 DPM_GRPC_HOST = "test host"

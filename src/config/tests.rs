@@ -17,6 +17,7 @@ fn global_config_populates_when_all_vals_present() {
         alarms_db,
         alarms_kafka,
         alarms_svc,
+        blm,
         clock,
         devdb,
         tlg,
@@ -29,6 +30,7 @@ fn global_config_populates_when_all_vals_present() {
     assert_eq!(alarms_kafka.host_addr, "test host");
     assert_eq!(alarms_kafka.topic, "test topic");
     assert_eq!(alarms_svc.host_addr, "test host");
+    assert_eq!(blm.host_addr, "test host");
     assert_eq!(clock.host_addr, "test host");
     assert_eq!(devdb.host_addr, "test host");
     assert_eq!(tlg.host_addr, "test host");

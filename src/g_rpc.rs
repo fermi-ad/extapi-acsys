@@ -8,6 +8,7 @@ mod errors;
 
 pub mod alarms_db;
 pub mod alarms_svc;
+pub mod blm;
 pub mod clock;
 pub mod devdb;
 pub mod dpm;
