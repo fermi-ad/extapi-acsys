@@ -9,19 +9,16 @@ use crate::{
     g_rpc::{
         blm,
         proto::services::blm::v1::{
-            ListIntegratedLossRequest, SubscribeBeamThroughputRequest,
-            SubscribeLossRatioRequest,
+            BeamLine, ListIntegratedLossRequest,
+            SubscribeBeamThroughputRequest, SubscribeLossRatioRequest,
         },
     },
     graphql::auth_handlers::AuthInfo,
 };
 
-#[path = "blm_types.rs"]
 pub mod types;
 
-use types::{
-    BlmBeamLine, BlmBeamThroughputSample, BlmDevice, BlmLossRatioSample,
-};
+use types::{BlmBeamThroughputSample, BlmDevice, BlmLossRatioSample};
 
 fn forwarded_token(ctx: &Context<'_>) -> ForwardedToken {
     let token = ctx
@@ -38,10 +35,11 @@ fn validate_tclk_event(value: i32) -> Result<u32> {
 }
 
 fn sample_rate(value: i32) -> Result<u32> {
-    u32::try_from(value)
-        .ok()
-        .filter(|value| *value > 0)
-        .ok_or_else(|| Error::new("sampleRateMs must be greater than zero"))
+    if value > 0 {
+        Ok(value.cast_unsigned())
+    } else {
+        Err(Error::new("sampleRateMs must be greater than zero"))
+    }
 }
 
 #[derive(Default)]
@@ -51,7 +49,7 @@ pub struct BlmQueries;
 impl BlmQueries {
     /// Returns integrated-loss devices for the selected beamline and TCLK event.
     async fn integrated_loss_devices(
-        &self, ctx: &Context<'_>, beam_line: BlmBeamLine, tclk_event: i32,
+        &self, ctx: &Context<'_>, beam_line: BeamLine, tclk_event: i32,
     ) -> Result<Vec<BlmDevice>> {
         let blm_config =
             ctx.data::<Arc<ExtapiGlobalConfig>>()?.blm.require()?;
@@ -59,14 +57,14 @@ impl BlmQueries {
             blm_config,
             forwarded_token(ctx),
             ListIntegratedLossRequest {
-                beam_line: beam_line.proto_value(),
+                beam_line: beam_line as i32,
                 tclk_event: validate_tclk_event(tclk_event)?,
             },
         )
         .await
         .map_err(|error| Error::new(format!("BLM service error: {error}")))?;
 
-        Ok(response.data.into_iter().map(Into::into).collect())
+        Ok(response.data.into_iter().map(BlmDevice::from).collect())
     }
 }
 
@@ -77,7 +75,7 @@ pub struct BlmSubscriptions;
 impl BlmSubscriptions {
     /// Streams loss-ratio samples for the selected beamline and TCLK event.
     async fn loss_ratios(
-        &self, ctx: &Context<'_>, beam_line: BlmBeamLine, tclk_event: i32,
+        &self, ctx: &Context<'_>, beam_line: BeamLine, tclk_event: i32,
         sample_rate_ms: i32,
     ) -> Result<impl Stream<Item = Result<BlmLossRatioSample>>> {
         let blm_config =
@@ -86,7 +84,7 @@ impl BlmSubscriptions {
             blm_config,
             forwarded_token(ctx),
             SubscribeLossRatioRequest {
-                beam_line: beam_line.proto_value(),
+                beam_line: beam_line as i32,
                 tclk_event: validate_tclk_event(tclk_event)?,
                 sample_rate: sample_rate(sample_rate_ms)?,
             },
@@ -95,7 +93,7 @@ impl BlmSubscriptions {
         .map_err(|error| Error::new(format!("BLM service error: {error}")))?;
 
         Ok(stream.map(|result| {
-            result.map(Into::into).map_err(|error| {
+            result.map(BlmLossRatioSample::from).map_err(|error| {
                 Error::new(format!("BLM stream error: {error}"))
             })
         }))
@@ -103,7 +101,7 @@ impl BlmSubscriptions {
 
     /// Streams beam-throughput samples for the selected beamline.
     async fn beam_throughput(
-        &self, ctx: &Context<'_>, beam_line: BlmBeamLine, sample_rate_ms: i32,
+        &self, ctx: &Context<'_>, beam_line: BeamLine, sample_rate_ms: i32,
     ) -> Result<impl Stream<Item = Result<BlmBeamThroughputSample>>> {
         let blm_config =
             ctx.data::<Arc<ExtapiGlobalConfig>>()?.blm.require()?;
@@ -111,7 +109,7 @@ impl BlmSubscriptions {
             blm_config,
             forwarded_token(ctx),
             SubscribeBeamThroughputRequest {
-                beam_line: beam_line.proto_value(),
+                beam_line: beam_line as i32,
                 sample_rate: sample_rate(sample_rate_ms)?,
             },
         )
@@ -119,9 +117,41 @@ impl BlmSubscriptions {
         .map_err(|error| Error::new(format!("BLM service error: {error}")))?;
 
         Ok(stream.map(|result| {
-            result.map(Into::into).map_err(|error| {
+            result.map(BlmBeamThroughputSample::from).map_err(|error| {
                 Error::new(format!("BLM stream error: {error}"))
             })
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sample_rate_accepts_positive_values() {
+        assert_eq!(sample_rate(1).unwrap(), 1);
+    }
+
+    #[test]
+    fn sample_rate_rejects_zero_and_negative_values() {
+        assert!(sample_rate(0).is_err());
+        assert!(sample_rate(-1).is_err());
+    }
+
+    #[test]
+    fn schema_preserves_protobuf_beam_line_names() {
+        let schema = async_graphql::Schema::build(
+            BlmQueries,
+            async_graphql::EmptyMutation,
+            BlmSubscriptions,
+        )
+        .finish();
+        let sdl = schema.sdl();
+
+        assert!(sdl.contains("BEAM_LINE_UNSPECIFIED"));
+        assert!(sdl.contains("BEAM_LINE_400MEV"));
+        assert!(sdl.contains("BEAM_LINE_BOOSTER"));
+        assert!(sdl.contains("BEAM_LINE_DELIVERY_RING"));
     }
 }
