@@ -1,5 +1,3 @@
-use std::error::Error;
-
 use clap::Parser;
 use tracing::{info, subscriber};
 use tracing_subscriber::{
@@ -19,7 +17,7 @@ struct Args {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+async fn main() {
     let args = Args::parse();
 
     // Set up logging.
@@ -36,9 +34,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .expect("Unable to set global default subscriber");
 
     info!("acquiring configuration values");
-    let global_config = config::get_global_config()?;
+    let global_config = config::get_global_config();
 
     info!("starting");
     graphql::start_service(args.port, global_config).await;
-    Ok(())
 }
