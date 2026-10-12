@@ -35,10 +35,27 @@ The following variables exist for configuring the service at runtime:
 - `DPM_GRPC_HOST` -> Hostname for the DPM gRPC service
 - `GRAPHQL_PORT` -> Port for clients to connect via GraphQL to this service
 - `GRPC_ALARMS_DB_HOST` -> Hostname for the Alarms DB Access gRPC service
+- `GRPC_ALARMS_SERVICE_HOST` -> Hostname for the Alarms gRPC service
 - `RUST_LOG` -> The default logging environment variable from Rust. Can be configured to log specific crates/modules at different levels from the global default.
 - `SCANNER_GRPC_HOST` -> Hostname for the wire scanner gRPC service
 - `TLG_GRPC_HOST` -> Hostname for the TLG gRPC service
 - `UNR_GRPC_HOST` -> Hostname for the UNR gRPC service
+
+#### Optional upstreams and feature degradation
+No upstream variable is required to start the service. If a variable is unset or blank, the service logs a `WARN` naming the variable and the disabled feature, then boots normally. `ALARMS_KAFKA_HOST` and `ALARMS_KAFKA_TOPIC` must both be set to enable alarm subscriptions.
+
+| Variable(s) | Route | When missing |
+| --- | --- | --- |
+| `BLM_GRPC_HOST` | `/blm` | Route is not mounted (404) |
+| `DEVDB_GRPC_HOST` | `/devdb` | Route is not mounted (404) |
+| `TLG_GRPC_HOST` | `/tlg` | Route is not mounted (404) |
+| `UNR_GRPC_HOST` | `/unr` | Route is not mounted (404) |
+| `SCANNER_GRPC_HOST` | `/wscan` | Route is not mounted (404) |
+| `GRPC_ALARMS_DB_HOST`, `GRPC_ALARMS_SERVICE_HOST` | `/alarms` | Route is not mounted only when both are missing; otherwise affected fields return `FEATURE_DISABLED` |
+| `ALARMS_KAFKA_HOST`, `ALARMS_KAFKA_TOPIC` | `/alarms/s` subscriptions | Subscription returns `FEATURE_DISABLED` |
+| `CLOCK_GRPC_HOST` | `/acsys` triggered plots | Field returns `FEATURE_DISABLED` |
+
+`/acsys`, `/bbm` and `/faas` are always mounted. The landing page (`/`) only links to mounted routes. Requests that reach a disabled feature inside a mounted route get a GraphQL error with `extensions.code = "FEATURE_DISABLED"`.
 
 ### BLM GraphQL API
 

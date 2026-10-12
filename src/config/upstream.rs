@@ -31,6 +31,10 @@ impl<T> Upstream<T> {
         })
     }
 
+    pub fn is_enabled(&self) -> bool {
+        matches!(self, Self::Enabled(_))
+    }
+
     /// The single choke point for business logic: get the config or a typed error.
     pub fn require(&self) -> Result<&T, FeatureDisabled> {
         match self {
