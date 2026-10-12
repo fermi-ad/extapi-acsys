@@ -5,6 +5,13 @@ use rust_env_var_lib::env_var;
 #[cfg(test)]
 mod tests;
 
+/// Reads an env var, treating unset and blank values identically.
+fn read_var(name: &str) -> Option<String> {
+    env_var::get(name)
+        .to_option::<String>()
+        .filter(|v| !v.trim().is_empty())
+}
+
 pub fn get_global_config() -> Result<Arc<ExtapiGlobalConfig>, ConfigError> {
     let config = ExtapiGlobalConfig {
         alarms_db: GrpcConfig::new("GRPC_ALARMS_DB_HOST")?,
@@ -80,8 +87,7 @@ pub struct GrpcConfig {
 impl GrpcConfig {
     fn new(host_addr_var: &'static str) -> Result<Self, ConfigError> {
         Ok(GrpcConfig {
-            host_addr: env_var::get(host_addr_var)
-                .to_option()
+            host_addr: read_var(host_addr_var)
                 .ok_or(ConfigError(host_addr_var))?,
         })
     }
@@ -99,12 +105,9 @@ impl KafkaConfig {
         #[cfg(feature = "kafka")]
         {
             Ok(KafkaConfig {
-                host_addr: env_var::get(host_addr_var)
-                    .to_option()
+                host_addr: read_var(host_addr_var)
                     .ok_or(ConfigError(host_addr_var))?,
-                topic: env_var::get(topic_var)
-                    .to_option()
-                    .ok_or(ConfigError(topic_var))?,
+                topic: read_var(topic_var).ok_or(ConfigError(topic_var))?,
             })
         }
         #[cfg(not(feature = "kafka"))]

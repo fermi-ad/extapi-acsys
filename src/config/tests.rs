@@ -54,3 +54,19 @@ fn global_config_returns_err_when_val_missing() {
         "Environment variable 'DEVDB_GRPC_HOST' is not set"
     );
 }
+
+#[test]
+#[serial]
+fn global_config_returns_err_when_val_blank() {
+    let result;
+    unsafe {
+        std::env::set_var("DEVDB_GRPC_HOST", "   ");
+        result = get_global_config();
+        std::env::set_var("DEVDB_GRPC_HOST", "test host");
+    }
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "Environment variable 'DEVDB_GRPC_HOST' is not set"
+    );
+}
