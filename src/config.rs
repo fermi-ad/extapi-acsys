@@ -2,6 +2,9 @@ use std::{error::Error, fmt, sync::Arc};
 
 use rust_env_var_lib::env_var;
 
+mod upstream;
+pub use upstream::{Upstream, warn_if_disabled};
+
 #[cfg(test)]
 mod tests;
 
@@ -20,13 +23,15 @@ pub fn get_global_config() -> Result<Arc<ExtapiGlobalConfig>, ConfigError> {
             "ALARMS_KAFKA_TOPIC",
         )?,
         alarms_svc: GrpcConfig::new("GRPC_ALARMS_SERVICE_HOST")?,
-        blm: GrpcConfig::new("BLM_GRPC_HOST")?,
+        blm: GrpcConfig::optional("BLM", "BLM_GRPC_HOST"),
         clock: GrpcConfig::new("CLOCK_GRPC_HOST")?,
         devdb: GrpcConfig::new("DEVDB_GRPC_HOST")?,
         tlg: GrpcConfig::new("TLG_GRPC_HOST")?,
         unr: GrpcConfig::new("UNR_GRPC_HOST")?,
         wscan: GrpcConfig::new("SCANNER_GRPC_HOST")?,
     };
+
+    config.log_disabled_features();
 
     Ok(Arc::new(config))
 }
@@ -46,9 +51,9 @@ pub fn get_test_config() -> ExtapiGlobalConfig {
         alarms_svc: GrpcConfig {
             host_addr: String::new(),
         },
-        blm: GrpcConfig {
+        blm: Upstream::Enabled(GrpcConfig {
             host_addr: String::new(),
-        },
+        }),
         clock: GrpcConfig {
             host_addr: String::new(),
         },
@@ -72,12 +77,19 @@ pub struct ExtapiGlobalConfig {
     pub alarms_db: GrpcConfig,
     pub alarms_kafka: KafkaConfig,
     pub alarms_svc: GrpcConfig,
-    pub blm: GrpcConfig,
+    pub blm: Upstream<GrpcConfig>,
     pub clock: GrpcConfig,
     pub devdb: GrpcConfig,
     pub tlg: GrpcConfig,
     pub unr: GrpcConfig,
     pub wscan: GrpcConfig,
+}
+
+impl ExtapiGlobalConfig {
+    /// Warns once per disabled optional upstream. Add new optional upstreams here.
+    fn log_disabled_features(&self) {
+        warn_if_disabled(&self.blm);
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -90,6 +102,17 @@ impl GrpcConfig {
             host_addr: read_var(host_addr_var)
                 .ok_or(ConfigError(host_addr_var))?,
         })
+    }
+
+    /// Like [`new`](Self::new), but a missing/blank var disables the feature
+    /// instead of failing startup.
+    fn optional(
+        feature: &'static str, host_addr_var: &'static str,
+    ) -> Upstream<Self> {
+        match read_var(host_addr_var) {
+            Some(host_addr) => Upstream::Enabled(GrpcConfig { host_addr }),
+            None => Upstream::disabled(feature, &[host_addr_var]),
+        }
     }
 }
 
@@ -105,9 +128,12 @@ impl KafkaConfig {
         #[cfg(feature = "kafka")]
         {
             Ok(KafkaConfig {
-                host_addr: read_var(host_addr_var)
+                host_addr: env_var::get(host_addr_var)
+                    .to_option()
                     .ok_or(ConfigError(host_addr_var))?,
-                topic: read_var(topic_var).ok_or(ConfigError(topic_var))?,
+                topic: env_var::get(topic_var)
+                    .to_option()
+                    .ok_or(ConfigError(topic_var))?,
             })
         }
         #[cfg(not(feature = "kafka"))]

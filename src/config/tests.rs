@@ -30,7 +30,7 @@ fn global_config_populates_when_all_vals_present() {
     assert_eq!(alarms_kafka.host_addr, "test host");
     assert_eq!(alarms_kafka.topic, "test topic");
     assert_eq!(alarms_svc.host_addr, "test host");
-    assert_eq!(blm.host_addr, "test host");
+    assert!(matches!(blm, Upstream::Enabled(c) if c.host_addr == "test host"));
     assert_eq!(clock.host_addr, "test host");
     assert_eq!(devdb.host_addr, "test host");
     assert_eq!(tlg.host_addr, "test host");
@@ -69,4 +69,40 @@ fn global_config_returns_err_when_val_blank() {
         result.unwrap_err().to_string(),
         "Environment variable 'DEVDB_GRPC_HOST' is not set"
     );
+}
+
+#[test]
+#[serial]
+fn optional_upstream_disabled_when_var_missing_or_blank() {
+    let (missing, blank);
+    unsafe {
+        std::env::remove_var("BLM_GRPC_HOST");
+        missing = get_global_config();
+        std::env::set_var("BLM_GRPC_HOST", "  ");
+        blank = get_global_config();
+        std::env::set_var("BLM_GRPC_HOST", "test host");
+    }
+
+    for result in [missing, blank] {
+        let config = result.expect("optional upstream must not fail startup");
+        let info = config.blm.disabled_info().expect("blm is disabled");
+        assert_eq!(info.feature, "BLM");
+        assert_eq!(info.missing_vars, ["BLM_GRPC_HOST"]);
+    }
+}
+
+#[test]
+fn disabled_upstream_maps_to_graphql_and_grpc_errors() {
+    let up: Upstream<GrpcConfig> =
+        Upstream::disabled("BLM", &["BLM_GRPC_HOST"]);
+
+    let gql = up.require_gql().unwrap_err();
+    assert_eq!(
+        gql.message,
+        "The BLM feature is not available in this deployment"
+    );
+    assert!(gql.extensions.is_some());
+
+    let status = tonic::Status::from(up.require().unwrap_err());
+    assert_eq!(status.code(), tonic::Code::Unimplemented);
 }
