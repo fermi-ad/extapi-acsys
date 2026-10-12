@@ -164,7 +164,7 @@ impl DevDBQueries {
 
         let now = Instant::now();
         let result = devdb::get_device_info(
-            &global_config.devdb,
+            global_config.devdb.require_gql()?,
             ForwardedToken::new(token),
             &devices,
         )

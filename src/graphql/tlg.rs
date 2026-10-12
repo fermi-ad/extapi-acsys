@@ -24,9 +24,12 @@ impl TlgQueries {
             .and_then(AuthInfo::token)
             .unwrap_or_default();
 
-        tlg::get_version(&global_config.tlg, ForwardedToken::new(token))
-            .await
-            .map_err(|e| Error::new(format!("{:?}", e)))
+        tlg::get_version(
+            global_config.tlg.require_gql()?,
+            ForwardedToken::new(token),
+        )
+        .await
+        .map_err(|e| Error::new(format!("{:?}", e)))
     }
 }
 
@@ -46,7 +49,7 @@ impl TlgMutations {
             .unwrap_or_default();
 
         match tlg::diagnostics(
-            &global_config.tlg,
+            global_config.tlg.require_gql()?,
             ForwardedToken::new(token),
             devices.into(),
         )
@@ -73,7 +76,7 @@ impl TlgMutations {
             .unwrap_or_default();
 
         match tlg::placement(
-            &global_config.tlg,
+            global_config.tlg.require_gql()?,
             ForwardedToken::new(token),
             devices.into(),
         )

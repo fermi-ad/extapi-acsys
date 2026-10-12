@@ -12,7 +12,7 @@ use tokio::time::timeout;
 use crate::config::get_test_config;
 #[cfg(feature = "kafka")]
 use crate::{
-    config::KafkaConfig,
+    config::{KafkaConfig, Upstream},
     g_rpc::proto::common::alarm::status::{Severity, Source, State},
 };
 
@@ -26,10 +26,10 @@ fn test_populated_config(
     kafka_host: String, kafka_topic: String,
 ) -> Arc<ExtapiGlobalConfig> {
     let mut populated = get_test_config();
-    populated.alarms_kafka = KafkaConfig {
+    populated.alarms_kafka = Upstream::Enabled(KafkaConfig {
         host_addr: kafka_host,
         topic: kafka_topic,
-    };
+    });
     Arc::new(populated)
 }
 

@@ -50,12 +50,13 @@ impl Loader<String> for UnrEntityLoader {
     async fn load(
         &self, keys: &[String],
     ) -> Result<HashMap<String, Self::Value>, Self::Error> {
+        let unr_config = self
+            .global_config
+            .unr
+            .require()
+            .map_err(|e| LoaderError(e.to_string()))?;
         self.api
-            .read_entities(
-                &self.global_config.unr,
-                self.token.clone(),
-                keys.to_vec(),
-            )
+            .read_entities(unr_config, self.token.clone(), keys.to_vec())
             .await
             .map_err(|e| {
                 tracing::warn!("UnrEntityLoader: gRPC error: {e:?}");
@@ -97,12 +98,13 @@ impl Loader<String> for UnrRelationshipLoader {
     async fn load(
         &self, keys: &[String],
     ) -> Result<HashMap<String, Self::Value>, Self::Error> {
+        let unr_config = self
+            .global_config
+            .unr
+            .require()
+            .map_err(|e| LoaderError(e.to_string()))?;
         self.api
-            .read_relationships(
-                &self.global_config.unr,
-                self.token.clone(),
-                keys.to_vec(),
-            )
+            .read_relationships(unr_config, self.token.clone(), keys.to_vec())
             .await
             .map_err(|e| {
                 tracing::warn!("UnrRelationshipLoader: gRPC error: {e:?}");

@@ -114,7 +114,7 @@ impl UnrQueries {
             .unwrap_or_default();
         let resp = api
             .read_entities(
-                &global_config.unr,
+                global_config.unr.require_gql()?,
                 ForwardedToken::new(token),
                 names.clone(),
             )
@@ -195,7 +195,7 @@ impl UnrMutations {
         {
             let resp = api
                 .read_entities(
-                    &global_config.unr,
+                    global_config.unr.require_gql()?,
                     ForwardedToken::new(token.clone()),
                     children.clone(),
                 )
@@ -218,7 +218,7 @@ impl UnrMutations {
         }
 
         api.create_entities(
-            &global_config.unr,
+            global_config.unr.require_gql()?,
             ForwardedToken::new(token.clone()),
             vec![entity],
         )
@@ -231,7 +231,7 @@ impl UnrMutations {
         if let Some(children) = children
             && let Err(e) = set_children_impl(
                 api.as_ref(),
-                &global_config.unr,
+                global_config.unr.require_gql()?,
                 ForwardedToken::new(token),
                 device_name.clone(),
                 children,
@@ -270,7 +270,7 @@ impl UnrMutations {
         // semantics explicit by pre-checking existence.
         let exists = api
             .read_entities(
-                &global_config.unr,
+                global_config.unr.require_gql()?,
                 ForwardedToken::new(token.clone()),
                 vec![device_name.clone()],
             )
@@ -287,7 +287,7 @@ impl UnrMutations {
         }
 
         api.update_entities(
-            &global_config.unr,
+            global_config.unr.require_gql()?,
             ForwardedToken::new(token),
             vec![entity.clone()],
         )
@@ -319,7 +319,7 @@ impl UnrMutations {
         }
 
         api.delete_entities(
-            &global_config.unr,
+            global_config.unr.require_gql()?,
             ForwardedToken::new(token),
             names.clone(),
         )
@@ -348,7 +348,7 @@ impl UnrMutations {
 
         set_children_impl(
             api.as_ref(),
-            &global_config.unr,
+            global_config.unr.require_gql()?,
             ForwardedToken::new(token),
             parent,
             children,

@@ -44,7 +44,7 @@ impl AlarmsMutations {
             .unwrap_or_default();
 
         match alarms_svc::acknowledge_alarms(
-            &global_config.alarms_svc,
+            global_config.alarms_svc.require_gql()?,
             ForwardedToken::new(token),
             devices.clone(),
             updated_by,
@@ -67,7 +67,7 @@ impl AlarmsMutations {
             .unwrap_or_default();
 
         match alarms_svc::activate_alarms(
-            &global_config.alarms_svc,
+            global_config.alarms_svc.require_gql()?,
             ForwardedToken::new(token),
             devices.clone(),
             updated_by,
@@ -90,7 +90,7 @@ impl AlarmsMutations {
             .unwrap_or_default();
 
         match alarms_svc::bypass_alarms(
-            &global_config.alarms_svc,
+            global_config.alarms_svc.require_gql()?,
             ForwardedToken::new(token),
             devices.clone(),
             updated_by,
@@ -115,7 +115,7 @@ impl AlarmsMutations {
             .unwrap_or_default();
 
         match alarms_db::timers::create(
-            &global_config.alarms_db,
+            global_config.alarms_db.require_gql()?,
             ForwardedToken::new(token),
             device,
             end_time,
@@ -140,7 +140,7 @@ impl AlarmsMutations {
             .unwrap_or_default();
 
         match alarms_db::timers::delete(
-            &global_config.alarms_db,
+            global_config.alarms_db.require_gql()?,
             ForwardedToken::new(token),
             device.clone(),
             timer_type,
@@ -164,7 +164,7 @@ impl AlarmsMutations {
             .unwrap_or_default();
 
         match alarms_svc::snooze_alarms(
-            &global_config.alarms_svc,
+            global_config.alarms_svc.require_gql()?,
             ForwardedToken::new(token),
             devices.clone(),
             updated_by,
@@ -191,7 +191,7 @@ impl AlarmsMutations {
             .unwrap_or_default();
 
         match alarms_db::timers::update(
-            &global_config.alarms_db,
+            global_config.alarms_db.require_gql()?,
             ForwardedToken::new(token),
             device,
             end_time,
@@ -222,7 +222,7 @@ impl AlarmsQueries {
             .unwrap_or_default();
 
         match alarms_db::groups::read_metadata(
-            &global_config.alarms_db,
+            global_config.alarms_db.require_gql()?,
             ForwardedToken::new(token),
         )
         .await
@@ -250,7 +250,7 @@ impl AlarmsQueries {
             .unwrap_or_default();
 
         match alarms_db::groups::read_groups(
-            &global_config.alarms_db,
+            global_config.alarms_db.require_gql()?,
             ForwardedToken::new(token),
             groups,
         )
@@ -279,7 +279,7 @@ impl AlarmsQueries {
             .unwrap_or_default();
 
         match alarms_db::layouts::read_layouts(
-            &global_config.alarms_db,
+            global_config.alarms_db.require_gql()?,
             ForwardedToken::new(token),
         )
         .await
@@ -307,7 +307,7 @@ impl AlarmsQueries {
             .unwrap_or_default();
 
         alarms_svc::get_snapshot(
-            &global_config.alarms_svc,
+            global_config.alarms_svc.require_gql()?,
             ForwardedToken::new(token),
         )
         .await
@@ -326,7 +326,7 @@ impl AlarmsQueries {
             .unwrap_or_default();
 
         match alarms_db::timers::read(
-            &global_config.alarms_db,
+            global_config.alarms_db.require_gql()?,
             ForwardedToken::new(token),
             timer_type,
             user,
@@ -358,13 +358,14 @@ impl AlarmsSubscriptions {
     async fn alarms(
         &self, ctx: &Context<'_>,
     ) -> Result<impl Stream<Item = Alarm>, Error> {
-        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
-        let stream = KafkaSubscriber::new(
-            global_config.alarms_kafka.host_addr.clone(),
-            global_config.alarms_kafka.topic.clone(),
-        )
-        .get_stream::<StringMessage>()
-        .await;
+        let kafka = ctx
+            .data::<Arc<ExtapiGlobalConfig>>()?
+            .alarms_kafka
+            .require_gql()?;
+        let stream =
+            KafkaSubscriber::new(kafka.host_addr.clone(), kafka.topic.clone())
+                .get_stream::<StringMessage>()
+                .await;
 
         Ok(stream.filter_map(|message| {
             Alarm::try_from(message)

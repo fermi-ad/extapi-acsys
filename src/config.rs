@@ -17,18 +17,20 @@ fn read_var(name: &str) -> Option<String> {
 
 pub fn get_global_config() -> Result<Arc<ExtapiGlobalConfig>, ConfigError> {
     let config = ExtapiGlobalConfig {
-        alarms_db: GrpcConfig::new("GRPC_ALARMS_DB_HOST")?,
-        alarms_kafka: KafkaConfig::new(
+        alarms_db: Upstream::Enabled(GrpcConfig::new("GRPC_ALARMS_DB_HOST")?),
+        alarms_kafka: Upstream::Enabled(KafkaConfig::new(
             "ALARMS_KAFKA_HOST",
             "ALARMS_KAFKA_TOPIC",
-        )?,
-        alarms_svc: GrpcConfig::new("GRPC_ALARMS_SERVICE_HOST")?,
+        )?),
+        alarms_svc: Upstream::Enabled(GrpcConfig::new(
+            "GRPC_ALARMS_SERVICE_HOST",
+        )?),
         blm: GrpcConfig::optional("BLM", "BLM_GRPC_HOST"),
-        clock: GrpcConfig::new("CLOCK_GRPC_HOST")?,
-        devdb: GrpcConfig::new("DEVDB_GRPC_HOST")?,
-        tlg: GrpcConfig::new("TLG_GRPC_HOST")?,
-        unr: GrpcConfig::new("UNR_GRPC_HOST")?,
-        wscan: GrpcConfig::new("SCANNER_GRPC_HOST")?,
+        clock: Upstream::Enabled(GrpcConfig::new("CLOCK_GRPC_HOST")?),
+        devdb: Upstream::Enabled(GrpcConfig::new("DEVDB_GRPC_HOST")?),
+        tlg: Upstream::Enabled(GrpcConfig::new("TLG_GRPC_HOST")?),
+        unr: Upstream::Enabled(GrpcConfig::new("UNR_GRPC_HOST")?),
+        wscan: Upstream::Enabled(GrpcConfig::new("SCANNER_GRPC_HOST")?),
     };
 
     config.log_disabled_features();
@@ -41,48 +43,48 @@ pub fn get_global_config() -> Result<Arc<ExtapiGlobalConfig>, ConfigError> {
 #[cfg(test)]
 pub fn get_test_config() -> ExtapiGlobalConfig {
     ExtapiGlobalConfig {
-        alarms_db: GrpcConfig {
+        alarms_db: Upstream::Enabled(GrpcConfig {
             host_addr: String::new(),
-        },
-        alarms_kafka: KafkaConfig {
+        }),
+        alarms_kafka: Upstream::Enabled(KafkaConfig {
             host_addr: String::new(),
             topic: String::new(),
-        },
-        alarms_svc: GrpcConfig {
+        }),
+        alarms_svc: Upstream::Enabled(GrpcConfig {
             host_addr: String::new(),
-        },
+        }),
         blm: Upstream::Enabled(GrpcConfig {
             host_addr: String::new(),
         }),
-        clock: GrpcConfig {
+        clock: Upstream::Enabled(GrpcConfig {
             host_addr: String::new(),
-        },
-        devdb: GrpcConfig {
+        }),
+        devdb: Upstream::Enabled(GrpcConfig {
             host_addr: String::new(),
-        },
-        tlg: GrpcConfig {
+        }),
+        tlg: Upstream::Enabled(GrpcConfig {
             host_addr: String::new(),
-        },
-        unr: GrpcConfig {
+        }),
+        unr: Upstream::Enabled(GrpcConfig {
             host_addr: String::new(),
-        },
-        wscan: GrpcConfig {
+        }),
+        wscan: Upstream::Enabled(GrpcConfig {
             host_addr: String::new(),
-        },
+        }),
     }
 }
 
 #[derive(Debug)]
 pub struct ExtapiGlobalConfig {
-    pub alarms_db: GrpcConfig,
-    pub alarms_kafka: KafkaConfig,
-    pub alarms_svc: GrpcConfig,
+    pub alarms_db: Upstream<GrpcConfig>,
+    pub alarms_kafka: Upstream<KafkaConfig>,
+    pub alarms_svc: Upstream<GrpcConfig>,
     pub blm: Upstream<GrpcConfig>,
-    pub clock: GrpcConfig,
-    pub devdb: GrpcConfig,
-    pub tlg: GrpcConfig,
-    pub unr: GrpcConfig,
-    pub wscan: GrpcConfig,
+    pub clock: Upstream<GrpcConfig>,
+    pub devdb: Upstream<GrpcConfig>,
+    pub tlg: Upstream<GrpcConfig>,
+    pub unr: Upstream<GrpcConfig>,
+    pub wscan: Upstream<GrpcConfig>,
 }
 
 impl ExtapiGlobalConfig {

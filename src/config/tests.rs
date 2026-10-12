@@ -10,6 +10,10 @@ use serial_test::serial;
 
 use super::*;
 
+fn enabled<T>(upstream: &Upstream<T>) -> &T {
+    upstream.require().expect("upstream should be enabled")
+}
+
 #[test]
 #[serial]
 fn global_config_populates_when_all_vals_present() {
@@ -26,16 +30,16 @@ fn global_config_populates_when_all_vals_present() {
     } = &*get_global_config()
         .expect("All test env vars are set in .cargo/config.toml");
 
-    assert_eq!(alarms_db.host_addr, "test host");
-    assert_eq!(alarms_kafka.host_addr, "test host");
-    assert_eq!(alarms_kafka.topic, "test topic");
-    assert_eq!(alarms_svc.host_addr, "test host");
-    assert!(matches!(blm, Upstream::Enabled(c) if c.host_addr == "test host"));
-    assert_eq!(clock.host_addr, "test host");
-    assert_eq!(devdb.host_addr, "test host");
-    assert_eq!(tlg.host_addr, "test host");
-    assert_eq!(unr.host_addr, "test host");
-    assert_eq!(wscan.host_addr, "test host");
+    assert_eq!(enabled(alarms_db).host_addr, "test host");
+    assert_eq!(enabled(alarms_kafka).host_addr, "test host");
+    assert_eq!(enabled(alarms_kafka).topic, "test topic");
+    assert_eq!(enabled(alarms_svc).host_addr, "test host");
+    assert_eq!(enabled(blm).host_addr, "test host");
+    assert_eq!(enabled(clock).host_addr, "test host");
+    assert_eq!(enabled(devdb).host_addr, "test host");
+    assert_eq!(enabled(tlg).host_addr, "test host");
+    assert_eq!(enabled(unr).host_addr, "test host");
+    assert_eq!(enabled(wscan).host_addr, "test host");
 }
 
 #[test]

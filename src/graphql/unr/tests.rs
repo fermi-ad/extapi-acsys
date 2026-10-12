@@ -202,7 +202,7 @@ static CONFIG: LazyLock<Arc<ExtapiGlobalConfig>> =
     LazyLock::new(|| Arc::new(get_test_config()));
 
 fn testing_config() -> &'static GrpcConfig {
-    &CONFIG.unr
+    CONFIG.unr.require().expect("test config enables unr")
 }
 
 fn testing_token() -> ForwardedToken {
