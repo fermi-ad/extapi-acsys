@@ -10,6 +10,10 @@ use serial_test::serial;
 
 use super::*;
 
+fn global_config() -> Arc<ExtapiGlobalConfig> {
+    get_global_config().expect("REQUIRED_UPSTREAMS is unset in tests")
+}
+
 fn enabled<T>(upstream: &Upstream<T>) -> &T {
     upstream.require().expect("upstream should be enabled")
 }
@@ -45,6 +49,7 @@ fn with_env<R>(vars: &[&str], value: Option<&str>, f: impl FnOnce() -> R) -> R {
 fn global_config_populates_when_all_vals_present() {
     let ExtapiGlobalConfig {
         alarms_db,
+        #[cfg(feature = "kafka")]
         alarms_kafka,
         alarms_svc,
         blm,
@@ -53,11 +58,14 @@ fn global_config_populates_when_all_vals_present() {
         tlg,
         unr,
         wscan,
-    } = &*get_global_config();
+    } = &*get_global_config().expect("config is valid");
 
     assert_eq!(enabled(alarms_db).host_addr, "test host");
-    assert_eq!(enabled(alarms_kafka).host_addr, "test host");
-    assert_eq!(enabled(alarms_kafka).topic, "test topic");
+    #[cfg(feature = "kafka")]
+    {
+        assert_eq!(enabled(alarms_kafka).host_addr, "test host");
+        assert_eq!(enabled(alarms_kafka).topic, "test topic");
+    }
     assert_eq!(enabled(alarms_svc).host_addr, "test host");
     assert_eq!(enabled(blm).host_addr, "test host");
     assert_eq!(enabled(clock).host_addr, "test host");
@@ -70,7 +78,7 @@ fn global_config_populates_when_all_vals_present() {
 #[test]
 #[serial]
 fn upstream_disabled_when_var_missing() {
-    let config = with_env(&["DEVDB_GRPC_HOST"], None, get_global_config);
+    let config = with_env(&["DEVDB_GRPC_HOST"], None, global_config);
 
     let info = config.devdb.disabled_info().expect("devdb is disabled");
     assert_eq!(info.feature, "DevDB");
@@ -82,7 +90,7 @@ fn upstream_disabled_when_var_missing() {
 #[test]
 #[serial]
 fn upstream_disabled_when_var_blank() {
-    let config = with_env(&["BLM_GRPC_HOST"], Some("  "), get_global_config);
+    let config = with_env(&["BLM_GRPC_HOST"], Some("  "), global_config);
 
     let info = config.blm.disabled_info().expect("blm is disabled");
     assert_eq!(info.feature, "BLM");
@@ -104,7 +112,7 @@ fn startup_succeeds_with_no_upstreams_configured() {
         "TLG_GRPC_HOST",
         "UNR_GRPC_HOST",
     ];
-    let config = with_env(&vars, None, get_global_config);
+    let config = with_env(&vars, None, global_config);
 
     assert!(config.alarms_db.require().is_err());
     assert!(config.alarms_svc.require().is_err());
@@ -123,7 +131,7 @@ fn kafka_disabled_reports_every_missing_var() {
     let config = with_env(
         &["ALARMS_KAFKA_HOST", "ALARMS_KAFKA_TOPIC"],
         None,
-        get_global_config,
+        global_config,
     );
 
     let info = config.alarms_kafka.disabled_info().expect("kafka disabled");
@@ -137,24 +145,107 @@ fn kafka_disabled_reports_every_missing_var() {
 #[test]
 #[serial]
 fn kafka_disabled_when_only_topic_missing() {
-    let config = with_env(&["ALARMS_KAFKA_TOPIC"], None, get_global_config);
+    let config = with_env(&["ALARMS_KAFKA_TOPIC"], None, global_config);
 
     let info = config.alarms_kafka.disabled_info().expect("kafka disabled");
     assert_eq!(info.missing_vars, ["ALARMS_KAFKA_TOPIC"]);
 }
 
 #[test]
-fn disabled_upstream_maps_to_graphql_and_grpc_errors() {
-    let up: Upstream<GrpcConfig> =
-        Upstream::disabled("BLM", &["BLM_GRPC_HOST"]);
+fn feature_disabled_message_names_feature_not_var() {
+    let up: Upstream<GrpcConfig> = Upstream::disabled("BLM", ["BLM_GRPC_HOST"]);
 
-    let gql = up.require_gql().unwrap_err();
+    let message = up.require().unwrap_err().message();
     assert_eq!(
-        gql.message,
+        message,
         "The BLM feature is not available in this deployment"
     );
-    assert!(gql.extensions.is_some());
+    assert!(!message.contains("BLM_GRPC_HOST"));
+}
 
-    let status = tonic::Status::from(up.require().unwrap_err());
-    assert_eq!(status.code(), tonic::Code::Unimplemented);
+// REQUIRED_UPSTREAMS
+
+fn with_disabled_devdb_and_unr() -> ExtapiGlobalConfig {
+    let mut config = get_test_config();
+    config.devdb = Upstream::disabled("DevDB", ["DEVDB_GRPC_HOST"]);
+    config.unr = Upstream::disabled("UNR", ["UNR_GRPC_HOST"]);
+    config
+}
+
+#[test]
+fn required_upstreams_unset_or_blank_allows_everything_disabled() {
+    let config = with_disabled_devdb_and_unr();
+    assert_eq!(config.check_required(None), Ok(()));
+    assert_eq!(config.check_required(Some(" , ")), Ok(()));
+}
+
+#[test]
+fn required_upstreams_pass_when_listed_upstreams_are_enabled() {
+    let config = with_disabled_devdb_and_unr();
+    assert_eq!(config.check_required(Some("blm, clock")), Ok(()));
+}
+
+#[test]
+fn required_upstreams_report_every_missing_upstream() {
+    let config = with_disabled_devdb_and_unr();
+
+    let err = config.check_required(Some("unr,blm,devdb")).unwrap_err();
+    assert_eq!(
+        err,
+        ConfigError::MissingRequiredUpstreams(vec![
+            Disabled {
+                feature: "DevDB",
+                missing_vars: vec!["DEVDB_GRPC_HOST"],
+            },
+            Disabled {
+                feature: "UNR",
+                missing_vars: vec!["UNR_GRPC_HOST"],
+            },
+        ])
+    );
+    assert_eq!(
+        err.to_string(),
+        "required upstream(s) not configured: DevDB (set DEVDB_GRPC_HOST); \
+         UNR (set UNR_GRPC_HOST)"
+    );
+}
+
+#[test]
+fn required_upstreams_reject_unknown_keys() {
+    let config = get_test_config();
+
+    let err = config
+        .check_required(Some("devdb, dev_db, UNR"))
+        .unwrap_err();
+    let ConfigError::UnknownRequiredUpstreams { unknown, known } = &err else {
+        panic!("expected unknown-key error, got {err:?}");
+    };
+    assert_eq!(unknown, &["dev_db", "UNR"]);
+    assert!(known.contains(&"devdb"));
+    assert!(err.to_string().starts_with(
+        "REQUIRED_UPSTREAMS names unknown upstream(s): dev_db, UNR;"
+    ));
+}
+
+#[test]
+#[serial]
+fn get_global_config_fails_when_required_upstream_missing() {
+    let result = with_env(&["DEVDB_GRPC_HOST"], None, || {
+        with_env(&["REQUIRED_UPSTREAMS"], Some("devdb"), get_global_config)
+    });
+
+    assert!(matches!(
+        result,
+        Err(ConfigError::MissingRequiredUpstreams(ref missing))
+            if missing.len() == 1 && missing[0].feature == "DevDB"
+    ));
+}
+
+#[cfg(not(feature = "kafka"))]
+#[test]
+fn alarms_kafka_is_not_a_known_upstream_without_kafka_feature() {
+    let err = get_test_config()
+        .check_required(Some("alarms_kafka"))
+        .unwrap_err();
+    assert!(matches!(err, ConfigError::UnknownRequiredUpstreams { .. }));
 }

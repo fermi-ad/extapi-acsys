@@ -1,5 +1,7 @@
+use std::process::ExitCode;
+
 use clap::Parser;
-use tracing::{info, subscriber};
+use tracing::{error, info, subscriber};
 use tracing_subscriber::{
     Registry, filter::EnvFilter, fmt::layer, layer::SubscriberExt,
 };
@@ -17,7 +19,7 @@ struct Args {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> ExitCode {
     let args = Args::parse();
 
     // Set up logging.
@@ -34,8 +36,15 @@ async fn main() {
         .expect("Unable to set global default subscriber");
 
     info!("acquiring configuration values");
-    let global_config = config::get_global_config();
+    let global_config = match config::get_global_config() {
+        Ok(config) => config,
+        Err(err) => {
+            error!(%err, "invalid configuration; refusing to start");
+            return ExitCode::FAILURE;
+        }
+    };
 
     info!("starting");
     graphql::start_service(args.port, global_config).await;
+    ExitCode::SUCCESS
 }

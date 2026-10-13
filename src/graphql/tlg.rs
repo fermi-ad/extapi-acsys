@@ -25,7 +25,7 @@ impl TlgQueries {
             .unwrap_or_default();
 
         tlg::get_version(
-            global_config.tlg.require_gql()?,
+            global_config.tlg.require()?,
             ForwardedToken::new(token),
         )
         .await
@@ -49,7 +49,7 @@ impl TlgMutations {
             .unwrap_or_default();
 
         match tlg::diagnostics(
-            global_config.tlg.require_gql()?,
+            global_config.tlg.require()?,
             ForwardedToken::new(token),
             devices.into(),
         )
@@ -76,7 +76,7 @@ impl TlgMutations {
             .unwrap_or_default();
 
         match tlg::placement(
-            global_config.tlg.require_gql()?,
+            global_config.tlg.require()?,
             ForwardedToken::new(token),
             devices.into(),
         )

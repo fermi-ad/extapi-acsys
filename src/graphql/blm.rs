@@ -54,7 +54,7 @@ impl BlmQueries {
         &self, ctx: &Context<'_>, beam_line: BlmBeamLine, tclk_event: i32,
     ) -> Result<Vec<BlmDevice>> {
         let blm_config =
-            ctx.data::<Arc<ExtapiGlobalConfig>>()?.blm.require_gql()?;
+            ctx.data::<Arc<ExtapiGlobalConfig>>()?.blm.require()?;
         let response = blm::list_integrated_loss_devices(
             blm_config,
             forwarded_token(ctx),
@@ -81,7 +81,7 @@ impl BlmSubscriptions {
         sample_rate_ms: i32,
     ) -> Result<impl Stream<Item = Result<BlmLossRatioSample>>> {
         let blm_config =
-            ctx.data::<Arc<ExtapiGlobalConfig>>()?.blm.require_gql()?;
+            ctx.data::<Arc<ExtapiGlobalConfig>>()?.blm.require()?;
         let stream = blm::subscribe_loss_ratio(
             blm_config,
             forwarded_token(ctx),
@@ -106,7 +106,7 @@ impl BlmSubscriptions {
         &self, ctx: &Context<'_>, beam_line: BlmBeamLine, sample_rate_ms: i32,
     ) -> Result<impl Stream<Item = Result<BlmBeamThroughputSample>>> {
         let blm_config =
-            ctx.data::<Arc<ExtapiGlobalConfig>>()?.blm.require_gql()?;
+            ctx.data::<Arc<ExtapiGlobalConfig>>()?.blm.require()?;
         let stream = blm::subscribe_beam_throughput(
             blm_config,
             forwarded_token(ctx),

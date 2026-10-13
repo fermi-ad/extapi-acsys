@@ -17,9 +17,10 @@ use crate::{
     },
 };
 use async_graphql::{EmptyMutation, EmptySubscription, Schema};
-use axum::{Router, response::Html, routing::get};
+use axum::{Router, body::Bytes, response::Html, routing::get};
 use http::{Method, header};
 use std::{
+    fmt::Write as _,
     net::{IpAddr, Ipv6Addr, SocketAddr},
     sync::Arc,
 };
@@ -48,16 +49,15 @@ struct Link {
 // Returns an HTML document that has links to the GraphQL APIs that are
 // mounted on this deployment.
 
-fn base_page(links: &[Link]) -> Html<String> {
-    let items: String = links
-        .iter()
-        .map(|Link { path, label }| {
-            format!("      <li><a href=\"{path}\">{label}</a></li>\n")
-        })
-        .collect();
+fn base_page(links: &[Link]) -> String {
+    let items = links.iter().fold(String::new(), |mut out, link| {
+        let Link { path, label } = link;
+        let _ = writeln!(out, "      <li><a href=\"{path}\">{label}</a></li>");
+        out
+    });
 
-    Html(format!(
-        r#"
+    format!(
+        r"
 <html>
   <body>
     <p>Some quick links:</p>
@@ -66,8 +66,8 @@ fn base_page(links: &[Link]) -> Html<String> {
 {items}    </ul>
   </body>
 </html>
-"#
-    ))
+"
+    )
 }
 
 // Creates the portion of the site map that handles the ACSys GraphQL API.
@@ -340,22 +340,62 @@ fn create_wscan_router(global_config: Arc<ExtapiGlobalConfig>) -> Router {
         .route(S_ENDPOINT, get(graphql_ws_handler).with_state(schema))
 }
 
-// Mounts `build()` at `link.path` when `enabled`; otherwise the route does not
-// exist and requests to it get a 404. The skip is logged once at startup.
+/// Accumulates the routes for the site and the landing-page links for the
+/// routes that were actually mounted.
+struct SiteBuilder {
+    router: Router,
+    links: Vec<Link>,
+}
 
-fn mount(
-    router: Router, links: &mut Vec<Link>, link: Link, enabled: bool,
-    build: impl FnOnce() -> Router,
-) -> Router {
-    if enabled {
-        links.push(link);
-        router.merge(build())
-    } else {
-        info!(
-            route = link.path,
-            "route not mounted because its upstream(s) are disabled"
-        );
-        router
+impl SiteBuilder {
+    fn new() -> Self {
+        Self {
+            router: Router::new(),
+            links: Vec::new(),
+        }
+    }
+
+    // Mounts `build()` at `link.path` when `enabled`; otherwise the route
+    // does not exist and requests to it get a 404. The skip is logged once
+    // at startup.
+
+    fn mount(
+        mut self, link: Link, enabled: bool, build: impl FnOnce() -> Router,
+    ) -> Self {
+        if enabled {
+            self.router = self.router.merge(build());
+            self.links.push(link);
+        } else {
+            info!(
+                route = link.path,
+                "route not mounted because its upstream(s) are disabled"
+            );
+        }
+        self
+    }
+
+    // Adds the landing page, which links to every mounted route, and the
+    // CORS layer.
+
+    fn finish(mut self) -> Router {
+        self.links.sort_by_key(|link| link.path);
+        // `Bytes` is reference-counted, so the per-request handler clone
+        // does not copy the page.
+        let page = Bytes::from(base_page(&self.links));
+
+        self.router
+            .route("/", get(move || async move { Html(page) }))
+            .layer(
+                CorsLayer::new()
+                    .allow_methods([Method::OPTIONS, Method::GET, Method::POST])
+                    .allow_headers([
+                        header::AUTHORIZATION,
+                        header::CONTENT_TYPE,
+                        header::SEC_WEBSOCKET_PROTOCOL,
+                        header::ACCESS_CONTROL_ALLOW_ORIGIN,
+                    ])
+                    .allow_origin(Any),
+            )
     }
 }
 
@@ -367,113 +407,88 @@ fn mount(
 // FEATURE_DISABLED error when those upstreams are missing). The alarms route
 // is mounted when either of its gRPC upstreams is available; its other
 // resolvers report FEATURE_DISABLED individually.
-async fn create_site(global_config: Arc<ExtapiGlobalConfig>) -> Router {
-    let cfg = &global_config;
-    let mut links = vec![Link {
-        path: "/acsys",
-        label: "ACSys (data acquisition)",
-    }];
+//
+// Resolvers in routes gated on a single upstream (BLM, DevDB, TLG, UNR,
+// wire scanner) still call `require()`. That check cannot fail while the
+// route is gated, but keeps them safe if the mounting rules change.
+async fn create_site(cfg: Arc<ExtapiGlobalConfig>) -> Router {
+    // Built up front because `mount` takes a synchronous builder.
+    let acsys = create_acsys_router(Arc::clone(&cfg)).await;
 
-    let mut router =
-        Router::new().merge(create_acsys_router(Arc::clone(cfg)).await);
-
-    router = mount(
-        router,
-        &mut links,
-        Link {
-            path: "/alarms",
-            label: "Alarms",
-        },
-        cfg.alarms_db.is_enabled() || cfg.alarms_svc.is_enabled(),
-        || create_alarms_router(Arc::clone(cfg)),
-    );
-    router = mount(
-        router,
-        &mut links,
-        Link {
-            path: "/bbm",
-            label: "Beam Budget monitoring (WIP)",
-        },
-        true,
-        create_bbm_router,
-    );
-    router = mount(
-        router,
-        &mut links,
-        Link {
-            path: "/blm",
-            label: "Beam Loss Monitoring",
-        },
-        cfg.blm.is_enabled(),
-        || create_blm_router(Arc::clone(cfg)),
-    );
-    router = mount(
-        router,
-        &mut links,
-        Link {
-            path: "/devdb",
-            label: "Device Database",
-        },
-        cfg.devdb.is_enabled(),
-        || create_devdb_router(Arc::clone(cfg)),
-    );
-    router = mount(
-        router,
-        &mut links,
-        Link {
-            path: "/faas",
-            label: "Functions as a Service",
-        },
-        true,
-        create_faas_router,
-    );
-    router = mount(
-        router,
-        &mut links,
-        Link {
-            path: "/tlg",
-            label: "Timeline Generator placement",
-        },
-        cfg.tlg.is_enabled(),
-        || create_tlg_router(Arc::clone(cfg)),
-    );
-    router = mount(
-        router,
-        &mut links,
-        Link {
-            path: "/unr",
-            label: "UNR (device graph)",
-        },
-        cfg.unr.is_enabled(),
-        || create_unr_router(Arc::clone(cfg)),
-    );
-    router = mount(
-        router,
-        &mut links,
-        Link {
-            path: "/wscan",
-            label: "Wire Scanner (WIP)",
-        },
-        cfg.wscan.is_enabled(),
-        || create_wscan_router(Arc::clone(cfg)),
-    );
-
-    links.sort_by_key(|link| link.path);
-    let page = base_page(&links).0;
-
-    router
-        .route("/", get(move || async move { Html(page) }))
-        .layer(
-            CorsLayer::new()
-                .allow_methods([Method::OPTIONS, Method::GET, Method::POST])
-                .allow_headers([
-                    header::AUTHORIZATION,
-                    header::CONTENT_TYPE,
-                    header::SEC_WEBSOCKET_PROTOCOL,
-                    header::ACCESS_CONTROL_ALLOW_ORIGIN,
-                ])
-                .allow_origin(Any),
+    SiteBuilder::new()
+        .mount(
+            Link {
+                path: "/acsys",
+                label: "ACSys (data acquisition)",
+            },
+            true,
+            || acsys,
         )
+        .mount(
+            Link {
+                path: "/alarms",
+                label: "Alarms",
+            },
+            cfg.alarms_db.is_enabled() || cfg.alarms_svc.is_enabled(),
+            || create_alarms_router(Arc::clone(&cfg)),
+        )
+        .mount(
+            Link {
+                path: "/bbm",
+                label: "Beam Budget monitoring (WIP)",
+            },
+            true,
+            create_bbm_router,
+        )
+        .mount(
+            Link {
+                path: "/blm",
+                label: "Beam Loss Monitoring",
+            },
+            cfg.blm.is_enabled(),
+            || create_blm_router(Arc::clone(&cfg)),
+        )
+        .mount(
+            Link {
+                path: "/devdb",
+                label: "Device Database",
+            },
+            cfg.devdb.is_enabled(),
+            || create_devdb_router(Arc::clone(&cfg)),
+        )
+        .mount(
+            Link {
+                path: "/faas",
+                label: "Functions as a Service",
+            },
+            true,
+            create_faas_router,
+        )
+        .mount(
+            Link {
+                path: "/tlg",
+                label: "Timeline Generator placement",
+            },
+            cfg.tlg.is_enabled(),
+            || create_tlg_router(Arc::clone(&cfg)),
+        )
+        .mount(
+            Link {
+                path: "/unr",
+                label: "UNR (device graph)",
+            },
+            cfg.unr.is_enabled(),
+            || create_unr_router(Arc::clone(&cfg)),
+        )
+        .mount(
+            Link {
+                path: "/wscan",
+                label: "Wire Scanner (WIP)",
+            },
+            cfg.wscan.is_enabled(),
+            || create_wscan_router(Arc::clone(&cfg)),
+        )
+        .finish()
 }
 
 // Starts the web server that receives GraphQL queries. The
@@ -511,7 +526,10 @@ pub async fn start_service(port: u16, global_config: Arc<ExtapiGlobalConfig>) {
 
 #[cfg(test)]
 mod tests {
-    use crate::graphql::auth_handlers::AuthInfo;
+    use crate::{
+        config::{Upstream, get_test_config},
+        graphql::auth_handlers::AuthInfo,
+    };
 
     use super::*;
     use async_graphql::{Context, Object};
@@ -633,10 +651,8 @@ mod tests {
     // Route gating. These build the real site from a config and check
     // which routes exist.
 
-    use crate::config::{Upstream, get_test_config};
-
     fn disabled<T>() -> Upstream<T> {
-        Upstream::disabled("test", &["TEST_VAR"])
+        Upstream::disabled("test", ["TEST_VAR"])
     }
 
     async fn status_of(site: &Router, method: &str, uri: &str) -> StatusCode {
@@ -660,6 +676,10 @@ mod tests {
             .call(Request::builder().uri("/").body(Body::empty()).unwrap())
             .await
             .unwrap();
+        assert_eq!(
+            response.headers()[header::CONTENT_TYPE],
+            "text/html; charset=utf-8"
+        );
         String::from_utf8(
             to_bytes(response.into_body(), 1 << 20)
                 .await
@@ -735,7 +755,10 @@ mod tests {
     async fn site_boots_with_every_upstream_disabled() {
         let mut config = get_test_config();
         config.alarms_db = disabled();
-        config.alarms_kafka = disabled();
+        #[cfg(feature = "kafka")]
+        {
+            config.alarms_kafka = disabled();
+        }
         config.alarms_svc = disabled();
         config.blm = disabled();
         config.clock = disabled();
@@ -761,7 +784,7 @@ mod tests {
         config.clock = disabled();
         let site = create_site(Arc::new(config)).await;
 
-        // /acsys stays up; the DevDB-backed mutation reports FEATURE_DISABLED.
+        // /acsys stays up; the DevDB-backed query reports FEATURE_DISABLED.
         let response = site
             .clone()
             .call(

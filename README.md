@@ -36,18 +36,20 @@ The following variables exist for configuring the service at runtime:
 - `GRAPHQL_PORT` -> Port for clients to connect via GraphQL to this service
 - `GRPC_ALARMS_DB_HOST` -> Hostname for the Alarms DB Access gRPC service
 - `GRPC_ALARMS_SERVICE_HOST` -> Hostname for the Alarms gRPC service
+- `REQUIRED_UPSTREAMS` -> Optional comma-separated list of upstreams that must be configured for the service to start (see below)
 - `RUST_LOG` -> The default logging environment variable from Rust. Can be configured to log specific crates/modules at different levels from the global default.
 - `SCANNER_GRPC_HOST` -> Hostname for the wire scanner gRPC service
 - `TLG_GRPC_HOST` -> Hostname for the TLG gRPC service
 - `UNR_GRPC_HOST` -> Hostname for the UNR gRPC service
 
 #### Optional upstreams and feature degradation
-No upstream variable is required to start the service. If a variable is unset or blank, the service logs a `WARN` naming the variable and the disabled feature, then boots normally. `ALARMS_KAFKA_HOST` and `ALARMS_KAFKA_TOPIC` must both be set to enable alarm subscriptions.
+By default, no upstream variable is required to start the service. If a variable is unset or blank, the service logs a `WARN` naming the variable and the disabled feature, then boots normally. `ALARMS_KAFKA_HOST` and `ALARMS_KAFKA_TOPIC` must both be set to enable alarm subscriptions.
 
 | Variable(s) | Route | When missing |
 | --- | --- | --- |
 | `BLM_GRPC_HOST` | `/blm` | Route is not mounted (404) |
 | `DEVDB_GRPC_HOST` | `/devdb` | Route is not mounted (404) |
+| `DEVDB_GRPC_HOST` | `/acsys` plot configuration (`plotConfiguration`, `updatePlotConfiguration`, `deletePlotConfiguration`) | Field returns `FEATURE_DISABLED` |
 | `TLG_GRPC_HOST` | `/tlg` | Route is not mounted (404) |
 | `UNR_GRPC_HOST` | `/unr` | Route is not mounted (404) |
 | `SCANNER_GRPC_HOST` | `/wscan` | Route is not mounted (404) |
@@ -57,11 +59,14 @@ No upstream variable is required to start the service. If a variable is unset or
 
 `/acsys`, `/bbm` and `/faas` are always mounted. The landing page (`/`) only links to mounted routes. Requests that reach a disabled feature inside a mounted route get a GraphQL error with `extensions.code = "FEATURE_DISABLED"`.
 
-### BLM GraphQL API
+#### Requiring upstreams
+To keep fail-fast behavior for upstreams a deployment cannot run without, list them in `REQUIRED_UPSTREAMS`:
 
-- `/blm` serves BLM GraphQL queries over HTTP.
-- `/blm/s` serves BLM GraphQL subscriptions over WebSocket.
-- Beamline inputs follow the beamlines defined by the BLM protobuf API.
+```shell
+REQUIRED_UPSTREAMS=devdb,unr,clock
+```
+
+Keys: `alarms_db`, `alarms_kafka` (only with the `kafka` feature), `alarms_svc`, `blm`, `clock`, `devdb`, `tlg`, `unr`, `wscan`. If any listed upstream is missing, the service logs every missing variable and exits with a non-zero status. An unknown key is also a startup error, so a typo cannot silently drop a requirement. Unset or blank means nothing is required.
 
 ### Error IDs in responses
 

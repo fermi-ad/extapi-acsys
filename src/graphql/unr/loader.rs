@@ -50,11 +50,14 @@ impl Loader<String> for UnrEntityLoader {
     async fn load(
         &self, keys: &[String],
     ) -> Result<HashMap<String, Self::Value>, Self::Error> {
+        // Unreachable in practice: `/unr` is not mounted when UNR is disabled.
+        // Kept as a safety net; the loader's error type cannot carry the
+        // FEATURE_DISABLED code.
         let unr_config = self
             .global_config
             .unr
             .require()
-            .map_err(|e| LoaderError(e.to_string()))?;
+            .map_err(|e| LoaderError(e.message()))?;
         self.api
             .read_entities(unr_config, self.token.clone(), keys.to_vec())
             .await
@@ -98,11 +101,14 @@ impl Loader<String> for UnrRelationshipLoader {
     async fn load(
         &self, keys: &[String],
     ) -> Result<HashMap<String, Self::Value>, Self::Error> {
+        // Unreachable in practice: `/unr` is not mounted when UNR is disabled.
+        // Kept as a safety net; the loader's error type cannot carry the
+        // FEATURE_DISABLED code.
         let unr_config = self
             .global_config
             .unr
             .require()
-            .map_err(|e| LoaderError(e.to_string()))?;
+            .map_err(|e| LoaderError(e.message()))?;
         self.api
             .read_relationships(unr_config, self.token.clone(), keys.to_vec())
             .await
