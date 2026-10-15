@@ -29,9 +29,12 @@ fn forwarded_token(ctx: &Context<'_>) -> ForwardedToken {
 }
 
 fn validate_tclk_event(value: i32) -> Result<u32> {
-    u8::try_from(value)
-        .map(u32::from)
-        .map_err(|_| Error::new("tclkEvent must be between 0 and 255"))
+    let unsigned_value = value.cast_unsigned();
+    if unsigned_value <= 255 {
+        Ok(unsigned_value)
+    } else {
+        Err(Error::new("tclkEvent must be between 0 and 255"))
+    }
 }
 
 fn sample_rate(value: i32) -> Result<u32> {
@@ -127,6 +130,18 @@ impl BlmSubscriptions {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tclk_event_accepts_boundary_values() {
+        assert_eq!(validate_tclk_event(0).unwrap(), 0);
+        assert_eq!(validate_tclk_event(255).unwrap(), 255);
+    }
+
+    #[test]
+    fn tclk_event_rejects_values_outside_byte_range() {
+        assert!(validate_tclk_event(-1).is_err());
+        assert!(validate_tclk_event(256).is_err());
+    }
 
     #[test]
     fn sample_rate_accepts_positive_values() {
