@@ -51,7 +51,7 @@ impl ScannerQueries {
             .unwrap_or_default();
 
         wscan::get_progress(
-            &global_config.wscan,
+            global_config.wscan.require()?,
             ForwardedToken::new(token),
             id.0.clone(),
         )
@@ -86,7 +86,7 @@ impl ScannerMutations {
             .unwrap_or_default();
 
         Ok(wscan::abort_scan(
-            &global_config.wscan,
+            global_config.wscan.require()?,
             ForwardedToken::new(token),
             id.0,
         )
@@ -112,7 +112,7 @@ impl ScannerSubscriptions {
             .unwrap_or_default();
 
         wscan::start_scan(
-            &global_config.wscan,
+            global_config.wscan.require()?,
             ForwardedToken::new(token),
             ScanRequest {
                 detector_id: id.0,

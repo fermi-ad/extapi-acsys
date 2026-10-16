@@ -194,7 +194,7 @@ an array with 0 or 1 element."]
             .unwrap_or_default();
 
         match devdb::get_plot_config(
-            &global_config.devdb,
+            global_config.devdb.require()?,
             ForwardedToken::new(token),
             id,
         )
@@ -306,7 +306,7 @@ want to set."]
             .unwrap_or_default();
 
         devdb::save_plot_config(
-            &global_config.devdb,
+            global_config.devdb.require()?,
             ForwardedToken::new(token),
             id,
             name,
@@ -329,7 +329,7 @@ want to set."]
             .unwrap_or_default();
 
         match devdb::delete_plot_config(
-            &global_config.devdb,
+            global_config.devdb.require()?,
             ForwardedToken::new(token),
             configuration_id,
         )
@@ -964,7 +964,7 @@ impl ACSysSubscriptions {
             &[0x0f]
         };
         let mut tclk = clock::subscribe(
-            &global_config.clock,
+            global_config.clock.require()?,
             ForwardedToken::new(token),
             clock_list,
         )

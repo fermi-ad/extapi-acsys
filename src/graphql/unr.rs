@@ -114,7 +114,7 @@ impl UnrQueries {
             .unwrap_or_default();
         let resp = api
             .read_entities(
-                &global_config.unr,
+                global_config.unr.require()?,
                 ForwardedToken::new(token),
                 names.clone(),
             )
@@ -172,7 +172,8 @@ impl UnrMutations {
         &self, ctx: &Context<'_>, input: types::CreateDeviceInput,
     ) -> Result<types::Device> {
         let api = ctx.data::<Arc<dyn UnrApi>>()?;
-        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
+        let unr_config =
+            ctx.data::<Arc<ExtapiGlobalConfig>>()?.unr.require()?;
         let token = ctx
             .data_opt::<AuthInfo>()
             .and_then(|info| info.token())
@@ -195,7 +196,7 @@ impl UnrMutations {
         {
             let resp = api
                 .read_entities(
-                    &global_config.unr,
+                    unr_config,
                     ForwardedToken::new(token.clone()),
                     children.clone(),
                 )
@@ -218,7 +219,7 @@ impl UnrMutations {
         }
 
         api.create_entities(
-            &global_config.unr,
+            unr_config,
             ForwardedToken::new(token.clone()),
             vec![entity],
         )
@@ -231,7 +232,7 @@ impl UnrMutations {
         if let Some(children) = children
             && let Err(e) = set_children_impl(
                 api.as_ref(),
-                &global_config.unr,
+                unr_config,
                 ForwardedToken::new(token),
                 device_name.clone(),
                 children,
@@ -251,7 +252,8 @@ impl UnrMutations {
         &self, ctx: &Context<'_>, input: types::UpdateDeviceInput,
     ) -> Result<types::Device> {
         let api = ctx.data::<Arc<dyn UnrApi>>()?;
-        let global_config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
+        let unr_config =
+            ctx.data::<Arc<ExtapiGlobalConfig>>()?.unr.require()?;
         let token = ctx
             .data_opt::<AuthInfo>()
             .and_then(|info| info.token())
@@ -270,7 +272,7 @@ impl UnrMutations {
         // semantics explicit by pre-checking existence.
         let exists = api
             .read_entities(
-                &global_config.unr,
+                unr_config,
                 ForwardedToken::new(token.clone()),
                 vec![device_name.clone()],
             )
@@ -287,7 +289,7 @@ impl UnrMutations {
         }
 
         api.update_entities(
-            &global_config.unr,
+            unr_config,
             ForwardedToken::new(token),
             vec![entity.clone()],
         )
@@ -319,7 +321,7 @@ impl UnrMutations {
         }
 
         api.delete_entities(
-            &global_config.unr,
+            global_config.unr.require()?,
             ForwardedToken::new(token),
             names.clone(),
         )
@@ -348,7 +350,7 @@ impl UnrMutations {
 
         set_children_impl(
             api.as_ref(),
-            &global_config.unr,
+            global_config.unr.require()?,
             ForwardedToken::new(token),
             parent,
             children,
