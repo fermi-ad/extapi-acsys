@@ -43,7 +43,7 @@ impl<T> Upstream<T> {
         })
     }
 
-    #[must_use]
+    #[must_use = "this only reports whether the upstream is configured"]
     pub fn is_enabled(&self) -> bool {
         matches!(self, Self::Enabled(_))
     }
@@ -58,7 +58,8 @@ impl<T> Upstream<T> {
         }
     }
 
-    #[must_use]
+    #[must_use = "this returns the reason without logging it; use \
+                  `Disabled::warn` to log it"]
     pub fn disabled_info(&self) -> Option<&Disabled> {
         match self {
             Self::Enabled(_) => None,
@@ -78,7 +79,7 @@ pub struct FeatureDisabled(pub &'static str);
 
 impl FeatureDisabled {
     /// Client-facing message. Names the feature, never the env var.
-    #[must_use]
+    #[must_use = "this builds the message without reporting it"]
     pub fn message(self) -> String {
         format!("The {} feature is not available in this deployment", self.0)
     }
