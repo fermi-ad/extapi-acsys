@@ -97,6 +97,9 @@ pub struct UnrQueries;
 
 #[Object]
 impl UnrQueries {
+    /// Returns requested devices, or all devices when names are omitted or empty.
+    /// Requested duplicates and input-name order are preserved.
+    /// The order of an all-device query is unspecified.
     async fn devices(
         &self, ctx: &Context<'_>, names: Option<Vec<String>>,
     ) -> Result<Vec<types::DeviceQueryResult>> {
@@ -187,6 +190,7 @@ impl UnrMutations {
             address: input.address,
             r#type: input.r#type,
             protocol: input.protocol,
+            order: input.order,
         };
 
         // Pre-validate children existence before creating anything.
@@ -261,16 +265,9 @@ impl UnrMutations {
 
         let device_name = input.name.clone();
 
-        let entity = Entity {
-            id: device_name.clone(),
-            address: input.address,
-            r#type: input.r#type,
-            protocol: input.protocol,
-        };
-
         // grpc-unr-service update does not signal missing devices. Make
         // semantics explicit by pre-checking existence.
-        let exists = api
+        let existing = api
             .read_entities(
                 unr_config,
                 ForwardedToken::new(token.clone()),
@@ -279,14 +276,19 @@ impl UnrMutations {
             .await
             .map_err(|e| handle_error(e, "validating device exists"))?
             .entities
-            .iter()
-            .any(|e| e.id == device_name);
+            .into_iter()
+            .find(|e| e.id == device_name)
+            .ok_or_else(|| {
+                Error::new(format!("Device does not exist: {device_name}"))
+            })?;
 
-        if !exists {
-            return Err(Error::new(format!(
-                "Device does not exist: {device_name}"
-            )));
-        }
+        let entity = Entity {
+            id: device_name.clone(),
+            address: input.address,
+            r#type: input.r#type,
+            protocol: input.protocol,
+            order: input.order.unwrap_or(existing.order),
+        };
 
         api.update_entities(
             unr_config,

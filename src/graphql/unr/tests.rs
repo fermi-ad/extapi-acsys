@@ -363,6 +363,7 @@ async fn loader_dedupes_keys_and_maps_by_entity_id() {
             address: "ADDR".to_string(),
             r#type: "TYPE".to_string(),
             protocol: "PROTO".to_string(),
+            order: 0,
         }],
     )
     .await
@@ -411,6 +412,7 @@ async fn dataloader_cache_is_used_within_single_request() {
             address: "ADDR".to_string(),
             r#type: "TYPE".to_string(),
             protocol: "PROTO".to_string(),
+            order: 0,
         }],
     )
     .await
@@ -425,7 +427,7 @@ async fn dataloader_cache_is_used_within_single_request() {
             query {
               devices(names:["D"]) {
                 __typename
-                ... on Device { name address type protocol }
+                ... on Device { name address type protocol order }
               }
             }
             "#,
@@ -451,6 +453,7 @@ async fn dataloader_cache_does_not_carry_over_across_requests() {
             address: "ADDR".to_string(),
             r#type: "TYPE".to_string(),
             protocol: "PROTO".to_string(),
+            order: 0,
         }],
     )
     .await
@@ -462,7 +465,7 @@ async fn dataloader_cache_does_not_carry_over_across_requests() {
             query {
               devices(names:["D"]) {
                 __typename
-                ... on Device { name address type protocol }
+                ... on Device { name address type protocol order }
               }
             }
         "#;
@@ -500,6 +503,7 @@ async fn http_handler_injects_request_scoped_loader_no_cache_bleed() {
             address: "ADDR".to_string(),
             r#type: "TYPE".to_string(),
             protocol: "PROTO".to_string(),
+            order: 0,
         }],
     )
     .await
@@ -508,7 +512,7 @@ async fn http_handler_injects_request_scoped_loader_no_cache_bleed() {
     let mut app =
         crate::graphql::create_unr_router_with_api(api.clone(), CONFIG.clone());
 
-    let gql = r#"{ "query": "query { devices(names:[\"D\"]) { __typename ... on Device { name address type protocol } } }" }"#;
+    let gql = r#"{ "query": "query { devices(names:[\"D\"]) { __typename ... on Device { name address type protocol order } } }" }"#;
 
     // Note: this endpoint requires an Authorization header (any value) to
     // satisfy `AuthInfo` parsing in the handler.
@@ -578,6 +582,7 @@ async fn device_fields_resolve_from_loader_and_strip_empty() {
             address: "".to_string(),
             r#type: "T".to_string(),
             protocol: "".to_string(),
+            order: 0,
         }],
     )
     .await
@@ -590,7 +595,7 @@ async fn device_fields_resolve_from_loader_and_strip_empty() {
                 query {
                   devices(names:["D"]) {
                     __typename
-                    ... on Device { name address type protocol }
+                    ... on Device { name address type protocol order }
                     ... on NotFound { name }
                   }
                 }
@@ -604,6 +609,7 @@ async fn device_fields_resolve_from_loader_and_strip_empty() {
     assert!(v["devices"][0]["address"].is_null());
     assert_eq!(v["devices"][0]["type"], "T");
     assert!(v["devices"][0]["protocol"].is_null());
+    assert_eq!(v["devices"][0]["order"], 0);
 }
 
 #[tokio::test]
@@ -620,6 +626,7 @@ async fn device_children_resolves_relationships() {
             address: "ADDR".to_string(),
             r#type: "TYPE".to_string(),
             protocol: "PROTO".to_string(),
+            order: 0,
         }],
     )
     .await
@@ -671,12 +678,14 @@ async fn device_parent_resolves_relationship() {
                 address: "ADDR".to_string(),
                 r#type: "TYPE".to_string(),
                 protocol: "PROTO".to_string(),
+                order: 0,
             },
             Entity {
                 id: "CHILD".to_string(),
                 address: "ADDR".to_string(),
                 r#type: "TYPE".to_string(),
                 protocol: "PROTO".to_string(),
+                order: 0,
             },
         ],
     )
@@ -727,6 +736,7 @@ async fn device_parent_is_null_when_no_parent() {
             address: "ADDR".to_string(),
             r#type: "TYPE".to_string(),
             protocol: "PROTO".to_string(),
+            order: 0,
         }],
     )
     .await
@@ -765,6 +775,7 @@ async fn devices_query_returns_not_found_for_requested_name() {
             address: "ADDR".to_string(),
             r#type: "TYPE".to_string(),
             protocol: "PROTO".to_string(),
+            order: 0,
         }],
     )
     .await
@@ -808,12 +819,14 @@ async fn devices_query_without_names_returns_all_devices() {
                 address: "ADDR".to_string(),
                 r#type: "TYPE".to_string(),
                 protocol: "PROTO".to_string(),
+                order: 0,
             },
             Entity {
                 id: "B".to_string(),
                 address: "ADDR".to_string(),
                 r#type: "TYPE".to_string(),
                 protocol: "PROTO".to_string(),
+                order: 0,
             },
         ],
     )
@@ -862,6 +875,7 @@ async fn mutation_create_device_works() {
             address: "".to_string(),
             r#type: "".to_string(),
             protocol: "".to_string(),
+            order: 0,
         }],
     )
     .await
@@ -930,6 +944,7 @@ async fn mutation_create_device_relationship_failure_includes_partial_success_ex
             address: "".to_string(),
             r#type: "".to_string(),
             protocol: "".to_string(),
+            order: 0,
         }],
     )
     .await
@@ -1020,6 +1035,7 @@ async fn mutation_update_device_works() {
             address: "ADDR".to_string(),
             r#type: "TYPE".to_string(),
             protocol: "PROTO".to_string(),
+            order: 0,
         }],
     )
     .await
@@ -1072,6 +1088,7 @@ async fn mutation_update_device_returns_updated_fields() {
             address: "ADDR".to_string(),
             r#type: "TYPE".to_string(),
             protocol: "PROTO".to_string(),
+            order: 0,
         }],
     )
     .await
@@ -1115,6 +1132,7 @@ async fn mutation_set_children_creates_relationship() {
             address: "ADDR".to_string(),
             r#type: "TYPE".to_string(),
             protocol: "PROTO".to_string(),
+            order: 0,
         }],
     )
     .await
@@ -1158,6 +1176,7 @@ async fn mutation_set_children_empty_not_found_is_ok() {
             address: "ADDR".to_string(),
             r#type: "TYPE".to_string(),
             protocol: "PROTO".to_string(),
+            order: 0,
         }],
     )
     .await
@@ -1200,6 +1219,7 @@ async fn mutation_set_children_empty_deletes_existing_relationship() {
             address: "ADDR".to_string(),
             r#type: "TYPE".to_string(),
             protocol: "PROTO".to_string(),
+            order: 0,
         }],
     )
     .await
@@ -1251,6 +1271,7 @@ async fn mutation_set_children_replaces_existing_with_diff() {
             address: "ADDR".to_string(),
             r#type: "TYPE".to_string(),
             protocol: "PROTO".to_string(),
+            order: 0,
         }],
     )
     .await
@@ -1301,6 +1322,7 @@ async fn mutation_delete_devices_works() {
             address: "ADDR".to_string(),
             r#type: "TYPE".to_string(),
             protocol: "PROTO".to_string(),
+            order: 0,
         }],
     )
     .await
@@ -1375,24 +1397,28 @@ async fn relationship_loader_batches_multiple_devices_into_one_call() {
                 address: "ADDR".to_string(),
                 r#type: "TYPE".to_string(),
                 protocol: "PROTO".to_string(),
+                order: 0,
             },
             Entity {
                 id: "B".to_string(),
                 address: "ADDR".to_string(),
                 r#type: "TYPE".to_string(),
                 protocol: "PROTO".to_string(),
+                order: 0,
             },
             Entity {
                 id: "C".to_string(),
                 address: "ADDR".to_string(),
                 r#type: "TYPE".to_string(),
                 protocol: "PROTO".to_string(),
+                order: 0,
             },
             Entity {
                 id: "D".to_string(),
                 address: "ADDR".to_string(),
                 r#type: "TYPE".to_string(),
                 protocol: "PROTO".to_string(),
+                order: 0,
             },
         ],
     )
@@ -1453,12 +1479,14 @@ async fn relationship_loader_serves_repeated_keys_from_cache() {
                 address: "ADDR".to_string(),
                 r#type: "TYPE".to_string(),
                 protocol: "PROTO".to_string(),
+                order: 0,
             },
             Entity {
                 id: "C".to_string(),
                 address: "ADDR".to_string(),
                 r#type: "TYPE".to_string(),
                 protocol: "PROTO".to_string(),
+                order: 0,
             },
         ],
     )
@@ -1507,4 +1535,94 @@ async fn relationship_loader_serves_repeated_keys_from_cache() {
     assert_eq!(v["devices"][1]["parent"]["name"], "A");
 
     assert_eq!(*api.read_relationships_calls.lock().unwrap(), 1);
+}
+
+#[tokio::test]
+async fn device_order_resolves_full_unsigned_range() {
+    let api = Arc::new(FakeUnrApi::default());
+    api.entities.lock().unwrap().insert(
+        "D".to_string(),
+        Entity {
+            id: "D".to_string(),
+            order: u32::MAX,
+            ..Default::default()
+        },
+    );
+    let schema = schema_with_api(api.clone());
+    let result = schema
+        .execute(r#"{ devices(names:["D"]) { ... on Device { order } } }"#)
+        .await;
+    assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+    assert_eq!(json_data(result)["devices"][0]["order"], u32::MAX);
+    assert_eq!(*api.read_entities_calls.lock().unwrap(), 1);
+}
+
+#[tokio::test]
+async fn mutation_create_device_writes_order_and_defaults_to_zero() {
+    for order in [None, Some(0), Some(42), Some(u32::MAX)] {
+        let api = Arc::new(FakeUnrApi::default());
+        let schema = schema_with_api(api.clone());
+        let order_input =
+            order.map(|n| format!(", order:{n}")).unwrap_or_default();
+        let result = schema.execute(format!(
+            "mutation {{ createDevice(input:{{name:\"A\", address:\"ADDR\", type:\"TYPE\", protocol:\"PROTO\"{order_input}}}) {{ name order }} }}"
+        )).await;
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+        let expected = order.unwrap_or_default();
+        assert_eq!(json_data(result)["createDevice"]["order"], expected);
+        assert_eq!(api.entities.lock().unwrap()["A"].order, expected);
+    }
+}
+
+#[tokio::test]
+async fn mutation_update_device_writes_order_or_preserves_existing() {
+    for order_input in [
+        "",
+        ", order:null",
+        ", order:0",
+        ", order:42",
+        ", order:4294967295",
+    ] {
+        let api = Arc::new(FakeUnrApi::default());
+        api.entities.lock().unwrap().insert(
+            "A".to_string(),
+            Entity {
+                id: "A".to_string(),
+                order: 17,
+                ..Default::default()
+            },
+        );
+        let schema = schema_with_api(api.clone());
+        let result = schema.execute(format!(
+            "mutation {{ updateDevice(input:{{name:\"A\", address:\"ADDR2\", type:\"TYPE2\", protocol:\"PROTO2\"{order_input}}}) {{ name order }} }}"
+        )).await;
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+        let expected = match order_input {
+            "" | ", order:null" => 17,
+            ", order:0" => 0,
+            ", order:42" => 42,
+            _ => u32::MAX,
+        };
+        assert_eq!(json_data(result)["updateDevice"]["order"], expected);
+        assert_eq!(api.entities.lock().unwrap()["A"].order, expected);
+    }
+}
+
+#[tokio::test]
+async fn mutation_order_rejects_out_of_range_values_without_writing() {
+    for mutation in ["createDevice", "updateDevice"] {
+        for order in ["-1", "4294967296"] {
+            let api = Arc::new(FakeUnrApi::default());
+            let schema = schema_with_api(api.clone());
+            let result = schema.execute(format!(
+                "mutation {{ {mutation}(input:{{name:\"A\", address:\"ADDR\", type:\"TYPE\", protocol:\"PROTO\", order:{order}}}) {{ name }} }}"
+            )).await;
+            assert!(
+                !result.errors.is_empty(),
+                "expected invalid order to fail"
+            );
+            assert!(api.entities.lock().unwrap().is_empty());
+            assert_eq!(*api.read_entities_calls.lock().unwrap(), 0);
+        }
+    }
 }

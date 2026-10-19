@@ -17,6 +17,9 @@ pub struct CreateDeviceInput {
     pub address: String,
     pub r#type: String,
     pub protocol: String,
+    /// Unitless relative order along the beamline; defaults to zero.
+    #[graphql(default)]
+    pub order: u32,
     pub children: Option<Vec<String>>,
 }
 
@@ -30,6 +33,9 @@ pub struct UpdateDeviceInput {
     pub address: String,
     pub r#type: String,
     pub protocol: String,
+    /// Unitless relative order along the beamline.
+    /// Omitted or null values preserve the existing value.
+    pub order: Option<u32>,
 }
 
 #[derive(Clone, Debug, SimpleObject)]
@@ -69,6 +75,12 @@ impl Device {
     async fn protocol(&self, ctx: &Context<'_>) -> Result<Option<String>> {
         let entity = self.load_entity(ctx).await?;
         Ok(entity.and_then(|entity| non_empty(entity.protocol)))
+    }
+
+    #[doc = "Unitless relative order along the beamline."]
+    async fn order(&self, ctx: &Context<'_>) -> Result<Option<u32>> {
+        let entity = self.load_entity(ctx).await?;
+        Ok(entity.map(|entity| entity.order))
     }
 
     #[graphql(skip)]
