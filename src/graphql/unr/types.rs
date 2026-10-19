@@ -77,7 +77,7 @@ impl Device {
         Ok(entity.and_then(|entity| non_empty(entity.protocol)))
     }
 
-    #[doc = "Unitless relative order along the beamline."]
+    /// Unitless relative order along the beamline.
     async fn order(&self, ctx: &Context<'_>) -> Result<Option<u32>> {
         let entity = self.load_entity(ctx).await?;
         Ok(entity.map(|entity| entity.order))
