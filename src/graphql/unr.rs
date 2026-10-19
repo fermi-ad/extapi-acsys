@@ -97,9 +97,6 @@ pub struct UnrQueries;
 
 #[Object]
 impl UnrQueries {
-    /// Returns requested devices, or all devices when names are omitted or empty.
-    /// Requested duplicates and input-name order are preserved.
-    /// The order of an all-device query is unspecified.
     async fn devices(
         &self, ctx: &Context<'_>, names: Option<Vec<String>>,
     ) -> Result<Vec<types::DeviceQueryResult>> {
