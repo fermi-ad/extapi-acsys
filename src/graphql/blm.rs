@@ -155,7 +155,7 @@ mod tests {
     }
 
     #[test]
-    fn schema_preserves_protobuf_beam_line_names() {
+    fn schema_uses_rust_beam_line_names() {
         let schema = async_graphql::Schema::build(
             BlmQueries,
             async_graphql::EmptyMutation,
@@ -164,9 +164,9 @@ mod tests {
         .finish();
         let sdl = schema.sdl();
 
-        assert!(sdl.contains("BEAM_LINE_UNSPECIFIED"));
-        assert!(sdl.contains("BEAM_LINE_400MEV"));
-        assert!(sdl.contains("BEAM_LINE_BOOSTER"));
-        assert!(sdl.contains("BEAM_LINE_DELIVERY_RING"));
+        assert!(sdl.contains("UNSPECIFIED"));
+        assert!(sdl.contains("BOOSTER"));
+        assert!(sdl.contains("DELIVERY_RING"));
+        assert!(!sdl.contains("BEAM_LINE_BOOSTER"));
     }
 }

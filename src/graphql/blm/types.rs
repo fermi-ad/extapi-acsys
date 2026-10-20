@@ -119,7 +119,7 @@ impl From<BeamEfficiencies> for BlmBeamEfficiency {
 
 #[derive(SimpleObject)]
 pub struct BlmBeamThroughputSample {
-    pub beam_line: Option<BeamLine>,
+    pub beam_line: BeamLine,
     pub protons_per_pulse: u32,
     pub protons_per_hour: u32,
     pub protons_per_hour_limit: u32,
@@ -129,7 +129,7 @@ pub struct BlmBeamThroughputSample {
 impl From<SubscribeBeamThroughputResponse> for BlmBeamThroughputSample {
     fn from(value: SubscribeBeamThroughputResponse) -> Self {
         Self {
-            beam_line: BeamLine::try_from(value.beam_line).ok(),
+            beam_line: value.beam_line(),
             protons_per_pulse: value.protons_per_pulse,
             protons_per_hour: value.protons_per_hour,
             protons_per_hour_limit: value.protons_per_hour_limit,
@@ -173,6 +173,6 @@ mod tests {
                 efficiencies: Vec::new(),
             });
 
-        assert_eq!(sample.beam_line, Some(BeamLine::Booster));
+        assert_eq!(sample.beam_line, BeamLine::Booster);
     }
 }
