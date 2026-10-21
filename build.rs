@@ -7,7 +7,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "#[derive(serde::Deserialize)]",
         )
         .type_attribute(".common.alarm", "#[derive(serde::Deserialize)]")
-        .enum_attribute(".common.alarm", "#[derive(async_graphql::Enum)]");
+        .enum_attribute(".common.alarm", "#[derive(async_graphql::Enum)]")
+        .enum_attribute(
+            ".services.blm.v1.BeamLine",
+            "#[derive(async_graphql::Enum)]",
+        );
 
     generate_protos(config)?;
 
