@@ -240,11 +240,12 @@ fn create_mi8_autotune_router_with_api(
     api: Arc<dyn mi8_autotune::Mi8AutotuneApi>,
 ) -> Router {
     const Q_ENDPOINT: &str = "/mi8-autotune";
+    const S_ENDPOINT: &str = "/mi8-autotune/s";
 
     let schema = Schema::build(
         mi8_autotune::Mi8AutotuneQueries,
         EmptyMutation,
-        EmptySubscription,
+        mi8_autotune::Mi8AutotuneSubscriptions,
     )
     .data(global_config)
     .data(api)
@@ -253,13 +254,18 @@ fn create_mi8_autotune_router_with_api(
     let graphiql = Html(
         async_graphql::http::GraphiQLSource::build()
             .endpoint(Q_ENDPOINT)
+            .subscription_endpoint(S_ENDPOINT)
             .finish(),
     );
 
-    Router::new().route(
-        Q_ENDPOINT,
-        get(graphiql).post(graphql_handler).with_state(schema),
-    )
+    Router::new()
+        .route(
+            Q_ENDPOINT,
+            get(graphiql)
+                .post(graphql_handler)
+                .with_state(schema.clone()),
+        )
+        .route(S_ENDPOINT, get(graphql_ws_handler).with_state(schema))
 }
 
 fn create_mi8_autotune_router(
@@ -778,6 +784,10 @@ mod tests {
                 "{path} should not be mounted"
             );
         }
+        assert_eq!(
+            status_of(&site, "GET", "/mi8-autotune/s").await,
+            StatusCode::NOT_FOUND,
+        );
         // Routes whose upstreams are still configured, or that need none,
         // are unaffected.
         for path in ["/acsys", "/alarms", "/bbm", "/faas"] {
@@ -792,8 +802,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mi8_autotune_mounts_graphiql_and_landing_link_without_subscription_route()
-     {
+    async fn mi8_autotune_mounts_graphiql_landing_link_and_subscription_route()
+    {
         let site = create_site(Arc::new(get_test_config())).await;
         assert_eq!(
             status_of(&site, "GET", "/mi8-autotune").await,
@@ -802,7 +812,7 @@ mod tests {
         assert!(landing_page(&site).await.contains("href=\"/mi8-autotune\""));
         assert_eq!(
             status_of(&site, "GET", "/mi8-autotune/s").await,
-            StatusCode::NOT_FOUND
+            StatusCode::BAD_REQUEST
         );
     }
 

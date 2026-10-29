@@ -1,10 +1,11 @@
 use std::sync::Mutex;
 
-use async_graphql::{EmptyMutation, EmptySubscription, Schema, value};
+use async_graphql::{EmptyMutation, Schema, value};
 use axum::{
     body::{Body, to_bytes},
     http::{Request, StatusCode},
 };
+use futures_util::stream;
 use rust_grpc_lib::auth::TokenProvider;
 use serde_json::json;
 use tower::Service;
@@ -15,6 +16,39 @@ use crate::config::{Upstream, get_test_config};
 struct FakeApi {
     response: std::result::Result<ListBpmsResponse, Status>,
     calls: Mutex<Vec<(String, String)>>,
+    armed: Mutex<
+        Option<
+            std::result::Result<
+                BoxStream<
+                    'static,
+                    std::result::Result<SubscribeArmedStateResponse, Status>,
+                >,
+                Status,
+            >,
+        >,
+    >,
+    mode: Mutex<
+        Option<
+            std::result::Result<
+                BoxStream<
+                    'static,
+                    std::result::Result<SubscribeOperatingModeResponse, Status>,
+                >,
+                Status,
+            >,
+        >,
+    >,
+    events: Mutex<
+        Option<
+            std::result::Result<
+                BoxStream<
+                    'static,
+                    std::result::Result<SubscribeAutotuneEventResponse, Status>,
+                >,
+                Status,
+            >,
+        >,
+    >,
 }
 
 impl FakeApi {
@@ -22,6 +56,9 @@ impl FakeApi {
         Self {
             response,
             calls: Mutex::new(Vec::new()),
+            armed: Mutex::new(Some(Ok(stream::empty().boxed()))),
+            mode: Mutex::new(Some(Ok(stream::empty().boxed()))),
+            events: Mutex::new(Some(Ok(stream::empty().boxed()))),
         }
     }
 }
@@ -37,6 +74,54 @@ impl Mi8AutotuneApi for FakeApi {
             .push((config.host_addr.clone(), token.get_token().unwrap()));
         self.response.clone()
     }
+
+    async fn subscribe_armed_state(
+        &self, config: &GrpcConfig, token: ForwardedToken,
+    ) -> std::result::Result<
+        BoxStream<
+            'static,
+            std::result::Result<SubscribeArmedStateResponse, Status>,
+        >,
+        Status,
+    > {
+        self.calls
+            .lock()
+            .unwrap()
+            .push((config.host_addr.clone(), token.get_token().unwrap()));
+        self.armed.lock().unwrap().take().unwrap()
+    }
+
+    async fn subscribe_operating_mode(
+        &self, config: &GrpcConfig, token: ForwardedToken,
+    ) -> std::result::Result<
+        BoxStream<
+            'static,
+            std::result::Result<SubscribeOperatingModeResponse, Status>,
+        >,
+        Status,
+    > {
+        self.calls
+            .lock()
+            .unwrap()
+            .push((config.host_addr.clone(), token.get_token().unwrap()));
+        self.mode.lock().unwrap().take().unwrap()
+    }
+
+    async fn subscribe_events(
+        &self, config: &GrpcConfig, token: ForwardedToken,
+    ) -> std::result::Result<
+        BoxStream<
+            'static,
+            std::result::Result<SubscribeAutotuneEventResponse, Status>,
+        >,
+        Status,
+    > {
+        self.calls
+            .lock()
+            .unwrap()
+            .push((config.host_addr.clone(), token.get_token().unwrap()));
+        self.events.lock().unwrap().take().unwrap()
+    }
 }
 
 fn config() -> ExtapiGlobalConfig {
@@ -49,8 +134,8 @@ fn config() -> ExtapiGlobalConfig {
 
 fn schema(
     config: ExtapiGlobalConfig, api: Arc<FakeApi>,
-) -> Schema<Mi8AutotuneQueries, EmptyMutation, EmptySubscription> {
-    Schema::build(Mi8AutotuneQueries, EmptyMutation, EmptySubscription)
+) -> Schema<Mi8AutotuneQueries, EmptyMutation, Mi8AutotuneSubscriptions> {
+    Schema::build(Mi8AutotuneQueries, EmptyMutation, Mi8AutotuneSubscriptions)
         .data(Arc::new(config))
         .data(api as Arc<dyn Mi8AutotuneApi>)
         .finish()
@@ -166,11 +251,348 @@ async fn http_handler_forwards_each_callers_token_and_config() {
 }
 
 #[test]
-fn schema_is_query_only_with_non_null_bpm_names() {
+fn schema_is_read_only_with_non_null_bpms_and_subscriptions() {
     let api = Arc::new(FakeApi::new(Ok(ListBpmsResponse { bpms: vec![] })));
     let sdl = schema(config(), api).sdl();
 
     assert!(sdl.contains("bpms: [String!]!"), "{sdl}");
     assert!(!sdl.contains("mutation:"), "{sdl}");
-    assert!(!sdl.contains("subscription:"), "{sdl}");
+    assert!(
+        sdl.contains("subscription: Mi8AutotuneSubscriptions"),
+        "{sdl}"
+    );
+    for field in [
+        "armedState: ArmedState!",
+        "operatingMode: OperatingMode!",
+        "events: AutotuneEventUpdate!",
+        "autotuneEvent: AutotuneEvent!",
+        "errorMessage: String!",
+    ] {
+        assert!(sdl.contains(field), "{sdl}");
+    }
+    assert!(!sdl.contains("setArmedState"), "{sdl}");
+    assert!(!sdl.contains("settings"), "{sdl}");
+}
+
+#[test]
+fn enum_mappings_cover_every_known_value_and_unknown_numbers() {
+    for (number, expected) in
+        [ArmedState::Unknown, ArmedState::Armed, ArmedState::Disarmed]
+            .into_iter()
+            .enumerate()
+    {
+        assert_eq!(ArmedState::from(number as i32), expected);
+    }
+    for (number, expected) in [
+        OperatingMode::Unknown,
+        OperatingMode::Live,
+        OperatingMode::Shadow,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        assert_eq!(OperatingMode::from(number as i32), expected);
+    }
+    for (number, expected) in [
+        types::AutotuneEvent::Unknown,
+        types::AutotuneEvent::NoAuto,
+        types::AutotuneEvent::FirstPass,
+        types::AutotuneEvent::Move,
+        types::AutotuneEvent::MovePending,
+        types::AutotuneEvent::DaqError,
+        types::AutotuneEvent::BigMove,
+        types::AutotuneEvent::VernierMove,
+        types::AutotuneEvent::BeamOk,
+        types::AutotuneEvent::BigSetting,
+        types::AutotuneEvent::IntensityLow,
+        types::AutotuneEvent::AuxiliaryBad,
+        types::AutotuneEvent::SettingError,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        assert_eq!(types::AutotuneEvent::from(number as i32), expected);
+    }
+    for number in [-1, 99, i32::MIN, i32::MAX] {
+        assert_eq!(ArmedState::from(number), ArmedState::Unknown);
+        assert_eq!(OperatingMode::from(number), OperatingMode::Unknown);
+        assert_eq!(
+            types::AutotuneEvent::from(number),
+            types::AutotuneEvent::Unknown
+        );
+    }
+}
+
+fn empty_api() -> Arc<FakeApi> {
+    Arc::new(FakeApi::new(Ok(ListBpmsResponse { bpms: vec![] })))
+}
+
+const OPERATIONS: [&str; 3] = [
+    "subscription { armedState }",
+    "subscription { operatingMode }",
+    "subscription { events { autotuneEvent errorMessage } }",
+];
+
+#[tokio::test]
+async fn subscriptions_forward_initial_and_subsequent_messages_then_complete() {
+    let api = empty_api();
+    *api.armed.lock().unwrap() =
+        Some(Ok(stream::iter([2, 1, 99].map(|armed_state| {
+            Ok(SubscribeArmedStateResponse { armed_state })
+        }))
+        .boxed()));
+    *api.mode.lock().unwrap() =
+        Some(Ok(stream::iter([2, 1, -1].map(|operating_mode| {
+            Ok(SubscribeOperatingModeResponse { operating_mode })
+        }))
+        .boxed()));
+    *api.events.lock().unwrap() = Some(Ok(stream::iter([
+        Ok(SubscribeAutotuneEventResponse {
+            autotune_event: 8,
+            error_message: String::new(),
+        }),
+        Ok(SubscribeAutotuneEventResponse {
+            autotune_event: 12,
+            error_message: "trim failed".to_owned(),
+        }),
+        Ok(SubscribeAutotuneEventResponse {
+            autotune_event: 99,
+            error_message: "future event".to_owned(),
+        }),
+    ])
+    .boxed()));
+    let schema = schema(config(), api.clone());
+    let expected = [
+        vec![
+            value!({"armedState": "DISARMED"}),
+            value!({"armedState": "ARMED"}),
+            value!({"armedState": "UNKNOWN"}),
+        ],
+        vec![
+            value!({"operatingMode": "SHADOW"}),
+            value!({"operatingMode": "LIVE"}),
+            value!({"operatingMode": "UNKNOWN"}),
+        ],
+        vec![
+            value!({"events": {"autotuneEvent": "BEAM_OK", "errorMessage": ""}}),
+            value!({"events": {"autotuneEvent": "SETTING_ERROR", "errorMessage": "trim failed"}}),
+            value!({"events": {"autotuneEvent": "UNKNOWN", "errorMessage": "future event"}}),
+        ],
+    ];
+    for (operation, expected) in OPERATIONS.into_iter().zip(expected) {
+        let responses =
+            schema.execute_stream(operation).collect::<Vec<_>>().await;
+        assert!(
+            responses.iter().all(|response| response.errors.is_empty()),
+            "{responses:?}"
+        );
+        assert_eq!(
+            responses
+                .into_iter()
+                .map(|response| response.data)
+                .collect::<Vec<_>>(),
+            expected
+        );
+    }
+    assert_eq!(api.calls.lock().unwrap().len(), 3);
+}
+
+fn assert_safe_error(response: &async_graphql::Response) {
+    assert_eq!(response.errors.len(), 1);
+    let message = &response.errors[0].message;
+    let id = message
+        .strip_prefix(
+            "Error encountered. See server logs for details. (Error ID: ",
+        )
+        .and_then(|message| message.strip_suffix(')'))
+        .expect("safe error ID");
+    assert!(uuid::Uuid::parse_str(id).is_ok());
+    assert!(!message.contains("private"));
+    assert!(!message.contains("secret"));
+}
+
+#[tokio::test]
+async fn subscription_initiation_and_stream_errors_are_safe() {
+    for status in [
+        Status::internal("private token=secret"),
+        Status::unauthenticated("private auth"),
+        Status::unavailable("private host"),
+    ] {
+        for initiation in [true, false] {
+            let api = empty_api();
+            if initiation {
+                *api.armed.lock().unwrap() = Some(Err(status.clone()));
+                *api.mode.lock().unwrap() = Some(Err(status.clone()));
+                *api.events.lock().unwrap() = Some(Err(status.clone()));
+            } else {
+                *api.armed.lock().unwrap() = Some(Ok(stream::iter([
+                    Ok(SubscribeArmedStateResponse { armed_state: 1 }),
+                    Err(status.clone()),
+                ])
+                .boxed()));
+                *api.mode.lock().unwrap() = Some(Ok(stream::iter([
+                    Ok(SubscribeOperatingModeResponse { operating_mode: 1 }),
+                    Err(status.clone()),
+                ])
+                .boxed()));
+                *api.events.lock().unwrap() = Some(Ok(stream::iter([
+                    Ok(SubscribeAutotuneEventResponse {
+                        autotune_event: 8,
+                        error_message: String::new(),
+                    }),
+                    Err(status.clone()),
+                ])
+                .boxed()));
+            }
+            let schema = schema(config(), api);
+            for operation in OPERATIONS {
+                let responses =
+                    schema.execute_stream(operation).collect::<Vec<_>>().await;
+                assert_eq!(responses.len(), if initiation { 1 } else { 2 });
+                if !initiation {
+                    assert!(responses[0].errors.is_empty());
+                }
+                assert_safe_error(responses.last().unwrap());
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn disabled_subscriptions_do_not_call_upstream() {
+    let api = empty_api();
+    let mut config = config();
+    config.mi8_autotune =
+        Upstream::disabled("MI8 Autotune", ["MI8_AUTOTUNE_GRPC_HOST"]);
+    let schema = schema(config, api.clone());
+    for operation in OPERATIONS {
+        let responses =
+            schema.execute_stream(operation).collect::<Vec<_>>().await;
+        assert_eq!(responses.len(), 1);
+        assert_eq!(
+            responses[0].errors[0]
+                .extensions
+                .as_ref()
+                .unwrap()
+                .get("code"),
+            Some(&value!("FEATURE_DISABLED"))
+        );
+    }
+    assert!(api.calls.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn subscriptions_forward_each_callers_token_and_config() {
+    use axum::extract::FromRequestParts;
+    for token in [Some("first-caller"), Some("second-caller"), None] {
+        let api = empty_api();
+        let schema = schema(config(), api.clone());
+        for operation in OPERATIONS {
+            let mut builder = Request::builder();
+            if let Some(token) = token {
+                builder =
+                    builder.header("authorization", format!("Bearer {token}"));
+            }
+            let (mut parts, _) = builder.body(()).unwrap().into_parts();
+            let auth = AuthInfo::from_request_parts(&mut parts, &())
+                .await
+                .ok()
+                .unwrap();
+            let responses = schema
+                .execute_stream(
+                    async_graphql::Request::new(operation).data(auth),
+                )
+                .collect::<Vec<_>>()
+                .await;
+            assert!(responses.is_empty());
+        }
+        for (host, actual_token) in api.calls.lock().unwrap().iter() {
+            assert_eq!(host, "http://mi8-autotune.test:50051");
+            assert_eq!(actual_token, token.unwrap_or_default());
+        }
+        assert_eq!(api.calls.lock().unwrap().len(), 3);
+    }
+}
+
+#[tokio::test]
+async fn pending_streams_emit_nothing_synthetic_and_are_dropped_on_cancellation()
+ {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    struct DropSignal(Arc<AtomicBool>);
+    impl Drop for DropSignal {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+    for operation in OPERATIONS {
+        let api = empty_api();
+        let dropped = Arc::new(AtomicBool::new(false));
+        let guard = DropSignal(dropped.clone());
+        // A captured guard makes ownership/drop observable without a background task.
+        match operation {
+            "subscription { armedState }" => {
+                *api.armed.lock().unwrap() = Some(Ok(stream::pending()
+                    .map(move |item| {
+                        let _ = &guard;
+                        item
+                    })
+                    .boxed()))
+            }
+            "subscription { operatingMode }" => {
+                *api.mode.lock().unwrap() = Some(Ok(stream::pending()
+                    .map(move |item| {
+                        let _ = &guard;
+                        item
+                    })
+                    .boxed()))
+            }
+            _ => {
+                *api.events.lock().unwrap() = Some(Ok(stream::pending()
+                    .map(move |item| {
+                        let _ = &guard;
+                        item
+                    })
+                    .boxed()))
+            }
+        }
+        let schema = schema(config(), api.clone());
+        let mut responses = schema.execute_stream(operation);
+        assert!(
+            tokio::time::timeout(
+                std::time::Duration::from_millis(20),
+                responses.next()
+            )
+            .await
+            .is_err()
+        );
+        assert_eq!(api.calls.lock().unwrap().len(), 1);
+        assert!(!dropped.load(Ordering::SeqCst));
+        drop(responses);
+        assert!(dropped.load(Ordering::SeqCst));
+    }
+}
+
+#[tokio::test]
+async fn graphiql_configures_subscription_endpoint() {
+    let router = crate::graphql::create_mi8_autotune_router_with_api(
+        Arc::new(config()),
+        empty_api(),
+    );
+    let response = router
+        .clone()
+        .call(
+            Request::builder()
+                .uri("/mi8-autotune")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 1 << 20).await.unwrap();
+    assert!(
+        std::str::from_utf8(&body)
+            .unwrap()
+            .contains("/mi8-autotune/s")
+    );
 }

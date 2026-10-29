@@ -54,7 +54,7 @@ By default, no upstream variable is required to start the service. If a variable
 | `BLM_GRPC_HOST`                                   | `/blm`                                                                                                  | Route is not mounted (404)                                                                           |
 | `DEVDB_GRPC_HOST`                                 | `/devdb`                                                                                                | Route is not mounted (404)                                                                           |
 | `DEVDB_GRPC_HOST`                                 | `/acsys` plot configuration (`plotConfiguration`, `updatePlotConfiguration`, `deletePlotConfiguration`) | Field returns `FEATURE_DISABLED`                                                                     |
-| `MI8_AUTOTUNE_GRPC_HOST`                          | `/mi8-autotune`                                                                                         | Route is not mounted (404)                                                                           |
+| `MI8_AUTOTUNE_GRPC_HOST`                          | `/mi8-autotune`, `/mi8-autotune/s`                                                                      | Both routes are not mounted (404)                                                                    |
 | `TLG_GRPC_HOST`                                   | `/tlg`                                                                                                  | Route is not mounted (404)                                                                           |
 | `UNR_GRPC_HOST`                                   | `/unr`                                                                                                  | Route is not mounted (404)                                                                           |
 | `SCANNER_GRPC_HOST`                               | `/wscan`                                                                                                | Route is not mounted (404)                                                                           |
@@ -74,11 +74,21 @@ REQUIRED_UPSTREAMS=devdb,unr,clock
 
 Keys: `alarms_db`, `alarms_kafka` (only with the `kafka` feature), `alarms_svc`, `blm`, `clock`, `devdb`, `mi8_autotune`, `tlg`, `unr`, `wscan`. If any listed upstream is missing, the service logs every missing variable and exits with a non-zero status. An unknown key is also a startup error, so a typo cannot silently drop a requirement. Unset or blank means nothing is required.
 
-### MI8 Autotune BPM query
+### MI8 Autotune query and subscriptions
 
-When [`MI8_AUTOTUNE_GRPC_HOST`](src/config.rs:139) is configured, the [`/mi8-autotune`](src/graphql.rs) endpoint accepts GraphQL POST requests and serves GraphiQL on GET. Its query field [`bpms`](src/graphql/mi8_autotune.rs:40) returns the BPM names that the autotuner is configured to read, as a non-null list of non-null strings. For example, send the GraphQL query [`{ bpms }`](src/graphql/mi8_autotune.rs:40) to retrieve the list.
+When [`MI8_AUTOTUNE_GRPC_HOST`](src/config.rs:139) is configured, the [`/mi8-autotune`](src/graphql.rs:238) endpoint accepts GraphQL POST requests and serves GraphiQL on GET. Its query field [`bpms`](src/graphql/mi8_autotune.rs:128) returns the BPM names that the autotuner is configured to read, as a non-null list of non-null strings. For example, send the GraphQL query [`{ bpms }`](src/graphql/mi8_autotune.rs:128) to retrieve the list.
 
-The caller's Bearer token is forwarded to the upstream service; upstream authentication and authorization rules still apply. Upstream failures return a generic error with an Error ID, with details logged server-side. This endpoint is query-only: mutations and subscriptions are not exposed yet.
+The caller's Bearer token is forwarded to the upstream service; upstream authentication and authorization rules still apply. RPC initiation and stream failures return a generic error with an Error ID, with details logged server-side. This API is read-only: no mutations or settings access are exposed.
+
+GraphiQL is configured to use the [`/mi8-autotune/s`](src/graphql.rs) WebSocket endpoint. Both HTTP and WebSocket routes are absent (404) when the upstream is disabled. Use a GraphQL WebSocket client (for example, the graphql-transport-ws protocol) and set the connection-init payload to [`{"Authorization":"Bearer YOUR_TOKEN"}`](src/graphql/auth_handlers.rs:159). The key is case-sensitive: it must be capitalized Authorization, not authorization. The HTTP upgrade Authorization header is not used for subscription authentication. Omitting the connection-init token forwards an empty token and leaves authorization to the upstream; a supplied value must use the Bearer scheme.
+
+Run one subscription operation at a time, or use separate operations on the same connection:
+
+- [`subscription { armedState }`](src/graphql/mi8_autotune.rs:147) reports UNKNOWN, ARMED, or DISARMED.
+- [`subscription { operatingMode }`](src/graphql/mi8_autotune.rs:165) reports UNKNOWN, LIVE, or SHADOW.
+- [`subscription { events { autotuneEvent errorMessage } }`](src/graphql/mi8_autotune.rs:183) reports an event enum and its associated upstream message.
+
+Each upstream subscription sends its current state immediately, then updates when the state or associated details change. The gateway forwards those messages in order; it does not manufacture an initial value or call unary state getters. Unrecognized numeric protobuf enum values map to UNKNOWN. Event values are UNKNOWN, NO_AUTO, FIRST_PASS, MOVE, MOVE_PENDING, DAQ_ERROR, BIG_MOVE, VERNIER_MOVE, BEAM_OK, BIG_SETTING, INTENSITY_LOW, AUXILIARY_BAD, and SETTING_ERROR (see [enum mappings](src/graphql/mi8_autotune/types.rs)). The event's errorMessage is application data supplied by the upstream, distinct from a sanitized RPC failure. Upstream completion completes the subscription; cancelling the operation drops its upstream stream.
 
 ### Error IDs in responses
 
