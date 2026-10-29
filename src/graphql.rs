@@ -763,6 +763,7 @@ mod tests {
         config.blm = disabled();
         config.clock = disabled();
         config.devdb = disabled();
+        config.mi8_autotune = disabled();
         config.tlg = disabled();
         config.unr = disabled();
         config.wscan = disabled();
