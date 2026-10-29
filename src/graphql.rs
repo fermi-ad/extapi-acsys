@@ -244,7 +244,7 @@ fn create_mi8_autotune_router_with_api(
 
     let schema = Schema::build(
         mi8_autotune::Mi8AutotuneQueries,
-        EmptyMutation,
+        mi8_autotune::Mi8AutotuneMutations,
         mi8_autotune::Mi8AutotuneSubscriptions,
     )
     .data(global_config)

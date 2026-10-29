@@ -2,7 +2,7 @@ use async_graphql::{Enum, SimpleObject};
 
 use crate::g_rpc::proto::services::mi8_autotune::v1 as proto;
 
-/// Unrecognized protobuf values are reported as UNKNOWN for forward compatibility.
+/// Unrecognized reports map to UNKNOWN; UNKNOWN is rejected as mutation input.
 #[derive(Enum, Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ArmedState {
     Unknown,
@@ -20,7 +20,7 @@ impl From<i32> for ArmedState {
     }
 }
 
-/// The reported operating mode; this API does not change the mode.
+/// Reported or requested mode; UNKNOWN is rejected as mutation input.
 #[derive(Enum, Copy, Clone, Debug, Eq, PartialEq)]
 pub enum OperatingMode {
     Unknown,

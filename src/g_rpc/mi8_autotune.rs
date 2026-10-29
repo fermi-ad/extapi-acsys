@@ -10,7 +10,8 @@ use crate::{
         proto::{
             google::protobuf::Empty,
             services::mi8_autotune::v1::{
-                ListBpmsResponse, SubscribeArmedStateResponse,
+                ListBpmsResponse, SetArmedStateRequest,
+                SetOperatingModeRequest, SubscribeArmedStateResponse,
                 SubscribeAutotuneEventResponse, SubscribeOperatingModeResponse,
                 autotune_service_client::AutotuneServiceClient,
             },
@@ -29,6 +30,39 @@ pub async fn list_bpms(
     .map_err(|error| handle_rpc_error(error, "MI8 Autotune Service"))?;
 
     client.list_bpms(Empty {}).await.map(Response::into_inner)
+}
+
+/// Requests an armed-state change using the caller's credentials.
+pub async fn set_armed_state(
+    config: &GrpcConfig, token: ForwardedToken, request: SetArmedStateRequest,
+) -> Result<Empty, Status> {
+    let mut client = AutotuneServiceClient::from_endpoint_with_provider(
+        &config.host_addr,
+        token,
+    )
+    .map_err(|error| handle_rpc_error(error, "MI8 Autotune Service"))?;
+
+    client
+        .set_armed_state(request)
+        .await
+        .map(Response::into_inner)
+}
+
+/// Requests an operating-mode change using the caller's credentials.
+pub async fn set_operating_mode(
+    config: &GrpcConfig, token: ForwardedToken,
+    request: SetOperatingModeRequest,
+) -> Result<Empty, Status> {
+    let mut client = AutotuneServiceClient::from_endpoint_with_provider(
+        &config.host_addr,
+        token,
+    )
+    .map_err(|error| handle_rpc_error(error, "MI8 Autotune Service"))?;
+
+    client
+        .set_operating_mode(request)
+        .await
+        .map(Response::into_inner)
 }
 
 /// Streams the current armed state followed by upstream updates.

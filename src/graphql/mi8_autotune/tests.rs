@@ -1,6 +1,6 @@
 use std::sync::Mutex;
 
-use async_graphql::{EmptyMutation, Schema, value};
+use async_graphql::{Schema, value};
 use axum::{
     body::{Body, to_bytes},
     http::{Request, StatusCode},
@@ -16,6 +16,8 @@ use crate::config::{Upstream, get_test_config};
 struct FakeApi {
     response: std::result::Result<ListBpmsResponse, Status>,
     calls: Mutex<Vec<(String, String)>>,
+    mutation_response: Mutex<std::result::Result<Empty, Status>>,
+    mutations: Mutex<Vec<(&'static str, i32)>>,
     armed: Mutex<
         Option<
             std::result::Result<
@@ -56,6 +58,8 @@ impl FakeApi {
         Self {
             response,
             calls: Mutex::new(Vec::new()),
+            mutation_response: Mutex::new(Ok(Empty {})),
+            mutations: Mutex::new(Vec::new()),
             armed: Mutex::new(Some(Ok(stream::empty().boxed()))),
             mode: Mutex::new(Some(Ok(stream::empty().boxed()))),
             events: Mutex::new(Some(Ok(stream::empty().boxed()))),
@@ -73,6 +77,36 @@ impl Mi8AutotuneApi for FakeApi {
             .unwrap()
             .push((config.host_addr.clone(), token.get_token().unwrap()));
         self.response.clone()
+    }
+
+    async fn set_armed_state(
+        &self, config: &GrpcConfig, token: ForwardedToken,
+        request: SetArmedStateRequest,
+    ) -> std::result::Result<Empty, Status> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push((config.host_addr.clone(), token.get_token().unwrap()));
+        self.mutations
+            .lock()
+            .unwrap()
+            .push(("armed", request.armed_state));
+        self.mutation_response.lock().unwrap().clone()
+    }
+
+    async fn set_operating_mode(
+        &self, config: &GrpcConfig, token: ForwardedToken,
+        request: SetOperatingModeRequest,
+    ) -> std::result::Result<Empty, Status> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push((config.host_addr.clone(), token.get_token().unwrap()));
+        self.mutations
+            .lock()
+            .unwrap()
+            .push(("mode", request.operating_mode));
+        self.mutation_response.lock().unwrap().clone()
     }
 
     async fn subscribe_armed_state(
@@ -134,11 +168,16 @@ fn config() -> ExtapiGlobalConfig {
 
 fn schema(
     config: ExtapiGlobalConfig, api: Arc<FakeApi>,
-) -> Schema<Mi8AutotuneQueries, EmptyMutation, Mi8AutotuneSubscriptions> {
-    Schema::build(Mi8AutotuneQueries, EmptyMutation, Mi8AutotuneSubscriptions)
-        .data(Arc::new(config))
-        .data(api as Arc<dyn Mi8AutotuneApi>)
-        .finish()
+) -> Schema<Mi8AutotuneQueries, Mi8AutotuneMutations, Mi8AutotuneSubscriptions>
+{
+    Schema::build(
+        Mi8AutotuneQueries,
+        Mi8AutotuneMutations,
+        Mi8AutotuneSubscriptions,
+    )
+    .data(Arc::new(config))
+    .data(api as Arc<dyn Mi8AutotuneApi>)
+    .finish()
 }
 
 #[tokio::test]
@@ -251,12 +290,22 @@ async fn http_handler_forwards_each_callers_token_and_config() {
 }
 
 #[test]
-fn schema_is_read_only_with_non_null_bpms_and_subscriptions() {
+fn schema_exposes_mutations_with_non_null_bpms_and_subscriptions() {
     let api = Arc::new(FakeApi::new(Ok(ListBpmsResponse { bpms: vec![] })));
     let sdl = schema(config(), api).sdl();
 
     assert!(sdl.contains("bpms: [String!]!"), "{sdl}");
-    assert!(!sdl.contains("mutation:"), "{sdl}");
+    assert!(sdl.contains("mutation: Mi8AutotuneMutations"), "{sdl}");
+    assert!(
+        sdl.contains("setArmedState(armedState: ArmedState!): Boolean!"),
+        "{sdl}"
+    );
+    assert!(
+        sdl.contains(
+            "setOperatingMode(operatingMode: OperatingMode!): Boolean!"
+        ),
+        "{sdl}"
+    );
     assert!(
         sdl.contains("subscription: Mi8AutotuneSubscriptions"),
         "{sdl}"
@@ -270,8 +319,13 @@ fn schema_is_read_only_with_non_null_bpms_and_subscriptions() {
     ] {
         assert!(sdl.contains(field), "{sdl}");
     }
-    assert!(!sdl.contains("setArmedState"), "{sdl}");
-    assert!(!sdl.contains("settings"), "{sdl}");
+    assert!(
+        !sdl.lines().any(|line| {
+            let field = line.trim_start();
+            field.starts_with("settings:") || field.starts_with("settings(")
+        }),
+        "{sdl}"
+    );
 }
 
 #[test]
@@ -325,6 +379,164 @@ fn enum_mappings_cover_every_known_value_and_unknown_numbers() {
 
 fn empty_api() -> Arc<FakeApi> {
     Arc::new(FakeApi::new(Ok(ListBpmsResponse { bpms: vec![] })))
+}
+
+const MUTATIONS: [&str; 2] = [
+    "mutation { setArmedState(armedState: ARMED) }",
+    "mutation { setOperatingMode(operatingMode: LIVE) }",
+];
+
+#[tokio::test]
+async fn mutations_map_valid_inputs_and_acknowledge_success() {
+    let api = empty_api();
+    let schema = schema(config(), api.clone());
+    for (operation, expected) in [
+        (
+            "mutation { setArmedState(armedState: ARMED) }",
+            value!({"setArmedState": true}),
+        ),
+        (
+            "mutation { setArmedState(armedState: DISARMED) }",
+            value!({"setArmedState": true}),
+        ),
+        (
+            "mutation { setOperatingMode(operatingMode: LIVE) }",
+            value!({"setOperatingMode": true}),
+        ),
+        (
+            "mutation { setOperatingMode(operatingMode: SHADOW) }",
+            value!({"setOperatingMode": true}),
+        ),
+    ] {
+        let response = schema.execute(operation).await;
+        assert!(response.errors.is_empty(), "{:?}", response.errors);
+        assert_eq!(response.data, expected);
+    }
+    assert_eq!(
+        *api.mutations.lock().unwrap(),
+        [("armed", 1), ("armed", 2), ("mode", 1), ("mode", 2)]
+    );
+    assert_eq!(api.calls.lock().unwrap().len(), 4);
+}
+
+#[tokio::test]
+async fn mutations_reject_unknown_without_calling_upstream() {
+    let api = empty_api();
+    let schema = schema(config(), api.clone());
+    for operation in [
+        "mutation { setArmedState(armedState: UNKNOWN) }",
+        "mutation { setOperatingMode(operatingMode: UNKNOWN) }",
+    ] {
+        let response = schema.execute(operation).await;
+        assert_eq!(response.errors.len(), 1);
+        assert!(
+            response.errors[0]
+                .message
+                .starts_with("UNKNOWN is not a valid")
+        );
+        assert_eq!(response.data, value!(null));
+    }
+    assert!(api.calls.lock().unwrap().is_empty());
+    assert!(api.mutations.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn disabled_mutations_do_not_call_upstream() {
+    let api = empty_api();
+    let mut config = config();
+    config.mi8_autotune =
+        Upstream::disabled("MI8 Autotune", ["MI8_AUTOTUNE_GRPC_HOST"]);
+    let schema = schema(config, api.clone());
+    for operation in MUTATIONS {
+        let response = schema.execute(operation).await;
+        assert_eq!(response.errors.len(), 1);
+        assert_eq!(
+            response.errors[0].extensions.as_ref().unwrap().get("code"),
+            Some(&value!("FEATURE_DISABLED"))
+        );
+        assert_eq!(response.data, value!(null));
+    }
+    assert!(api.calls.lock().unwrap().is_empty());
+    assert!(api.mutations.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn mutation_upstream_errors_are_safe_and_do_not_report_success() {
+    for status in [
+        Status::internal("private token=secret"),
+        Status::unauthenticated("private auth"),
+        Status::permission_denied("private authorization"),
+        Status::unavailable("private host"),
+    ] {
+        let api = empty_api();
+        *api.mutation_response.lock().unwrap() = Err(status);
+        let schema = schema(config(), api.clone());
+        for operation in MUTATIONS {
+            let response = schema.execute(operation).await;
+            assert_safe_error(&response);
+            assert_eq!(response.data, value!(null));
+        }
+        assert_eq!(api.calls.lock().unwrap().len(), 2);
+        assert_eq!(*api.mutations.lock().unwrap(), [("armed", 1), ("mode", 1)]);
+    }
+}
+
+#[tokio::test]
+async fn http_mutations_forward_each_callers_token_and_config() {
+    let api = empty_api();
+    let site = crate::graphql::create_mi8_autotune_router_with_api(
+        Arc::new(config()),
+        api.clone(),
+    );
+    for token in [Some("first-caller"), Some("second-caller"), None] {
+        for (operation, field) in MUTATIONS
+            .into_iter()
+            .zip(["setArmedState", "setOperatingMode"])
+        {
+            let mut request = Request::builder()
+                .method("POST")
+                .uri("/mi8-autotune")
+                .header("content-type", "application/json");
+            if let Some(token) = token {
+                request =
+                    request.header("authorization", format!("Bearer {token}"));
+            }
+            let response = site
+                .clone()
+                .call(
+                    request
+                        .body(Body::from(
+                            json!({"query": operation}).to_string(),
+                        ))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let body = to_bytes(response.into_body(), 4096).await.unwrap();
+            assert_eq!(
+                serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
+                json!({"data": {field: true}})
+            );
+        }
+    }
+    let calls = api.calls.lock().unwrap();
+    assert_eq!(calls.len(), 6);
+    for ((host, actual_token), expected_token) in calls.iter().zip([
+        "first-caller",
+        "first-caller",
+        "second-caller",
+        "second-caller",
+        "",
+        "",
+    ]) {
+        assert_eq!(host, "http://mi8-autotune.test:50051");
+        assert_eq!(actual_token, expected_token);
+    }
+    assert_eq!(
+        *api.mutations.lock().unwrap(),
+        [("armed", 1), ("mode", 1)].repeat(3)
+    );
 }
 
 const OPERATIONS: [&str; 3] = [

@@ -11,9 +11,13 @@ use crate::{
     config::{ExtapiGlobalConfig, GrpcConfig},
     g_rpc::{
         mi8_autotune,
-        proto::services::mi8_autotune::v1::{
-            ListBpmsResponse, SubscribeArmedStateResponse,
-            SubscribeAutotuneEventResponse, SubscribeOperatingModeResponse,
+        proto::{
+            google::protobuf::Empty,
+            services::mi8_autotune::v1::{
+                self as proto, ListBpmsResponse, SetArmedStateRequest,
+                SetOperatingModeRequest, SubscribeArmedStateResponse,
+                SubscribeAutotuneEventResponse, SubscribeOperatingModeResponse,
+            },
         },
     },
     graphql::{auth_handlers::AuthInfo, errors::handle_graphql_error},
@@ -36,6 +40,16 @@ pub trait Mi8AutotuneApi: Send + Sync {
     async fn list_bpms(
         &self, config: &GrpcConfig, token: ForwardedToken,
     ) -> std::result::Result<ListBpmsResponse, Status>;
+
+    async fn set_armed_state(
+        &self, config: &GrpcConfig, token: ForwardedToken,
+        request: SetArmedStateRequest,
+    ) -> std::result::Result<Empty, Status>;
+
+    async fn set_operating_mode(
+        &self, config: &GrpcConfig, token: ForwardedToken,
+        request: SetOperatingModeRequest,
+    ) -> std::result::Result<Empty, Status>;
 
     async fn subscribe_armed_state(
         &self, config: &GrpcConfig, token: ForwardedToken,
@@ -76,6 +90,20 @@ impl Mi8AutotuneApi for GrpcMi8AutotuneApi {
         &self, config: &GrpcConfig, token: ForwardedToken,
     ) -> std::result::Result<ListBpmsResponse, Status> {
         mi8_autotune::list_bpms(config, token).await
+    }
+
+    async fn set_armed_state(
+        &self, config: &GrpcConfig, token: ForwardedToken,
+        request: SetArmedStateRequest,
+    ) -> std::result::Result<Empty, Status> {
+        mi8_autotune::set_armed_state(config, token, request).await
+    }
+
+    async fn set_operating_mode(
+        &self, config: &GrpcConfig, token: ForwardedToken,
+        request: SetOperatingModeRequest,
+    ) -> std::result::Result<Empty, Status> {
+        mi8_autotune::set_operating_mode(config, token, request).await
     }
 
     async fn subscribe_armed_state(
@@ -135,6 +163,68 @@ impl Mi8AutotuneQueries {
             .map_err(handle_graphql_error)?;
 
         Ok(response.bpms)
+    }
+}
+
+#[derive(Default)]
+pub struct Mi8AutotuneMutations;
+
+#[Object]
+impl Mi8AutotuneMutations {
+    /// Requests an armed-state change. Success acknowledges the RPC, not observed state.
+    async fn set_armed_state(
+        &self, ctx: &Context<'_>, armed_state: ArmedState,
+    ) -> Result<bool> {
+        let config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
+        let upstream = config.mi8_autotune.require()?;
+        let armed_state = match armed_state {
+            ArmedState::Armed => proto::ArmedState::Armed,
+            ArmedState::Disarmed => proto::ArmedState::Disarmed,
+            ArmedState::Unknown => {
+                return Err(
+                    "UNKNOWN is not a valid armed state to request".into()
+                );
+            }
+        };
+        ctx.data::<Arc<dyn Mi8AutotuneApi>>()?
+            .set_armed_state(
+                upstream,
+                forwarded_token(ctx),
+                SetArmedStateRequest {
+                    armed_state: armed_state as i32,
+                },
+            )
+            .await
+            .map_err(handle_graphql_error)?;
+        Ok(true)
+    }
+
+    /// Requests an operating-mode change. LIVE can request control-system settings.
+    async fn set_operating_mode(
+        &self, ctx: &Context<'_>, operating_mode: OperatingMode,
+    ) -> Result<bool> {
+        let config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
+        let upstream = config.mi8_autotune.require()?;
+        let operating_mode = match operating_mode {
+            OperatingMode::Live => proto::OperatingMode::Live,
+            OperatingMode::Shadow => proto::OperatingMode::Shadow,
+            OperatingMode::Unknown => {
+                return Err(
+                    "UNKNOWN is not a valid operating mode to request".into()
+                );
+            }
+        };
+        ctx.data::<Arc<dyn Mi8AutotuneApi>>()?
+            .set_operating_mode(
+                upstream,
+                forwarded_token(ctx),
+                SetOperatingModeRequest {
+                    operating_mode: operating_mode as i32,
+                },
+            )
+            .await
+            .map_err(handle_graphql_error)?;
+        Ok(true)
     }
 }
 
