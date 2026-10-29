@@ -74,29 +74,6 @@ REQUIRED_UPSTREAMS=devdb,unr,clock
 
 Keys: `alarms_db`, `alarms_kafka` (only with the `kafka` feature), `alarms_svc`, `blm`, `clock`, `devdb`, `mi8_autotune`, `tlg`, `unr`, `wscan`. If any listed upstream is missing, the service logs every missing variable and exits with a non-zero status. An unknown key is also a startup error, so a typo cannot silently drop a requirement. Unset or blank means nothing is required.
 
-### MI8 Autotune query, mutations, and subscriptions
-
-When [`MI8_AUTOTUNE_GRPC_HOST`](src/config.rs:139) is configured, the [`/mi8-autotune`](src/graphql.rs:238) endpoint accepts GraphQL POST requests and serves GraphiQL on GET. Its query field [`bpms`](src/graphql/mi8_autotune.rs:156) returns the BPM names that the autotuner is configured to read, as a non-null list of non-null strings. For example, send the GraphQL query [`{ bpms }`](src/graphql/mi8_autotune.rs:156) to retrieve the list.
-
-The caller's Bearer token is forwarded to the upstream service; upstream authentication and authorization rules still apply. Mutation callers must be authorized by the upstream to change armed state or operating mode. The gateway does not substitute service credentials: an omitted token forwards an empty token and leaves authorization to the upstream. RPC and stream failures return a generic error with an Error ID, with details logged server-side. No direct settings access is exposed.
-
-Mutations use the same HTTP endpoint and caller Bearer header as queries. Examples (control operations, not read-only checks):
-
-- [`mutation { setArmedState(armedState: ARMED) }`](src/graphql/mi8_autotune.rs:175) requests arming; use [`DISARMED`](src/graphql/mi8_autotune/types.rs:10) to request disarming.
-- [`mutation { setOperatingMode(operatingMode: SHADOW) }`](src/graphql/mi8_autotune.rs:203) requests shadow mode; use [`LIVE`](src/graphql/mi8_autotune/types.rs:27) only when authorized and operationally appropriate.
-
-**Warning:** live mode can request control-system settings. Do not use these mutations for a live-service smoke test without explicit operational approval. UNKNOWN is valid as a reported enum value but is rejected as mutation input before any upstream RPC. A successful mutation returns a non-null Boolean true only after the upstream RPC succeeds; it does not confirm the resulting state or fabricate a state update. Observe the armed-state and operating-mode subscriptions for upstream state. Disabled upstream configuration returns FEATURE_DISABLED without making a mutation RPC (normally both routes are unmounted).
-
-GraphiQL is configured to use the [`/mi8-autotune/s`](src/graphql.rs) WebSocket endpoint. Both HTTP and WebSocket routes are absent (404) when the upstream is disabled. Use a GraphQL WebSocket client (for example, the graphql-transport-ws protocol) and set the connection-init payload to [`{"Authorization":"Bearer YOUR_TOKEN"}`](src/graphql/auth_handlers.rs:159). The key is case-sensitive: it must be capitalized Authorization, not authorization. The HTTP upgrade Authorization header is not used for subscription authentication. Omitting the connection-init token forwards an empty token and leaves authorization to the upstream; a supplied value must use the Bearer scheme.
-
-Run one subscription operation at a time, or use separate operations on the same connection:
-
-- [`subscription { armedState }`](src/graphql/mi8_autotune.rs:237) reports UNKNOWN, ARMED, or DISARMED.
-- [`subscription { operatingMode }`](src/graphql/mi8_autotune.rs:255) reports UNKNOWN, LIVE, or SHADOW.
-- [`subscription { events { autotuneEvent errorMessage } }`](src/graphql/mi8_autotune.rs:273) reports an event enum and its associated upstream message.
-
-Each upstream subscription sends its current state immediately, then updates when the state or associated details change. The gateway forwards those messages in order; it does not manufacture an initial value or call unary state getters. Unrecognized numeric protobuf enum values map to UNKNOWN. Event values are UNKNOWN, NO_AUTO, FIRST_PASS, MOVE, MOVE_PENDING, DAQ_ERROR, BIG_MOVE, VERNIER_MOVE, BEAM_OK, BIG_SETTING, INTENSITY_LOW, AUXILIARY_BAD, and SETTING_ERROR (see [enum mappings](src/graphql/mi8_autotune/types.rs)). The event's errorMessage is application data supplied by the upstream, distinct from a sanitized RPC failure. Upstream completion completes the subscription; cancelling the operation drops its upstream stream.
-
 ### Error IDs in responses
 
 Alarms and MI8 Autotune requests intentionally return a generic error message that includes an **Error ID** (a UUID). The underlying error details are logged server-side.
