@@ -12,6 +12,7 @@ pub mod blm;
 pub mod clock;
 pub mod devdb;
 pub mod dpm;
+pub mod mi8_autotune;
 pub mod proto;
 pub mod tlg;
 pub mod unr;

@@ -54,6 +54,7 @@ By default, no upstream variable is required to start the service. If a variable
 | `BLM_GRPC_HOST`                                   | `/blm`                                                                                                  | Route is not mounted (404)                                                                           |
 | `DEVDB_GRPC_HOST`                                 | `/devdb`                                                                                                | Route is not mounted (404)                                                                           |
 | `DEVDB_GRPC_HOST`                                 | `/acsys` plot configuration (`plotConfiguration`, `updatePlotConfiguration`, `deletePlotConfiguration`) | Field returns `FEATURE_DISABLED`                                                                     |
+| `MI8_AUTOTUNE_GRPC_HOST`                          | `/mi8-autotune`                                                                                         | Route is not mounted (404)                                                                           |
 | `TLG_GRPC_HOST`                                   | `/tlg`                                                                                                  | Route is not mounted (404)                                                                           |
 | `UNR_GRPC_HOST`                                   | `/unr`                                                                                                  | Route is not mounted (404)                                                                           |
 | `SCANNER_GRPC_HOST`                               | `/wscan`                                                                                                | Route is not mounted (404)                                                                           |
@@ -73,9 +74,15 @@ REQUIRED_UPSTREAMS=devdb,unr,clock
 
 Keys: `alarms_db`, `alarms_kafka` (only with the `kafka` feature), `alarms_svc`, `blm`, `clock`, `devdb`, `mi8_autotune`, `tlg`, `unr`, `wscan`. If any listed upstream is missing, the service logs every missing variable and exits with a non-zero status. An unknown key is also a startup error, so a typo cannot silently drop a requirement. Unset or blank means nothing is required.
 
+### MI8 Autotune BPM query
+
+When [`MI8_AUTOTUNE_GRPC_HOST`](src/config.rs:139) is configured, the [`/mi8-autotune`](src/graphql.rs) endpoint accepts GraphQL POST requests and serves GraphiQL on GET. Its query field [`bpms`](src/graphql/mi8_autotune.rs:40) returns the BPM names that the autotuner is configured to read, as a non-null list of non-null strings. For example, send the GraphQL query [`{ bpms }`](src/graphql/mi8_autotune.rs:40) to retrieve the list.
+
+The caller's Bearer token is forwarded to the upstream service; upstream authentication and authorization rules still apply. Upstream failures return a generic error with an Error ID, with details logged server-side. This endpoint is query-only: mutations and subscriptions are not exposed yet.
+
 ### Error IDs in responses
 
-Alarms requests intentionally return a generic error message that includes an **Error ID** (a UUID). The underlying error details are logged server-side.
+Alarms and MI8 Autotune requests intentionally return a generic error message that includes an **Error ID** (a UUID). The underlying error details are logged server-side.
 
 To debug an issue reported by a client:
 
