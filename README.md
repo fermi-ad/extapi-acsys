@@ -2,7 +2,7 @@
 
 ![Latest](../../actions/workflows/cd.yml/badge.svg?branch=main)
 
-Provides public APIs to the Fermilab control system. This service exposes several GraphQL endpoints for various, logical APIs that clients may use to retrieve control system data and, in some cases, make changes to the control system. This service has a [production instance](https://ad-api.fnal.gov/acsys) and a [development instance](https://ad-api-dev.fnal.gov/alarms).
+Provides public APIs to the Fermilab control system. This service exposes several GraphQL endpoints for various, logical APIs that clients may use to retrieve control system data and, in some cases, make changes to the control system. This service has a [production instance](https://ad-api.fnal.gov/alarms) and a [development instance](https://ad-api-dev.fnal.gov/alarms).
 
 The middle layer of the control system uses gRPCs for communications. The GraphQL resolvers of this service use various gRPC services to obtain the information that is returned. This uses the `async-graphql` and `warp` crates to provide GraphQL over http support. The resolvers use the `tonic` crate for gRPC client support.
 
