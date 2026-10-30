@@ -1,7 +1,10 @@
 //! Authenticated client adapter for the MI8 Autotune gRPC service.
 
-use rust_grpc_lib::auth::ForwardedToken;
-use tonic::{Response, Status, Streaming};
+use rust_grpc_lib::auth::{ClientJwtInterceptor, ForwardedToken};
+use tonic::{
+    Response, Status, Streaming, service::interceptor::InterceptedService,
+    transport::Channel,
+};
 
 use crate::{
     config::GrpcConfig,
@@ -19,15 +22,23 @@ use crate::{
     },
 };
 
+fn client(
+    config: &GrpcConfig, token: ForwardedToken,
+) -> Result<
+    AutotuneServiceClient<
+        InterceptedService<Channel, ClientJwtInterceptor<ForwardedToken>>,
+    >,
+    Status,
+> {
+    AutotuneServiceClient::from_endpoint_with_provider(&config.host_addr, token)
+        .map_err(|error| handle_rpc_error(error, "MI8 Autotune Service"))
+}
+
 /// Returns the BPM names that the autotuner is configured to read.
 pub async fn list_bpms(
     config: &GrpcConfig, token: ForwardedToken,
 ) -> Result<ListBpmsResponse, Status> {
-    let mut client = AutotuneServiceClient::from_endpoint_with_provider(
-        &config.host_addr,
-        token,
-    )
-    .map_err(|error| handle_rpc_error(error, "MI8 Autotune Service"))?;
+    let mut client = client(config, token)?;
 
     client.list_bpms(Empty {}).await.map(Response::into_inner)
 }
@@ -36,11 +47,7 @@ pub async fn list_bpms(
 pub async fn set_armed_state(
     config: &GrpcConfig, token: ForwardedToken, request: SetArmedStateRequest,
 ) -> Result<Empty, Status> {
-    let mut client = AutotuneServiceClient::from_endpoint_with_provider(
-        &config.host_addr,
-        token,
-    )
-    .map_err(|error| handle_rpc_error(error, "MI8 Autotune Service"))?;
+    let mut client = client(config, token)?;
 
     client
         .set_armed_state(request)
@@ -53,11 +60,7 @@ pub async fn set_operating_mode(
     config: &GrpcConfig, token: ForwardedToken,
     request: SetOperatingModeRequest,
 ) -> Result<Empty, Status> {
-    let mut client = AutotuneServiceClient::from_endpoint_with_provider(
-        &config.host_addr,
-        token,
-    )
-    .map_err(|error| handle_rpc_error(error, "MI8 Autotune Service"))?;
+    let mut client = client(config, token)?;
 
     client
         .set_operating_mode(request)
@@ -69,11 +72,7 @@ pub async fn set_operating_mode(
 pub async fn subscribe_armed_state(
     config: &GrpcConfig, token: ForwardedToken,
 ) -> Result<Streaming<SubscribeArmedStateResponse>, Status> {
-    let mut client = AutotuneServiceClient::from_endpoint_with_provider(
-        &config.host_addr,
-        token,
-    )
-    .map_err(|error| handle_rpc_error(error, "MI8 Autotune Service"))?;
+    let mut client = client(config, token)?;
 
     client
         .subscribe_armed_state(Empty {})
@@ -85,11 +84,7 @@ pub async fn subscribe_armed_state(
 pub async fn subscribe_operating_mode(
     config: &GrpcConfig, token: ForwardedToken,
 ) -> Result<Streaming<SubscribeOperatingModeResponse>, Status> {
-    let mut client = AutotuneServiceClient::from_endpoint_with_provider(
-        &config.host_addr,
-        token,
-    )
-    .map_err(|error| handle_rpc_error(error, "MI8 Autotune Service"))?;
+    let mut client = client(config, token)?;
 
     client
         .subscribe_operating_mode(Empty {})
@@ -101,11 +96,7 @@ pub async fn subscribe_operating_mode(
 pub async fn subscribe_events(
     config: &GrpcConfig, token: ForwardedToken,
 ) -> Result<Streaming<SubscribeAutotuneEventResponse>, Status> {
-    let mut client = AutotuneServiceClient::from_endpoint_with_provider(
-        &config.host_addr,
-        token,
-    )
-    .map_err(|error| handle_rpc_error(error, "MI8 Autotune Service"))?;
+    let mut client = client(config, token)?;
 
     client
         .subscribe_events(Empty {})
