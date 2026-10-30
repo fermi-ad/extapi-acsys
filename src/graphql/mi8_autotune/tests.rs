@@ -276,12 +276,12 @@ fn schema_exposes_mutations_with_non_null_bpms_and_subscriptions() {
     assert!(sdl.contains("bpms: [String!]!"), "{sdl}");
     assert!(sdl.contains("mutation: Mi8AutotuneMutations"), "{sdl}");
     assert!(
-        sdl.contains("setArmedState(armedState: ArmedState!): Boolean!"),
+        sdl.contains("setArmedState(armedState: ArmedState!): ArmedState!"),
         "{sdl}"
     );
     assert!(
         sdl.contains(
-            "setOperatingMode(operatingMode: OperatingMode!): Boolean!"
+            "setOperatingMode(operatingMode: OperatingMode!): OperatingMode!"
         ),
         "{sdl}"
     );
@@ -366,25 +366,25 @@ const MUTATIONS: [&str; 2] = [
 ];
 
 #[tokio::test]
-async fn mutations_map_valid_inputs_and_acknowledge_success() {
+async fn mutations_map_valid_inputs_and_return_requested_value() {
     let api = empty_api();
     let schema = schema(config(), api.clone());
     for (operation, expected) in [
         (
             "mutation { setArmedState(armedState: ARMED) }",
-            value!({"setArmedState": true}),
+            value!({"setArmedState": "ARMED"}),
         ),
         (
             "mutation { setArmedState(armedState: DISARMED) }",
-            value!({"setArmedState": true}),
+            value!({"setArmedState": "DISARMED"}),
         ),
         (
             "mutation { setOperatingMode(operatingMode: LIVE) }",
-            value!({"setOperatingMode": true}),
+            value!({"setOperatingMode": "LIVE"}),
         ),
         (
             "mutation { setOperatingMode(operatingMode: SHADOW) }",
-            value!({"setOperatingMode": true}),
+            value!({"setOperatingMode": "SHADOW"}),
         ),
     ] {
         let response = schema.execute(operation).await;
@@ -468,9 +468,9 @@ async fn http_mutations_forward_each_callers_token_and_config() {
         api.clone(),
     );
     for token in [Some("first-caller"), Some("second-caller"), None] {
-        for (operation, field) in MUTATIONS
+        for (operation, (field, requested)) in MUTATIONS
             .into_iter()
-            .zip(["setArmedState", "setOperatingMode"])
+            .zip([("setArmedState", "ARMED"), ("setOperatingMode", "LIVE")])
         {
             let mut request = Request::builder()
                 .method("POST")
@@ -495,7 +495,7 @@ async fn http_mutations_forward_each_callers_token_and_config() {
             let body = to_bytes(response.into_body(), 4096).await.unwrap();
             assert_eq!(
                 serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
-                json!({"data": {field: true}})
+                json!({"data": {field: requested}})
             );
         }
     }

@@ -133,13 +133,15 @@ pub struct Mi8AutotuneMutations;
 
 #[Object]
 impl Mi8AutotuneMutations {
-    /// Requests an armed-state change. Success acknowledges the RPC, not observed state.
+    /// Requests an armed-state change and returns the requested state.
+    /// Success acknowledges the RPC, not observed state; use the
+    /// `armedState` subscription to observe the actual state.
     async fn set_armed_state(
         &self, ctx: &Context<'_>, armed_state: ArmedState,
-    ) -> Result<bool> {
+    ) -> Result<ArmedState> {
         let config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
         let upstream = config.mi8_autotune.require()?;
-        let armed_state = match armed_state {
+        let requested = match armed_state {
             ArmedState::Armed => proto::ArmedState::Armed,
             ArmedState::Disarmed => proto::ArmedState::Disarmed,
             ArmedState::Unknown => {
@@ -153,21 +155,24 @@ impl Mi8AutotuneMutations {
                 upstream,
                 forwarded_token(ctx),
                 SetArmedStateRequest {
-                    armed_state: armed_state as i32,
+                    armed_state: requested as i32,
                 },
             )
             .await
             .map_err(handle_graphql_error)?;
-        Ok(true)
+        Ok(armed_state)
     }
 
-    /// Requests an operating-mode change. LIVE can request control-system settings.
+    /// Requests an operating-mode change and returns the requested mode.
+    /// LIVE can request control-system settings. Success acknowledges the
+    /// RPC, not observed state; use the `operatingMode` subscription to
+    /// observe the actual mode.
     async fn set_operating_mode(
         &self, ctx: &Context<'_>, operating_mode: OperatingMode,
-    ) -> Result<bool> {
+    ) -> Result<OperatingMode> {
         let config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
         let upstream = config.mi8_autotune.require()?;
-        let operating_mode = match operating_mode {
+        let requested = match operating_mode {
             OperatingMode::Live => proto::OperatingMode::Live,
             OperatingMode::Shadow => proto::OperatingMode::Shadow,
             OperatingMode::Unknown => {
@@ -181,12 +186,12 @@ impl Mi8AutotuneMutations {
                 upstream,
                 forwarded_token(ctx),
                 SetOperatingModeRequest {
-                    operating_mode: operating_mode as i32,
+                    operating_mode: requested as i32,
                 },
             )
             .await
             .map_err(handle_graphql_error)?;
-        Ok(true)
+        Ok(operating_mode)
     }
 }
 
