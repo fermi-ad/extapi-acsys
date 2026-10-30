@@ -34,6 +34,9 @@ fn forwarded_token(ctx: &Context<'_>) -> ForwardedToken {
     )
 }
 
+/// A boxed upstream stream whose items can fail with a gRPC status.
+pub type StatusStream<T> = BoxStream<'static, std::result::Result<T, Status>>;
+
 /// Small injectable API surface for testing resolver and authentication behavior.
 #[async_trait]
 pub trait Mi8AutotuneApi: Send + Sync {
@@ -53,33 +56,15 @@ pub trait Mi8AutotuneApi: Send + Sync {
 
     async fn subscribe_armed_state(
         &self, config: &GrpcConfig, token: ForwardedToken,
-    ) -> std::result::Result<
-        BoxStream<
-            'static,
-            std::result::Result<SubscribeArmedStateResponse, Status>,
-        >,
-        Status,
-    >;
+    ) -> std::result::Result<StatusStream<SubscribeArmedStateResponse>, Status>;
 
     async fn subscribe_operating_mode(
         &self, config: &GrpcConfig, token: ForwardedToken,
-    ) -> std::result::Result<
-        BoxStream<
-            'static,
-            std::result::Result<SubscribeOperatingModeResponse, Status>,
-        >,
-        Status,
-    >;
+    ) -> std::result::Result<StatusStream<SubscribeOperatingModeResponse>, Status>;
 
     async fn subscribe_events(
         &self, config: &GrpcConfig, token: ForwardedToken,
-    ) -> std::result::Result<
-        BoxStream<
-            'static,
-            std::result::Result<SubscribeAutotuneEventResponse, Status>,
-        >,
-        Status,
-    >;
+    ) -> std::result::Result<StatusStream<SubscribeAutotuneEventResponse>, Status>;
 }
 
 pub struct GrpcMi8AutotuneApi;
@@ -108,13 +93,8 @@ impl Mi8AutotuneApi for GrpcMi8AutotuneApi {
 
     async fn subscribe_armed_state(
         &self, config: &GrpcConfig, token: ForwardedToken,
-    ) -> std::result::Result<
-        BoxStream<
-            'static,
-            std::result::Result<SubscribeArmedStateResponse, Status>,
-        >,
-        Status,
-    > {
+    ) -> std::result::Result<StatusStream<SubscribeArmedStateResponse>, Status>
+    {
         Ok(mi8_autotune::subscribe_armed_state(config, token)
             .await?
             .boxed())
@@ -122,13 +102,8 @@ impl Mi8AutotuneApi for GrpcMi8AutotuneApi {
 
     async fn subscribe_operating_mode(
         &self, config: &GrpcConfig, token: ForwardedToken,
-    ) -> std::result::Result<
-        BoxStream<
-            'static,
-            std::result::Result<SubscribeOperatingModeResponse, Status>,
-        >,
-        Status,
-    > {
+    ) -> std::result::Result<StatusStream<SubscribeOperatingModeResponse>, Status>
+    {
         Ok(mi8_autotune::subscribe_operating_mode(config, token)
             .await?
             .boxed())
@@ -136,13 +111,8 @@ impl Mi8AutotuneApi for GrpcMi8AutotuneApi {
 
     async fn subscribe_events(
         &self, config: &GrpcConfig, token: ForwardedToken,
-    ) -> std::result::Result<
-        BoxStream<
-            'static,
-            std::result::Result<SubscribeAutotuneEventResponse, Status>,
-        >,
-        Status,
-    > {
+    ) -> std::result::Result<StatusStream<SubscribeAutotuneEventResponse>, Status>
+    {
         Ok(mi8_autotune::subscribe_events(config, token).await?.boxed())
     }
 }

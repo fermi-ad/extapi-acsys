@@ -21,10 +21,7 @@ struct FakeApi {
     armed: Mutex<
         Option<
             std::result::Result<
-                BoxStream<
-                    'static,
-                    std::result::Result<SubscribeArmedStateResponse, Status>,
-                >,
+                StatusStream<SubscribeArmedStateResponse>,
                 Status,
             >,
         >,
@@ -32,10 +29,7 @@ struct FakeApi {
     mode: Mutex<
         Option<
             std::result::Result<
-                BoxStream<
-                    'static,
-                    std::result::Result<SubscribeOperatingModeResponse, Status>,
-                >,
+                StatusStream<SubscribeOperatingModeResponse>,
                 Status,
             >,
         >,
@@ -43,10 +37,7 @@ struct FakeApi {
     events: Mutex<
         Option<
             std::result::Result<
-                BoxStream<
-                    'static,
-                    std::result::Result<SubscribeAutotuneEventResponse, Status>,
-                >,
+                StatusStream<SubscribeAutotuneEventResponse>,
                 Status,
             >,
         >,
@@ -111,13 +102,8 @@ impl Mi8AutotuneApi for FakeApi {
 
     async fn subscribe_armed_state(
         &self, config: &GrpcConfig, token: ForwardedToken,
-    ) -> std::result::Result<
-        BoxStream<
-            'static,
-            std::result::Result<SubscribeArmedStateResponse, Status>,
-        >,
-        Status,
-    > {
+    ) -> std::result::Result<StatusStream<SubscribeArmedStateResponse>, Status>
+    {
         self.calls
             .lock()
             .unwrap()
@@ -127,13 +113,8 @@ impl Mi8AutotuneApi for FakeApi {
 
     async fn subscribe_operating_mode(
         &self, config: &GrpcConfig, token: ForwardedToken,
-    ) -> std::result::Result<
-        BoxStream<
-            'static,
-            std::result::Result<SubscribeOperatingModeResponse, Status>,
-        >,
-        Status,
-    > {
+    ) -> std::result::Result<StatusStream<SubscribeOperatingModeResponse>, Status>
+    {
         self.calls
             .lock()
             .unwrap()
@@ -143,13 +124,8 @@ impl Mi8AutotuneApi for FakeApi {
 
     async fn subscribe_events(
         &self, config: &GrpcConfig, token: ForwardedToken,
-    ) -> std::result::Result<
-        BoxStream<
-            'static,
-            std::result::Result<SubscribeAutotuneEventResponse, Status>,
-        >,
-        Status,
-    > {
+    ) -> std::result::Result<StatusStream<SubscribeAutotuneEventResponse>, Status>
+    {
         self.calls
             .lock()
             .unwrap()
