@@ -293,11 +293,12 @@ fn schema_exposes_mutations_with_non_null_bpms_and_subscriptions() {
         "armedState: ArmedState!",
         "operatingMode: OperatingMode!",
         "events: AutotuneEventUpdate!",
-        "autotuneEvent: AutotuneEvent!",
-        "errorMessage: String!",
+        "event: AutotuneEvent!",
+        "errorMessage: String\n",
     ] {
         assert!(sdl.contains(field), "{sdl}");
     }
+    assert!(!sdl.contains("autotuneEvent"), "{sdl}");
     assert!(
         !sdl.lines().any(|line| {
             let field = line.trim_start();
@@ -521,7 +522,7 @@ async fn http_mutations_forward_each_callers_token_and_config() {
 const OPERATIONS: [&str; 3] = [
     "subscription { armedState }",
     "subscription { operatingMode }",
-    "subscription { events { autotuneEvent errorMessage } }",
+    "subscription { events { event errorMessage } }",
 ];
 
 #[tokio::test]
@@ -565,9 +566,9 @@ async fn subscriptions_forward_initial_and_subsequent_messages_then_complete() {
             value!({"operatingMode": "UNKNOWN"}),
         ],
         vec![
-            value!({"events": {"autotuneEvent": "BEAM_OK", "errorMessage": ""}}),
-            value!({"events": {"autotuneEvent": "SETTING_ERROR", "errorMessage": "trim failed"}}),
-            value!({"events": {"autotuneEvent": "UNKNOWN", "errorMessage": "future event"}}),
+            value!({"events": {"event": "BEAM_OK", "errorMessage": null}}),
+            value!({"events": {"event": "SETTING_ERROR", "errorMessage": "trim failed"}}),
+            value!({"events": {"event": "UNKNOWN", "errorMessage": "future event"}}),
         ],
     ];
     for (operation, expected) in OPERATIONS.into_iter().zip(expected) {

@@ -78,15 +78,18 @@ impl From<i32> for AutotuneEvent {
 /// An upstream event and its associated message, not a transport error.
 #[derive(SimpleObject, Debug, Eq, PartialEq)]
 pub struct AutotuneEventUpdate {
-    pub autotune_event: AutotuneEvent,
-    pub error_message: String,
+    /// The autotune event reported by the upstream service.
+    pub event: AutotuneEvent,
+    /// The message associated with the event, or `null` when there is none.
+    pub error_message: Option<String>,
 }
 
 impl From<proto::SubscribeAutotuneEventResponse> for AutotuneEventUpdate {
     fn from(response: proto::SubscribeAutotuneEventResponse) -> Self {
         Self {
-            autotune_event: response.autotune_event.into(),
-            error_message: response.error_message,
+            event: response.autotune_event.into(),
+            error_message: Some(response.error_message)
+                .filter(|message| !message.is_empty()),
         }
     }
 }
