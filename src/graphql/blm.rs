@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use async_graphql::{Context, Error, Object, Result, Subscription};
 use futures_util::{Stream, StreamExt};
-use rust_grpc_lib::auth::ForwardedToken;
 
 use crate::{
     config::ExtapiGlobalConfig,
@@ -13,20 +12,12 @@ use crate::{
             SubscribeBeamThroughputRequest, SubscribeLossRatioRequest,
         },
     },
-    graphql::auth_handlers::AuthInfo,
+    graphql::auth_handlers::forwarded_token,
 };
 
 pub mod types;
 
 use types::{BlmBeamThroughputSample, BlmDevice, BlmLossRatioSample};
-
-fn forwarded_token(ctx: &Context<'_>) -> ForwardedToken {
-    let token = ctx
-        .data_opt::<AuthInfo>()
-        .and_then(AuthInfo::token)
-        .unwrap_or_default();
-    ForwardedToken::new(token)
-}
 
 fn validate_tclk_event(value: i32) -> Result<u32> {
     let unsigned_value = value.cast_unsigned();

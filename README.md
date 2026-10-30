@@ -1,12 +1,12 @@
 # `extapi-acsys`
+
 ![Latest](../../actions/workflows/cd.yml/badge.svg?branch=main)
 
-Provides public APIs to the Fermilab control system. This service exposes several GraphQL endpoints for various, logical APIs that clients may use to retrieve control system data and, in some cases, make changes to the control system. This service is currently running on *acsys-proxy.fnal.gov* on port 8000 with the development instance on port 8001.
+Provides public APIs to the Fermilab control system. This service exposes several GraphQL endpoints for various, logical APIs that clients may use to retrieve control system data and, in some cases, make changes to the control system. This service has a [production instance](https://ad-api.fnal.gov/) and a [development instance](https://ad-api-dev.fnal.gov/).
 
 The middle layer of the control system uses gRPCs for communications. The GraphQL resolvers of this service use various gRPC services to obtain the information that is returned. This uses the `async-graphql` and `warp` crates to provide GraphQL over http support. The resolvers use the `tonic` crate for gRPC client support.
 
 ## Developers
-
 
 ### Prerequisites
 
@@ -26,7 +26,9 @@ Debian/Ubuntu packages typically required:
 Depending on your environment, you may also need a C toolchain and build tooling (e.g. `cmake`, `pkg-config`). The associated [`dev container`](.devcontainer/devcontainer.json) comes prepackaged with all the development tools necessary to build this project.
 
 ### Environment variables
+
 The following variables exist for configuring the service at runtime:
+
 - `ALARMS_KAFKA_HOST` -> Hostname for the Kafka instance that supports the alarms service
 - `ALARMS_KAFKA_TOPIC` -> Topic name for alarms in Kafka
 - `BLM_GRPC_HOST` -> Hostname for the BLM gRPC service
@@ -36,6 +38,7 @@ The following variables exist for configuring the service at runtime:
 - `GRAPHQL_PORT` -> Port for clients to connect via GraphQL to this service
 - `GRPC_ALARMS_DB_HOST` -> Hostname for the Alarms DB Access gRPC service
 - `GRPC_ALARMS_SERVICE_HOST` -> Hostname for the Alarms gRPC service
+- `MI8_AUTOTUNE_GRPC_HOST` -> Hostname for the MI8 Autotune gRPC service
 - `REQUIRED_UPSTREAMS` -> Optional comma-separated list of upstreams that must be configured for the service to start (see below)
 - `RUST_LOG` -> The default logging environment variable from Rust. Can be configured to log specific crates/modules at different levels from the global default.
 - `SCANNER_GRPC_HOST` -> Hostname for the wire scanner gRPC service
@@ -43,34 +46,37 @@ The following variables exist for configuring the service at runtime:
 - `UNR_GRPC_HOST` -> Hostname for the UNR gRPC service
 
 #### Optional upstreams and feature degradation
+
 By default, no upstream variable is required to start the service. If a variable is unset or blank, the service logs a `WARN` naming the variable and the disabled feature, then boots normally. `ALARMS_KAFKA_HOST` and `ALARMS_KAFKA_TOPIC` must both be set to enable alarm subscriptions.
 
-| Variable(s) | Route | When missing |
-| --- | --- | --- |
-| `BLM_GRPC_HOST` | `/blm` | Route is not mounted (404) |
-| `DEVDB_GRPC_HOST` | `/devdb` | Route is not mounted (404) |
-| `DEVDB_GRPC_HOST` | `/acsys` plot configuration (`plotConfiguration`, `updatePlotConfiguration`, `deletePlotConfiguration`) | Field returns `FEATURE_DISABLED` |
-| `TLG_GRPC_HOST` | `/tlg` | Route is not mounted (404) |
-| `UNR_GRPC_HOST` | `/unr` | Route is not mounted (404) |
-| `SCANNER_GRPC_HOST` | `/wscan` | Route is not mounted (404) |
-| `GRPC_ALARMS_DB_HOST`, `GRPC_ALARMS_SERVICE_HOST` | `/alarms` | Route is not mounted only when both are missing; otherwise affected fields return `FEATURE_DISABLED` |
-| `ALARMS_KAFKA_HOST`, `ALARMS_KAFKA_TOPIC` | `/alarms/s` subscriptions | Subscription returns `FEATURE_DISABLED` |
-| `CLOCK_GRPC_HOST` | `/acsys` triggered plots | Field returns `FEATURE_DISABLED` |
+| Variable(s)                                       | Route                                                                                                   | When missing                                                                                         |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `BLM_GRPC_HOST`                                   | `/blm`                                                                                                  | Route is not mounted (404)                                                                           |
+| `DEVDB_GRPC_HOST`                                 | `/devdb`                                                                                                | Route is not mounted (404)                                                                           |
+| `DEVDB_GRPC_HOST`                                 | `/acsys` plot configuration (`plotConfiguration`, `updatePlotConfiguration`, `deletePlotConfiguration`) | Field returns `FEATURE_DISABLED`                                                                     |
+| `MI8_AUTOTUNE_GRPC_HOST`                          | `/mi8-autotune`, `/mi8-autotune/s`                                                                      | Both routes are not mounted (404)                                                                    |
+| `TLG_GRPC_HOST`                                   | `/tlg`                                                                                                  | Route is not mounted (404)                                                                           |
+| `UNR_GRPC_HOST`                                   | `/unr`                                                                                                  | Route is not mounted (404)                                                                           |
+| `SCANNER_GRPC_HOST`                               | `/wscan`                                                                                                | Route is not mounted (404)                                                                           |
+| `GRPC_ALARMS_DB_HOST`, `GRPC_ALARMS_SERVICE_HOST` | `/alarms`                                                                                               | Route is not mounted only when both are missing; otherwise affected fields return `FEATURE_DISABLED` |
+| `ALARMS_KAFKA_HOST`, `ALARMS_KAFKA_TOPIC`         | `/alarms/s` subscriptions                                                                               | Subscription returns `FEATURE_DISABLED`                                                              |
+| `CLOCK_GRPC_HOST`                                 | `/acsys` triggered plots                                                                                | Field returns `FEATURE_DISABLED`                                                                     |
 
 `/acsys`, `/bbm` and `/faas` are always mounted. The landing page (`/`) only links to mounted routes. Requests that reach a disabled feature inside a mounted route get a GraphQL error with `extensions.code = "FEATURE_DISABLED"`.
 
 #### Requiring upstreams
+
 To keep fail-fast behavior for upstreams a deployment cannot run without, list them in `REQUIRED_UPSTREAMS`:
 
 ```shell
 REQUIRED_UPSTREAMS=devdb,unr,clock
 ```
 
-Keys: `alarms_db`, `alarms_kafka` (only with the `kafka` feature), `alarms_svc`, `blm`, `clock`, `devdb`, `tlg`, `unr`, `wscan`. If any listed upstream is missing, the service logs every missing variable and exits with a non-zero status. An unknown key is also a startup error, so a typo cannot silently drop a requirement. Unset or blank means nothing is required.
+Keys: `alarms_db`, `alarms_kafka` (only with the `kafka` feature), `alarms_svc`, `blm`, `clock`, `devdb`, `mi8_autotune`, `tlg`, `unr`, `wscan`. If any listed upstream is missing, the service logs every missing variable and exits with a non-zero status. An unknown key is also a startup error, so a typo cannot silently drop a requirement. Unset or blank means nothing is required.
 
 ### Error IDs in responses
 
-Alarms requests intentionally return a generic error message that includes an **Error ID** (a UUID). The underlying error details are logged server-side.
+Alarms and MI8 Autotune requests intentionally return a generic error message that includes an **Error ID** (a UUID). The underlying error details are logged server-side.
 
 To debug an issue reported by a client:
 

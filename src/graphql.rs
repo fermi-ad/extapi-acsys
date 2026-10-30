@@ -35,6 +35,7 @@ mod blm;
 mod devdb;
 mod errors;
 mod faas;
+mod mi8_autotune;
 mod scanner;
 mod tlg;
 mod types;
@@ -234,6 +235,48 @@ fn create_devdb_router(global_config: Arc<ExtapiGlobalConfig>) -> Router {
     )
 }
 
+fn create_mi8_autotune_router_with_api(
+    global_config: Arc<ExtapiGlobalConfig>,
+    api: Arc<dyn mi8_autotune::Mi8AutotuneApi>,
+) -> Router {
+    const Q_ENDPOINT: &str = "/mi8-autotune";
+    const S_ENDPOINT: &str = "/mi8-autotune/s";
+
+    let schema = Schema::build(
+        mi8_autotune::Mi8AutotuneQueries,
+        mi8_autotune::Mi8AutotuneMutations,
+        mi8_autotune::Mi8AutotuneSubscriptions,
+    )
+    .data(global_config)
+    .data(api)
+    .finish();
+
+    let graphiql = Html(
+        async_graphql::http::GraphiQLSource::build()
+            .endpoint(Q_ENDPOINT)
+            .subscription_endpoint(S_ENDPOINT)
+            .finish(),
+    );
+
+    Router::new()
+        .route(
+            Q_ENDPOINT,
+            get(graphiql)
+                .post(graphql_handler)
+                .with_state(schema.clone()),
+        )
+        .route(S_ENDPOINT, get(graphql_ws_handler).with_state(schema))
+}
+
+fn create_mi8_autotune_router(
+    global_config: Arc<ExtapiGlobalConfig>,
+) -> Router {
+    create_mi8_autotune_router_with_api(
+        global_config,
+        Arc::new(mi8_autotune::GrpcMi8AutotuneApi),
+    )
+}
+
 fn create_unr_router_with_api(
     api: Arc<dyn UnrApi>, global_config: Arc<ExtapiGlobalConfig>,
 ) -> Router {
@@ -408,7 +451,7 @@ impl SiteBuilder {
 // is mounted when either of its gRPC upstreams is available; its other
 // resolvers report FEATURE_DISABLED individually.
 //
-// Resolvers in routes gated on a single upstream (BLM, DevDB, TLG, UNR,
+// Resolvers in routes gated on a single upstream (BLM, DevDB, MI8 Autotune, TLG, UNR,
 // wire scanner) still call `require()`. That check cannot fail while the
 // route is gated, but keeps them safe if the mounting rules change.
 async fn create_site(cfg: Arc<ExtapiGlobalConfig>) -> Router {
@@ -463,6 +506,14 @@ async fn create_site(cfg: Arc<ExtapiGlobalConfig>) -> Router {
             },
             true,
             create_faas_router,
+        )
+        .mount(
+            Link {
+                path: "/mi8-autotune",
+                label: "MI8 Autotune",
+            },
+            cfg.mi8_autotune.is_enabled(),
+            || create_mi8_autotune_router(Arc::clone(&cfg)),
         )
         .mount(
             Link {
@@ -694,8 +745,16 @@ mod tests {
         let site = create_site(Arc::new(get_test_config())).await;
 
         for path in [
-            "/acsys", "/alarms", "/bbm", "/blm", "/devdb", "/faas", "/tlg",
-            "/unr", "/wscan",
+            "/acsys",
+            "/alarms",
+            "/bbm",
+            "/blm",
+            "/devdb",
+            "/faas",
+            "/mi8-autotune",
+            "/tlg",
+            "/unr",
+            "/wscan",
         ] {
             assert_eq!(
                 status_of(&site, "POST", path).await,
@@ -710,18 +769,25 @@ mod tests {
         let mut config = get_test_config();
         config.blm = disabled();
         config.devdb = disabled();
+        config.mi8_autotune = disabled();
         config.tlg = disabled();
         config.unr = disabled();
         config.wscan = disabled();
         let site = create_site(Arc::new(config)).await;
 
-        for path in ["/blm", "/devdb", "/tlg", "/unr", "/wscan"] {
+        for path in
+            ["/blm", "/devdb", "/mi8-autotune", "/tlg", "/unr", "/wscan"]
+        {
             assert_eq!(
                 status_of(&site, "POST", path).await,
                 StatusCode::NOT_FOUND,
                 "{path} should not be mounted"
             );
         }
+        assert_eq!(
+            status_of(&site, "GET", "/mi8-autotune/s").await,
+            StatusCode::NOT_FOUND,
+        );
         // Routes whose upstreams are still configured, or that need none,
         // are unaffected.
         for path in ["/acsys", "/alarms", "/bbm", "/faas"] {
@@ -731,7 +797,23 @@ mod tests {
         let page = landing_page(&site).await;
         assert!(page.contains("href=\"/acsys\""));
         assert!(!page.contains("href=\"/blm\""));
+        assert!(!page.contains("href=\"/mi8-autotune\""));
         assert!(!page.contains("href=\"/unr\""));
+    }
+
+    #[tokio::test]
+    async fn mi8_autotune_mounts_graphiql_landing_link_and_subscription_route()
+    {
+        let site = create_site(Arc::new(get_test_config())).await;
+        assert_eq!(
+            status_of(&site, "GET", "/mi8-autotune").await,
+            StatusCode::OK
+        );
+        assert!(landing_page(&site).await.contains("href=\"/mi8-autotune\""));
+        assert_eq!(
+            status_of(&site, "GET", "/mi8-autotune/s").await,
+            StatusCode::BAD_REQUEST
+        );
     }
 
     #[tokio::test]
@@ -763,6 +845,7 @@ mod tests {
         config.blm = disabled();
         config.clock = disabled();
         config.devdb = disabled();
+        config.mi8_autotune = disabled();
         config.tlg = disabled();
         config.unr = disabled();
         config.wscan = disabled();
@@ -771,10 +854,20 @@ mod tests {
         assert_eq!(status_of(&site, "GET", "/").await, StatusCode::OK);
         assert_eq!(status_of(&site, "POST", "/faas").await, StatusCode::OK);
         assert_eq!(status_of(&site, "POST", "/bbm").await, StatusCode::OK);
-        assert_eq!(
-            status_of(&site, "POST", "/unr").await,
-            StatusCode::NOT_FOUND
-        );
+        for path in [
+            "/alarms",
+            "/blm",
+            "/devdb",
+            "/mi8-autotune",
+            "/tlg",
+            "/unr",
+            "/wscan",
+        ] {
+            assert_eq!(
+                status_of(&site, "POST", path).await,
+                StatusCode::NOT_FOUND
+            );
+        }
     }
 
     #[tokio::test]

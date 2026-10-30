@@ -1101,7 +1101,7 @@ dependencies = [
 [[package]]
 name = "grpc-macro"
 version = "0.2.0"
-source = "git+https://github.com/fermi-ad/rust-grpc-lib?tag=v7.2.0#3e557a60181b9386f303776c31edfedcd1e9f6c5"
+source = "git+https://github.com/fermi-ad/rust-grpc-lib?tag=v7.5.0#02a118f56522f5f77f195d0b4a4cd5aa43e88907"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2468,8 +2468,8 @@ dependencies = [
 
 [[package]]
 name = "rust-grpc-lib"
-version = "7.2.0"
-source = "git+https://github.com/fermi-ad/rust-grpc-lib?tag=v7.2.0#3e557a60181b9386f303776c31edfedcd1e9f6c5"
+version = "7.5.0"
+source = "git+https://github.com/fermi-ad/rust-grpc-lib?tag=v7.5.0#02a118f56522f5f77f195d0b4a4cd5aa43e88907"
 dependencies = [
  "grpc-macro",
  "protoc-bin-vendored",

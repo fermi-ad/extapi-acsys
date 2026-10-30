@@ -55,6 +55,7 @@ fn global_config_populates_when_all_vals_present() {
         blm,
         clock,
         devdb,
+        mi8_autotune,
         tlg,
         unr,
         wscan,
@@ -70,6 +71,7 @@ fn global_config_populates_when_all_vals_present() {
     assert_eq!(enabled(blm).host_addr, "test host");
     assert_eq!(enabled(clock).host_addr, "test host");
     assert_eq!(enabled(devdb).host_addr, "test host");
+    assert_eq!(enabled(mi8_autotune).host_addr, "test host");
     assert_eq!(enabled(tlg).host_addr, "test host");
     assert_eq!(enabled(unr).host_addr, "test host");
     assert_eq!(enabled(wscan).host_addr, "test host");
@@ -108,6 +110,7 @@ fn startup_succeeds_with_no_upstreams_configured() {
         "DEVDB_GRPC_HOST",
         "GRPC_ALARMS_DB_HOST",
         "GRPC_ALARMS_SERVICE_HOST",
+        "MI8_AUTOTUNE_GRPC_HOST",
         "SCANNER_GRPC_HOST",
         "TLG_GRPC_HOST",
         "UNR_GRPC_HOST",
@@ -119,6 +122,7 @@ fn startup_succeeds_with_no_upstreams_configured() {
     assert!(config.blm.require().is_err());
     assert!(config.clock.require().is_err());
     assert!(config.devdb.require().is_err());
+    assert!(config.mi8_autotune.require().is_err());
     assert!(config.tlg.require().is_err());
     assert!(config.unr.require().is_err());
     assert!(config.wscan.require().is_err());

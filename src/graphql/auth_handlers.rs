@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use async_graphql::{
-    Data, EmptySubscription, ObjectType, Request, Schema, SubscriptionType,
+    Context, Data, EmptySubscription, ObjectType, Request, Schema,
+    SubscriptionType,
     dataloader::{DataLoader, HashMapCache},
     http::ALL_WEBSOCKET_PROTOCOLS,
 };
@@ -117,6 +118,16 @@ impl AuthInfo {
     }
 }
 
+/// Forwards the caller's token, or an empty token when auth data is absent.
+/// Authentication and authorization remain the upstream service's responsibility.
+pub(super) fn forwarded_token(ctx: &Context<'_>) -> ForwardedToken {
+    ForwardedToken::new(
+        ctx.data_opt::<AuthInfo>()
+            .and_then(AuthInfo::token)
+            .unwrap_or_default(),
+    )
+}
+
 impl<S> FromRequestParts<S> for AuthInfo
 where
     S: Send + Sync,
@@ -185,4 +196,53 @@ fn websocket_init_handler(value: Value) -> Ready<async_graphql::Result<Data>> {
 /// Must be called by every handler — this service is zero-trust.
 fn with_auth(req: GraphQLRequest, auth: AuthInfo) -> Request {
     req.into_inner().data(auth)
+}
+
+#[cfg(test)]
+mod tests {
+    use async_graphql::{EmptyMutation, Object, value};
+    use rust_grpc_lib::auth::TokenProvider;
+
+    use super::*;
+
+    struct TokenQuery;
+
+    #[Object]
+    impl TokenQuery {
+        async fn token(&self, ctx: &Context<'_>) -> String {
+            forwarded_token(ctx).get_token().unwrap()
+        }
+    }
+
+    #[tokio::test]
+    async fn forwarded_token_preserves_each_callers_token_and_empty_fallback() {
+        let schema =
+            Schema::build(TokenQuery, EmptyMutation, EmptySubscription)
+                .finish();
+
+        for (auth, expected) in [
+            (None, ""),
+            (Some(AuthInfo { bearer_token: None }), ""),
+            (
+                Some(AuthInfo {
+                    bearer_token: Some("first-caller".to_owned()),
+                }),
+                "first-caller",
+            ),
+            (
+                Some(AuthInfo {
+                    bearer_token: Some("second-caller".to_owned()),
+                }),
+                "second-caller",
+            ),
+        ] {
+            let mut request = Request::new("{ token }");
+            if let Some(auth) = auth {
+                request = request.data(auth);
+            }
+            let response = schema.execute(request).await;
+            assert!(response.errors.is_empty(), "{:?}", response.errors);
+            assert_eq!(response.data, value!({"token": expected}));
+        }
+    }
 }
