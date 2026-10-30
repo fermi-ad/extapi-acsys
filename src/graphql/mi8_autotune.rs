@@ -20,19 +20,11 @@ use crate::{
             },
         },
     },
-    graphql::{auth_handlers::AuthInfo, errors::handle_graphql_error},
+    graphql::{auth_handlers::forwarded_token, errors::handle_graphql_error},
 };
 
 mod types;
 use types::{ArmedState, AutotuneEventUpdate, OperatingMode};
-
-fn forwarded_token(ctx: &Context<'_>) -> ForwardedToken {
-    ForwardedToken::new(
-        ctx.data_opt::<AuthInfo>()
-            .and_then(AuthInfo::token)
-            .unwrap_or_default(),
-    )
-}
 
 /// A boxed upstream stream whose items can fail with a gRPC status.
 pub type StatusStream<T> = BoxStream<'static, std::result::Result<T, Status>>;

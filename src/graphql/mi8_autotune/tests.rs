@@ -11,7 +11,10 @@ use serde_json::json;
 use tower::Service;
 
 use super::*;
-use crate::config::{Upstream, get_test_config};
+use crate::{
+    config::{Upstream, get_test_config},
+    graphql::auth_handlers::AuthInfo,
+};
 
 struct FakeApi {
     response: std::result::Result<ListBpmsResponse, Status>,
