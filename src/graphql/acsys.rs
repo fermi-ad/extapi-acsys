@@ -27,6 +27,7 @@ use crate::{
     },
     graphql::auth_handlers::AuthInfo,
 };
+
 // Pull in global types.
 
 use super::types as global;
@@ -249,6 +250,11 @@ that is included in the request."]
         warn!("unable to determine user : no config returned");
         None
     }
+
+    #[instrument(skip(self))]
+    async fn clock_event(&self) -> Result<types::AClkEvent> {
+        todo!()
+    }
 }
 
 #[derive(Default)]
@@ -424,6 +430,7 @@ fn add_event(
 // requires concrete trait object types.
 type DataStream = Pin<Box<dyn Stream<Item = global::DataReply> + Send>>;
 type PlotStream = Pin<Box<dyn Stream<Item = types::PlotReplyData> + Send>>;
+type ClockStream = Pin<Box<dyn Stream<Item = types::AClkEvent> + Send>>;
 
 struct TimeBounds {
     pub end: Option<f64>,
@@ -1294,5 +1301,19 @@ correlated, all the devices are collected on the same event."]
             )
             .await
         }
+    }
+
+    #[doc = "Subscribe to clock events
+
+Specify a list of clock events of which to subscribe. As the events occur, \
+they will be sent to the client. Cancel the request to stop."]
+    #[instrument(skip(self))]
+    async fn clock_event(
+        &self,
+        #[graphql(desc = "List of clock events to subscribe to")] events: Vec<
+            u16,
+        >,
+    ) -> Result<ClockStream> {
+        todo!()
     }
 }

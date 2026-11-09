@@ -51,6 +51,30 @@ pub struct PlotReplyData {
 
 #[ComplexObject]
 impl PlotReplyData {
+    #[doc = "The time of the original request in ISO format."]
+    pub async fn iso_timestamp(&self) -> DateTime<Utc> {
+        DateTime::<Utc>::UNIX_EPOCH
+            + Duration::microseconds((self.timestamp * 1_000_000.0) as i64)
+    }
+}
+
+#[doc = "Information about a clock event."]
+#[derive(SimpleObject, Clone)]
+#[graphql(complex)]
+pub struct AClkEvent {
+    #[doc = "The absolute timestamp (UTC) of the event."]
+    pub timestamp: f64,
+    #[doc = "The event code."]
+    pub event: u16,
+    #[doc = "Extra event-specific data"]
+    pub data: u64,
+    #[doc = "Description of the event."]
+    pub description: String,
+}
+
+#[ComplexObject]
+impl AClkEvent {
+    #[doc = "Timestamp of the event in ISO format."]
     pub async fn iso_timestamp(&self) -> DateTime<Utc> {
         DateTime::<Utc>::UNIX_EPOCH
             + Duration::microseconds((self.timestamp * 1_000_000.0) as i64)
