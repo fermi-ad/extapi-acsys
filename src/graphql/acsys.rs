@@ -25,6 +25,7 @@ use crate::{
         clock, devdb,
         dpm::{self, Connection},
         proto::services::{
+            clock_event::EventInfo,
             daq::{self, reading_reply},
             devdb::{PlotConfigResult, plot_config_result},
         },
@@ -929,6 +930,38 @@ impl ACSysSubscriptions {
         out.trigger_timestamp = Some(ev_ts)
     }
 
+    // Builds a map of event codes to placeholder descriptions, one
+    // entry per requested event. This represents the set of clock
+    // events to which we're subscribing.
+    //
+    // XXX: desc handling is temporary, should be improved later. This
+    // value will, eventually, come from a different gRPC request.
+
+    fn build_event_descriptions(events: &[i32]) -> HashMap<i32, Arc<str>> {
+        let holder: Arc<str> = "description not defined".into();
+
+        events.iter().map(|e| (*e, holder.clone())).collect()
+    }
+
+    // Converts a gRPC `EventInfo` into an `AClkEvent`, taking the
+    // associated description out of `desc` (if present). Since each
+    // entry is *removed* from the map, a description is only attached
+    // to the first occurrence of an event code -- subsequent
+    // occurrences of the same event will have no description.
+
+    fn xlat_clock_event(
+        desc: &mut HashMap<i32, Arc<str>>, info: EventInfo,
+    ) -> AClkEvent {
+        AClkEvent {
+            timestamp: info
+                .stamp
+                .map_or(0.0, |s| s.seconds as f64 + s.nanos as f64 * 1e-9),
+            event: info.event as u16,
+            data: 0,
+            description: desc.remove(&info.event),
+        }
+    }
+
     // A helper method to handle plots that want to sync their data to
     // a clock event.
 
@@ -1328,12 +1361,10 @@ they will be sent to the client. Cancel the request to stop."]
             .and_then(AuthInfo::token)
             .unwrap_or_default();
 
-        // XXX: desc handling is temporary, should be improved later. This
-        // value will, eventually, come from a different gRPC request.
+        // Build the map that associates each event code with its
+        // description.
 
-        let holder: Arc<str> = "description not defined".into();
-        let mut desc: HashMap<i32, Arc<str>> =
-            events.iter().map(|e| (*e, holder.clone())).collect();
+        let mut desc = Self::build_event_descriptions(&events);
 
         // Make the gRPC request for a stream of event reports. Use the passed
         // array of events.
@@ -1346,14 +1377,7 @@ they will be sent to the client. Cancel the request to stop."]
         .await?
         .into_inner()
         .filter_map(move |x| {
-            let event = x.ok().map(|e| AClkEvent {
-                timestamp: e
-                    .stamp
-                    .map_or(0.0, |s| s.seconds as f64 + s.nanos as f64 * 1e-9),
-                event: e.event as u16,
-                data: 0,
-                description: desc.remove(&e.event),
-            });
+            let event = x.ok().map(|e| Self::xlat_clock_event(&mut desc, e));
 
             async move { event }
         }))
