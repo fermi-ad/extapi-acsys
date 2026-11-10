@@ -25,7 +25,7 @@ use crate::{
             devdb::{PlotConfigResult, plot_config_result},
         },
     },
-    graphql::auth_handlers::AuthInfo,
+    graphql::{acsys::types::AClkEvent, auth_handlers::AuthInfo},
 };
 
 // Pull in global types.
@@ -430,7 +430,6 @@ fn add_event(
 // requires concrete trait object types.
 type DataStream = Pin<Box<dyn Stream<Item = global::DataReply> + Send>>;
 type PlotStream = Pin<Box<dyn Stream<Item = types::PlotReplyData> + Send>>;
-type ClockStream = Pin<Box<dyn Stream<Item = types::AClkEvent> + Send>>;
 
 struct TimeBounds {
     pub end: Option<f64>,
@@ -1307,13 +1306,34 @@ correlated, all the devices are collected on the same event."]
 
 Specify a list of clock events of which to subscribe. As the events occur, \
 they will be sent to the client. Cancel the request to stop."]
-    #[instrument(skip(self))]
+    #[instrument(skip(self, ctxt))]
     async fn clock_event(
-        &self,
-        #[graphql(desc = "List of clock events to subscribe to")] events: Vec<
-            u16,
+        &self, ctxt: &Context<'_>,
+        #[graphql(desc = "Clock events with which to subscribe.")] events: Arc<
+            [i32],
         >,
-    ) -> Result<ClockStream> {
-        todo!()
+    ) -> Result<impl Stream<Item = AClkEvent>> {
+        // Obtain the global configuration.
+
+        let config = ctxt.data::<Arc<ExtapiGlobalConfig>>()?;
+
+        // Retrieve the JWT from the context.
+
+        let token = ctxt
+            .data_opt::<AuthInfo>()
+            .and_then(AuthInfo::token)
+            .unwrap_or_default();
+
+        // Make the gRPC request for a stream of event reports. Use the passed
+        // array of events.
+
+        Ok(clock::subscribe(
+            config.clock.require()?,
+            ForwardedToken::new(token),
+            &events,
+        )
+        .await?
+        .into_inner()
+        .filter_map(|x| async move { x.ok().map(AClkEvent::from) }))
     }
 }
