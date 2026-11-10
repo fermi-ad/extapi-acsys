@@ -1352,7 +1352,7 @@ they will be sent to the client. Cancel the request to stop."]
                     .map_or(0.0, |s| s.seconds as f64 + s.nanos as f64 * 1e-9),
                 event: e.event as u16,
                 data: 0,
-                description: desc.remove(&0),
+                description: desc.remove(&e.event),
             });
 
             async move { event }
