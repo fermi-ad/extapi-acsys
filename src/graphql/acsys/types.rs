@@ -1,5 +1,4 @@
 use super::global;
-use crate::g_rpc::proto::services::clock_event::EventInfo;
 
 use async_graphql::*;
 use chrono::{DateTime, Duration, Utc};
@@ -71,7 +70,7 @@ pub struct AClkEvent {
     #[doc = "Extra event-specific data"]
     pub data: u64,
     #[doc = "Description of the event."]
-    pub description: Arc<str>,
+    pub description: Option<Arc<str>>,
 }
 
 #[ComplexObject]
@@ -80,24 +79,5 @@ impl AClkEvent {
     pub async fn iso_timestamp(&self) -> DateTime<Utc> {
         DateTime::<Utc>::UNIX_EPOCH
             + Duration::microseconds((self.timestamp * 1_000_000.0) as i64)
-    }
-}
-
-// Convert from EventInfo to AClkEvent
-//
-// XXX: This trait should go away and a custom conversion method used instead.
-// The description is going to be obtained through a different gRPC call so it
-// should be used when making these conversions.
-
-impl From<EventInfo> for AClkEvent {
-    fn from(e: EventInfo) -> Self {
-        Self {
-            timestamp: e
-                .stamp
-                .map_or(0.0, |s| s.seconds as f64 + s.nanos as f64 * 1e-9),
-            event: e.event as u16,
-            data: 0,
-            description: "".into(),
-        }
     }
 }

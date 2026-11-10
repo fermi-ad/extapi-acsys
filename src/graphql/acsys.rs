@@ -1,4 +1,8 @@
-use std::{collections::HashSet, pin::Pin, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    pin::Pin,
+    sync::Arc,
+};
 
 use async_graphql::{Context, Error, Object, Result, Subscription};
 use async_stream::stream;
@@ -1324,6 +1328,13 @@ they will be sent to the client. Cancel the request to stop."]
             .and_then(AuthInfo::token)
             .unwrap_or_default();
 
+        // XXX: desc handling is temporary, should be improved later. This
+        // value will, eventually, come from a different gRPC request.
+
+        let holder: Arc<str> = "description not defined".into();
+        let mut desc: HashMap<i32, Arc<str>> =
+            events.iter().map(|e| (*e, holder.clone())).collect();
+
         // Make the gRPC request for a stream of event reports. Use the passed
         // array of events.
 
@@ -1334,6 +1345,17 @@ they will be sent to the client. Cancel the request to stop."]
         )
         .await?
         .into_inner()
-        .filter_map(|x| async move { x.ok().map(AClkEvent::from) }))
+        .filter_map(move |x| {
+            let event = x.ok().map(|e| AClkEvent {
+                timestamp: e
+                    .stamp
+                    .map_or(0.0, |s| s.seconds as f64 + s.nanos as f64 * 1e-9),
+                event: e.event as u16,
+                data: 0,
+                description: desc.remove(&0),
+            });
+
+            async move { event }
+        }))
     }
 }
