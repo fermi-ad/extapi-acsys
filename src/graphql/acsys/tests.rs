@@ -1,6 +1,9 @@
 //! Tests for the acsys module
 
 use super::*;
+use crate::g_rpc::proto::{
+    google::protobuf::Timestamp, services::clock_event::EventInfo,
+};
 
 // -----------------------------------------------------------------------
 // strip_event
@@ -734,4 +737,154 @@ fn test_prep_outgoing_ts_before_all_data() {
         rem.data[0].channel_data,
         vec![make_point(10.0), make_point(20.0)]
     );
+}
+
+// -----------------------------------------------------------------------
+// build_event_descriptions / xlat_clock_event
+//
+// These two helpers implement the core of `clock_event()`'s behavior:
+// each requested event code is given a placeholder description, and
+// that description is removed from the map (and attached to the
+// outgoing `AClkEvent`) the first time a matching `EventInfo` is
+// translated.
+
+fn make_event_info(event: i32, seconds: i64, nanos: i32) -> EventInfo {
+    EventInfo {
+        stamp: Some(Timestamp { seconds, nanos }),
+        event,
+    }
+}
+
+#[test]
+fn test_build_event_descriptions_one_entry_per_event() {
+    let desc = ACSysSubscriptions::build_event_descriptions(&[1, 2, 3]);
+
+    assert_eq!(desc.len(), 3);
+    assert!(desc.contains_key(&1));
+    assert!(desc.contains_key(&2));
+    assert!(desc.contains_key(&3));
+}
+
+// Duplicate event codes in the request only produce one map entry.
+#[test]
+fn test_build_event_descriptions_deduplicates() {
+    let desc = ACSysSubscriptions::build_event_descriptions(&[5, 5, 5]);
+
+    assert_eq!(desc.len(), 1);
+    assert!(desc.contains_key(&5));
+}
+
+// An empty event list produces an empty map.
+#[test]
+fn test_build_event_descriptions_empty() {
+    let desc = ACSysSubscriptions::build_event_descriptions(&[]);
+
+    assert!(desc.is_empty());
+}
+
+// The first `EventInfo` for a given event code gets the description
+// and the map entry is consumed (removed).
+#[test]
+fn test_xlat_clock_event_removes_description() {
+    let mut desc = ACSysSubscriptions::build_event_descriptions(&[0x0f]);
+
+    assert!(desc.contains_key(&0x0f));
+
+    let out = ACSysSubscriptions::xlat_clock_event(
+        &mut desc,
+        make_event_info(0x0f, 100, 0),
+    );
+
+    assert_eq!(out.event, 0x0f);
+    assert_eq!(out.description.as_deref(), Some("description not defined"));
+    assert!(!desc.contains_key(&0x0f));
+}
+
+// A second occurrence of the same event code finds nothing left in
+// the map, so its description is `None`.
+#[test]
+fn test_xlat_clock_event_second_occurrence_has_no_description() {
+    let mut desc = ACSysSubscriptions::build_event_descriptions(&[0x0f]);
+
+    let first = ACSysSubscriptions::xlat_clock_event(
+        &mut desc,
+        make_event_info(0x0f, 100, 0),
+    );
+    let second = ACSysSubscriptions::xlat_clock_event(
+        &mut desc,
+        make_event_info(0x0f, 200, 0),
+    );
+
+    assert!(first.description.is_some());
+    assert!(second.description.is_none());
+}
+
+// An event code that was never requested (not present in the map)
+// always comes back with no description.
+#[test]
+fn test_xlat_clock_event_unknown_event_has_no_description() {
+    let mut desc = ACSysSubscriptions::build_event_descriptions(&[0x0f]);
+
+    let out = ACSysSubscriptions::xlat_clock_event(
+        &mut desc,
+        make_event_info(0x1f, 100, 0),
+    );
+
+    assert_eq!(out.event, 0x1f);
+    assert!(out.description.is_none());
+    // The unrelated, requested event's description is untouched.
+    assert!(desc.contains_key(&0x0f));
+}
+
+// Each event code in a multi-event subscription keeps its own
+// description independent of the others.
+#[test]
+fn test_xlat_clock_event_independent_per_event_code() {
+    let mut desc = ACSysSubscriptions::build_event_descriptions(&[0x01, 0x02]);
+
+    let ev1 = ACSysSubscriptions::xlat_clock_event(
+        &mut desc,
+        make_event_info(0x01, 100, 0),
+    );
+
+    // 0x02 hasn't been seen yet, so it still has its description.
+    assert!(desc.contains_key(&0x02));
+    assert!(ev1.description.is_some());
+
+    let ev2 = ACSysSubscriptions::xlat_clock_event(
+        &mut desc,
+        make_event_info(0x02, 200, 0),
+    );
+
+    assert!(ev2.description.is_some());
+    assert!(desc.is_empty());
+}
+
+// The timestamp and event code are translated correctly, independent
+// of the description-removal behavior.
+#[test]
+fn test_xlat_clock_event_translates_timestamp_and_event() {
+    let mut desc = ACSysSubscriptions::build_event_descriptions(&[0x07]);
+    let out = ACSysSubscriptions::xlat_clock_event(
+        &mut desc,
+        make_event_info(0x07, 1_000, 500_000_000),
+    );
+
+    assert_eq!(out.event, 0x07);
+    assert_eq!(out.data, 0);
+    assert_eq!(out.timestamp, 1_000.5);
+}
+
+// A missing `stamp` field results in a timestamp of 0.0 (rather than
+// a panic).
+#[test]
+fn test_xlat_clock_event_missing_stamp_defaults_to_zero() {
+    let mut desc = ACSysSubscriptions::build_event_descriptions(&[0x07]);
+    let info = EventInfo {
+        stamp: None,
+        event: 0x07,
+    };
+    let out = ACSysSubscriptions::xlat_clock_event(&mut desc, info);
+
+    assert_eq!(out.timestamp, 0.0);
 }

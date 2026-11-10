@@ -1,4 +1,8 @@
-use std::{collections::HashSet, pin::Pin, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    pin::Pin,
+    sync::Arc,
+};
 
 use async_graphql::{Context, Error, Object, Result, Subscription};
 use async_stream::stream;
@@ -21,12 +25,14 @@ use crate::{
         clock, devdb,
         dpm::{self, Connection},
         proto::services::{
+            clock_event::EventInfo,
             daq::{self, reading_reply},
             devdb::{PlotConfigResult, plot_config_result},
         },
     },
-    graphql::auth_handlers::AuthInfo,
+    graphql::{acsys::types::AClkEvent, auth_handlers::AuthInfo},
 };
+
 // Pull in global types.
 
 use super::types as global;
@@ -248,6 +254,11 @@ that is included in the request."]
         }
         warn!("unable to determine user : no config returned");
         None
+    }
+
+    #[instrument(skip(self))]
+    async fn clock_event(&self) -> Result<types::AClkEvent> {
+        todo!()
     }
 }
 
@@ -919,6 +930,38 @@ impl ACSysSubscriptions {
         out.trigger_timestamp = Some(ev_ts)
     }
 
+    // Builds a map of event codes to placeholder descriptions, one
+    // entry per requested event. This represents the set of clock
+    // events to which we're subscribing.
+    //
+    // XXX: desc handling is temporary, should be improved later. This
+    // value will, eventually, come from a different gRPC request.
+
+    fn build_event_descriptions(events: &[i32]) -> HashMap<i32, Arc<str>> {
+        let holder: Arc<str> = "description not defined".into();
+
+        events.iter().map(|e| (*e, holder.clone())).collect()
+    }
+
+    // Converts a gRPC `EventInfo` into an `AClkEvent`, taking the
+    // associated description out of `desc` (if present). Since each
+    // entry is *removed* from the map, a description is only attached
+    // to the first occurrence of an event code -- subsequent
+    // occurrences of the same event will have no description.
+
+    fn xlat_clock_event(
+        desc: &mut HashMap<i32, Arc<str>>, info: EventInfo,
+    ) -> AClkEvent {
+        AClkEvent {
+            timestamp: info
+                .stamp
+                .map_or(0.0, |s| s.seconds as f64 + s.nanos as f64 * 1e-9),
+            event: info.event as u16,
+            data: 0,
+            description: desc.remove(&info.event),
+        }
+    }
+
     // A helper method to handle plots that want to sync their data to
     // a clock event.
 
@@ -1294,5 +1337,49 @@ correlated, all the devices are collected on the same event."]
             )
             .await
         }
+    }
+
+    #[doc = "Subscribe to clock events
+
+Specify a list of clock events of which to subscribe. As the events occur, \
+they will be sent to the client. Cancel the request to stop."]
+    #[instrument(skip(self, ctxt))]
+    async fn clock_event(
+        &self, ctxt: &Context<'_>,
+        #[graphql(desc = "Clock events with which to subscribe.")] events: Arc<
+            [i32],
+        >,
+    ) -> Result<impl Stream<Item = AClkEvent>> {
+        // Obtain the global configuration.
+
+        let config = ctxt.data::<Arc<ExtapiGlobalConfig>>()?;
+
+        // Retrieve the JWT from the context.
+
+        let token = ctxt
+            .data_opt::<AuthInfo>()
+            .and_then(AuthInfo::token)
+            .unwrap_or_default();
+
+        // Build the map that associates each event code with its
+        // description.
+
+        let mut desc = Self::build_event_descriptions(&events);
+
+        // Make the gRPC request for a stream of event reports. Use the passed
+        // array of events.
+
+        Ok(clock::subscribe(
+            config.clock.require()?,
+            ForwardedToken::new(token),
+            &events,
+        )
+        .await?
+        .into_inner()
+        .filter_map(move |x| {
+            let event = x.ok().map(|e| Self::xlat_clock_event(&mut desc, e));
+
+            async move { event }
+        }))
     }
 }
