@@ -850,6 +850,7 @@ dependencies = [
  "futures-util",
  "headers",
  "http",
+ "memchr",
  "prost",
  "reqwest",
  "rust-env-var-lib",
