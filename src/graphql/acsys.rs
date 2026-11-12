@@ -631,12 +631,11 @@ impl ACSysSubscriptions {
             let seam = &seam[..partial + take];
 
             // Match that started in an earlier buffer.
-            if partial > 0 {
-                if let Some(i) = finder.find(seam) {
+            if partial > 0
+                && if let Some(i) = finder.find(seam) {
                     r.consume(i + N - partial);
                     break;
                 }
-            }
 
             // Match fully inside this buffer.
             if let Some(i) = finder.find(buf) {
