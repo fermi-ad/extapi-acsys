@@ -14,6 +14,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio_util::io::StreamReader;
 use tonic::Status;
 use tracing::{error, info, instrument, warn};
+use memchr::memmem;
 
 use crate::{
     config::ExtapiGlobalConfig,
@@ -600,33 +601,59 @@ impl ACSysSubscriptions {
     // Once that's found, it advances the stream up to, and including,
     // the first '[' so that it's pointing to the first object in the
     // array.
-
-    async fn seek_to_data_array<R: tokio::io::AsyncBufRead + Unpin>(
-        r: &mut R,
-    ) -> std::io::Result<()> {
+    async fn seek_to_data_array<R: tokio::io::AsyncBufRead + Unpin>(r: &mut R) -> std::io::Result<()> {
         const KEY: &[u8] = b"\"data\"";
+        const N: usize = KEY.len();
+
+        /// Longest suffix of `tail` that is a proper prefix of KEY.
+        fn suffix_prefix_len(tail: &[u8]) -> usize {
+            (1..=tail.len().min(N - 1))
+                .rev()
+                .find(|&k| tail.ends_with(&KEY[..k]))
+                .unwrap_or(0)
+        }
+
+        let finder = memmem::Finder::new(KEY);
+        let mut partial = 0usize; // KEY[..partial] == the last bytes already consumed
 
         // First find the key.
-
         loop {
             let buf = r.fill_buf().await?;
-
             if buf.is_empty() {
                 return Err(std::io::ErrorKind::UnexpectedEof.into());
             }
 
-            if let Some(pos) = buf.windows(KEY.len()).position(|w| w == KEY) {
-                r.consume(pos + KEY.len());
+            // Carried key prefix + first N-1 bytes of this buffer (stack only).
+            let mut seam = [0u8; 2 * (N - 1)];
+            let take = buf.len().min(N - 1);
+            seam[..partial].copy_from_slice(&KEY[..partial]);
+            seam[partial..partial + take].copy_from_slice(&buf[..take]);
+            let seam = &seam[..partial + take];
+
+            // Match that started in an earlier buffer.
+            if partial > 0
+                && let Some(i) = finder.find(seam) {
+                    r.consume(i + N - partial);
+                    break;
+                }
+
+            // Match fully inside this buffer.
+            if let Some(i) = finder.find(buf) {
+                r.consume(i + N);
                 break;
             }
 
+            // Miss: remember the partial key, then consume everything.
             let len = buf.len();
-
-            r.consume(len.saturating_sub(KEY.len()));
+            partial = if len >= N - 1 {
+                suffix_prefix_len(&buf[len - (N - 1)..])
+            } else {
+                suffix_prefix_len(seam)
+            };
+            r.consume(len);
         }
 
         // Now find the next '[' character.
-
         loop {
             if r.read_u8().await? == b'[' {
                 break;

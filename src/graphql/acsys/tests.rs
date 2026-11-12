@@ -1,6 +1,11 @@
 //! Tests for the acsys module
 
 use super::*;
+use std::collections::VecDeque;
+use std::io;
+use std::pin::Pin;
+use std::task::{ready, Context, Poll};
+use tokio::io::{AsyncBufRead, AsyncRead, AsyncReadExt, ReadBuf};
 
 // -----------------------------------------------------------------------
 // strip_event
@@ -735,3 +740,114 @@ fn test_prep_outgoing_ts_before_all_data() {
         vec![make_point(10.0), make_point(20.0)]
     );
 }
+
+
+    /// Hands out `chunks` with exact boundaries (like packets on a socket) and
+    /// panics if the caller keeps polling fill_buf without consuming, which
+    /// is the pattern that spins forever on a real BufReader.
+    struct ChunkedReader {
+        chunks: VecDeque<&'static [u8]>,
+        pos: usize,       // read position within the front chunk
+        unconsumed: bool, // last fill_buf returned data that hasn't been consumed
+        stalls: usize,    // fill_buf calls in a row without a consume
+        yielded: bool,    // returned Pending before the next chunk yet?
+    }
+
+    impl ChunkedReader {
+        fn new(chunks: &[&'static [u8]]) -> Self {
+            Self {
+                chunks: chunks.iter().copied().filter(|c| !c.is_empty()).collect(),
+                pos: 0,
+                unconsumed: false,
+                stalls: 0,
+                yielded: false,
+            }
+        }
+    }
+
+    impl AsyncBufRead for ChunkedReader {
+        fn poll_fill_buf(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<&[u8]>> {
+            let this = self.get_mut();
+            if this.unconsumed {
+                this.stalls += 1;
+                assert!(
+                    this.stalls < 100,
+                    "fill_buf polled {} times without consume: caller is spinning",
+                    this.stalls
+                );
+            }
+            // Front chunk used up: return Pending once (like a socket with no
+            // data ready yet), then move on to the next chunk.
+            if this.chunks.front().is_some_and(|c| this.pos == c.len()) {
+                if !this.yielded {
+                    this.yielded = true;
+                    cx.waker().wake_by_ref();
+                    return Poll::Pending;
+                }
+                this.chunks.pop_front();
+                this.pos = 0;
+                this.yielded = false;
+            }
+            match this.chunks.front() {
+                Some(c) => {
+                    this.unconsumed = true;
+                    Poll::Ready(Ok(&c[this.pos..]))
+                }
+                None => Poll::Ready(Ok(&[])), // EOF
+            }
+        }
+
+        fn consume(self: Pin<&mut Self>, amt: usize) {
+            let this = self.get_mut();
+            this.pos += amt;
+            if amt > 0 {
+                this.unconsumed = false;
+                this.stalls = 0;
+            }
+        }
+    }
+
+    impl AsyncRead for ChunkedReader {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &mut ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            let n = {
+                let data = ready!(self.as_mut().poll_fill_buf(cx))?;
+                let n = data.len().min(buf.remaining());
+                buf.put_slice(&data[..n]);
+                n
+            };
+            self.consume(n);
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    #[tokio::test]
+    async fn seek_to_data_array_handles_any_chunking() {
+        let cases: &[&[&'static [u8]]] = &[
+            &[b"{\"data\":", b" []}"],
+            &[b"{\"dat", b"a\":", b" []}"],
+            &[b"{\"d", b"at", b"a\"", b" []}"],
+            &[b"[]", b"[]", b"[]", b"[]", b"{\"data\":", b" []}"],
+            &[b"{\"meta\": {\"count\": 3}, ", b"\"data\": []}"], // miss on a long buffer
+            &[b"{", b"\"", b"d", b"a", b"t", b"a", b"\"", b":", b" [", b"]}"], // 1-byte chunks
+        ];
+        for (i, chunks) in cases.iter().enumerate() {
+            let mut r = ChunkedReader::new(chunks);
+            ACSysSubscriptions::seek_to_data_array(&mut r)
+                .await
+                .unwrap_or_else(|e| panic!("case {i}: {e}"));
+            let mut rest = Vec::new();
+            r.read_to_end(&mut rest).await.unwrap();
+            assert_eq!(rest, b"]}", "case {i}: reader left in the wrong place");
+        }
+    }
+
+    #[tokio::test]
+    async fn seek_to_data_array_reports_eof_without_key() {
+        let mut r = ChunkedReader::new(&[b"{\"meta\": 1}"]);
+        let err = ACSysSubscriptions::seek_to_data_array(&mut r).await.unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof);
+    }
