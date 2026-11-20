@@ -13,7 +13,7 @@ use crate::{
         proto::{
             google::protobuf::Empty,
             services::mi8_autotune::v1::{
-                ListBpmsResponse, SetArmedStateRequest,
+                BpmReading, ListBpmsResponse, SetArmedStateRequest,
                 SetOperatingModeRequest, SubscribeArmedStateResponse,
                 SubscribeAutotuneEventResponse, SubscribeOperatingModeResponse,
                 autotune_service_client::AutotuneServiceClient,
@@ -100,6 +100,18 @@ pub async fn subscribe_events(
 
     client
         .subscribe_events(Empty {})
+        .await
+        .map(Response::into_inner)
+}
+
+/// Streams individual BPM readings independently of the armed state.
+pub async fn subscribe_readings(
+    config: &GrpcConfig, token: ForwardedToken,
+) -> Result<Streaming<BpmReading>, Status> {
+    let mut client = client(config, token)?;
+
+    client
+        .subscribe_readings(Empty {})
         .await
         .map(Response::into_inner)
 }

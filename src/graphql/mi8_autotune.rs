@@ -3,6 +3,7 @@ use std::sync::Arc;
 use async_graphql::{
     Context, Object, Result, Subscription, async_trait::async_trait,
 };
+use async_stream::stream;
 use futures_util::{Stream, StreamExt, stream::BoxStream};
 use rust_grpc_lib::auth::ForwardedToken;
 use tonic::Status;
@@ -24,7 +25,7 @@ use crate::{
 };
 
 mod types;
-use types::{ArmedState, AutotuneEventUpdate, OperatingMode};
+use types::{ArmedState, AutotuneEventUpdate, BpmReading, OperatingMode};
 
 /// A boxed upstream stream whose items can fail with a gRPC status.
 pub type StatusStream<T> = BoxStream<'static, std::result::Result<T, Status>>;
@@ -57,6 +58,10 @@ pub trait Mi8AutotuneApi: Send + Sync {
     async fn subscribe_events(
         &self, config: &GrpcConfig, token: ForwardedToken,
     ) -> std::result::Result<StatusStream<SubscribeAutotuneEventResponse>, Status>;
+
+    async fn subscribe_readings(
+        &self, config: &GrpcConfig, token: ForwardedToken,
+    ) -> std::result::Result<StatusStream<proto::BpmReading>, Status>;
 }
 
 pub struct GrpcMi8AutotuneApi;
@@ -106,6 +111,14 @@ impl Mi8AutotuneApi for GrpcMi8AutotuneApi {
     ) -> std::result::Result<StatusStream<SubscribeAutotuneEventResponse>, Status>
     {
         Ok(mi8_autotune::subscribe_events(config, token).await?.boxed())
+    }
+
+    async fn subscribe_readings(
+        &self, config: &GrpcConfig, token: ForwardedToken,
+    ) -> std::result::Result<StatusStream<proto::BpmReading>, Status> {
+        Ok(mi8_autotune::subscribe_readings(config, token)
+            .await?
+            .boxed())
     }
 }
 
@@ -252,6 +265,31 @@ impl Mi8AutotuneSubscriptions {
                 .map(AutotuneEventUpdate::from)
                 .map_err(handle_graphql_error)
         }))
+    }
+
+    /// Streams individual BPM readings independently of the armed state.
+    async fn readings(
+        &self, ctx: &Context<'_>,
+    ) -> Result<impl Stream<Item = Result<BpmReading>>> {
+        let config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
+        let upstream = config.mi8_autotune.require()?;
+        let mut upstream_stream = ctx
+            .data::<Arc<dyn Mi8AutotuneApi>>()?
+            .subscribe_readings(upstream, forwarded_token(ctx))
+            .await
+            .map_err(handle_graphql_error)?;
+
+        Ok(stream! {
+            while let Some(result) = upstream_stream.next().await {
+                match result {
+                    Ok(reading) => yield Ok(BpmReading::from(reading)),
+                    Err(status) => {
+                        yield Err(handle_graphql_error(status));
+                        break;
+                    }
+                }
+            }
+        })
     }
 }
 
