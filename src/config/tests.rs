@@ -59,7 +59,6 @@ fn global_config_populates_when_all_vals_present() {
         tlg,
         unr,
         wscan,
-        ..
     } = &*get_global_config().expect("config is valid");
 
     assert_eq!(enabled(alarms_db).host_addr, "test host");

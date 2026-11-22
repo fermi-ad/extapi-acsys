@@ -1,136 +1,71 @@
-use std::collections::HashMap;
+use std::sync::Arc;
 
-use async_graphql::{Context, ID, Object, Result, SimpleObject};
+use async_graphql::{Context, Error, ErrorExtensions, ID, Object, Result};
 
-#[derive(Clone, SimpleObject)]
-pub(super) struct ParameterPage {
-    pub(super) id: ID,
-    pub(super) title: String,
-}
+mod store;
+mod types;
 
-pub(super) type ParameterPageStore = HashMap<ID, ParameterPage>;
+#[cfg(test)]
+mod tests;
+
+pub(super) use store::{InMemoryParameterPageStore, ParameterPageStore};
+use types::{ParameterPage, ParameterPageInput, ParameterPageSummary};
 
 pub(super) struct ParameterPageQueries;
 
 #[Object]
 impl ParameterPageQueries {
+    /// Lists page IDs and titles in title order.
+    async fn parameter_pages(
+        &self, ctx: &Context<'_>,
+    ) -> Result<Vec<ParameterPageSummary>> {
+        ctx.data::<Arc<dyn ParameterPageStore>>()?.list().await
+    }
+
     /// Retrieves a parameter page by ID.
     async fn parameter_page(
         &self, ctx: &Context<'_>, id: ID,
     ) -> Result<Option<ParameterPage>> {
-        let pages = ctx.data::<ParameterPageStore>()?;
-        Ok(pages.get(&id).cloned())
+        ctx.data::<Arc<dyn ParameterPageStore>>()?.fetch(id).await
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use async_graphql::{EmptyMutation, EmptySubscription, Schema};
-    use axum::{
-        body::{Body, to_bytes},
-        http::{Request, StatusCode, header},
-    };
-    use serde_json::{Value, json};
-    use tower::Service;
+pub(super) struct ParameterPageMutations;
 
-    use crate::graphql::{
-        PARAMETER_PAGE_ENDPOINT, create_parameter_page_router,
-    };
-
-    use super::*;
-
-    #[tokio::test]
-    async fn resolver_matches_the_full_case_sensitive_id() {
-        let id = ID::from("page-123");
-        let pages = ParameterPageStore::from([(
-            id.clone(),
-            ParameterPage {
-                id,
-                title: "Example page".into(),
-            },
-        )]);
-        let schema = Schema::build(
-            ParameterPageQueries,
-            EmptyMutation,
-            EmptySubscription,
-        )
-        .data(pages)
-        .finish();
-
-        let result = schema
-            .execute(
-                r#"{
-                    exact: parameterPage(id: "page-123") { id title }
-                    differentCase: parameterPage(id: "PAGE-123") { id }
-                    prefix: parameterPage(id: "page-12") { id }
-                }"#,
-            )
-            .await;
-
-        assert!(result.errors.is_empty(), "{:?}", result.errors);
-        assert_eq!(
-            result.data.into_json().unwrap(),
-            json!({
-                "exact": { "id": "page-123", "title": "Example page" },
-                "differentCase": null,
-                "prefix": null
-            }),
-        );
+#[Object]
+impl ParameterPageMutations {
+    /// Saves a new page with a server-assigned ID and revision.
+    async fn create_parameter_page(
+        &self, ctx: &Context<'_>, input: ParameterPageInput,
+    ) -> Result<ParameterPage> {
+        input.validate()?;
+        ctx.data::<Arc<dyn ParameterPageStore>>()?
+            .create(input)
+            .await
     }
 
-    #[tokio::test]
-    async fn resolver_reports_an_unconfigured_store_as_an_error() {
-        let schema = Schema::build(
-            ParameterPageQueries,
-            EmptyMutation,
-            EmptySubscription,
-        )
-        .finish();
-        let result = schema
-            .execute(r#"{ parameterPage(id: "page-123") { id } }"#)
-            .await;
-
-        assert_eq!(result.errors.len(), 1);
-        assert_eq!(result.data, async_graphql::Value::Null);
+    /// Replaces the page title and contents if the revision still matches.
+    async fn update_parameter_page(
+        &self, ctx: &Context<'_>, id: ID, expected_revision: String,
+        input: ParameterPageInput,
+    ) -> Result<ParameterPage> {
+        input.validate()?;
+        ctx.data::<Arc<dyn ParameterPageStore>>()?
+            .update(id, &expected_revision, input)
+            .await
     }
 
-    #[tokio::test]
-    async fn parameter_page_query_returns_a_page_or_null() {
-        let id = ID::from("page-123");
-        let pages = [(
-            id.clone(),
-            ParameterPage {
-                id,
-                title: "Example page".into(),
-            },
-        )]
-        .into();
-        let mut router = create_parameter_page_router(pages);
-        let request = Request::post(PARAMETER_PAGE_ENDPOINT)
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(
-                json!({
-                    "query": r#"query($id: ID!) {
-                        parameterPage(id: $id) { id title }
-                        missing: parameterPage(id: "missing") { id title }
-                    }"#,
-                    "variables": { "id": "page-123" }
-                })
-                .to_string(),
-            ))
-            .unwrap();
-
-        let response = router.call(request).await.unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = to_bytes(response.into_body(), 1 << 20).await.unwrap();
-        assert_eq!(
-            serde_json::from_slice::<Value>(&body).unwrap(),
-            json!({
-                "data": {
-                    "parameterPage": { "id": "page-123", "title": "Example page" },
-                    "missing": null
-                }
-            }),
-        );
+    /// Deletes the page if the revision still matches and returns its ID.
+    async fn delete_parameter_page(
+        &self, ctx: &Context<'_>, id: ID, expected_revision: String,
+    ) -> Result<ID> {
+        ctx.data::<Arc<dyn ParameterPageStore>>()?
+            .delete(id, &expected_revision)
+            .await
     }
+}
+
+fn page_error(code: &str, message: &str) -> Error {
+    Error::new(message)
+        .extend_with(|_, extensions| extensions.set("code", code))
 }

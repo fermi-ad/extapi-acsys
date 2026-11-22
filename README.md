@@ -39,7 +39,6 @@ The following variables exist for configuring the service at runtime:
 - `GRPC_ALARMS_DB_HOST` -> Hostname for the Alarms DB Access gRPC service
 - `GRPC_ALARMS_SERVICE_HOST` -> Hostname for the Alarms gRPC service
 - `MI8_AUTOTUNE_GRPC_HOST` -> Hostname for the MI8 Autotune gRPC service
-- `PARAMETER_PAGE_STORE=memory` -> Enable the read-only `/parameter-page` GraphQL endpoint. The in-memory store starts empty.
 - `REQUIRED_UPSTREAMS` -> Optional comma-separated list of upstreams that must be configured for the service to start (see below)
 - `RUST_LOG` -> The default logging environment variable from Rust. Can be configured to log specific crates/modules at different levels from the global default.
 - `SCANNER_GRPC_HOST` -> Hostname for the wire scanner gRPC service
@@ -63,7 +62,7 @@ By default, no upstream variable is required to start the service. If a variable
 | `ALARMS_KAFKA_HOST`, `ALARMS_KAFKA_TOPIC`         | `/alarms/s` subscriptions                                                                               | Subscription returns `FEATURE_DISABLED`                                                              |
 | `CLOCK_GRPC_HOST`                                 | `/acsys` triggered plots                                                                                | Field returns `FEATURE_DISABLED`                                                                     |
 
-`/acsys`, `/bbm` and `/faas` are always mounted. The landing page (`/`) only links to mounted routes. Requests that reach a disabled feature inside a mounted route get a GraphQL error with `extensions.code = "FEATURE_DISABLED"`.
+`/acsys`, `/bbm`, `/faas`, and `/parameter-page` are always mounted. The landing page (`/`) only links to mounted routes. Requests that reach a disabled feature inside a mounted route get a GraphQL error with `extensions.code = "FEATURE_DISABLED"`.
 
 #### Requiring upstreams
 
@@ -74,6 +73,16 @@ REQUIRED_UPSTREAMS=devdb,unr,clock
 ```
 
 Keys: `alarms_db`, `alarms_kafka` (only with the `kafka` feature), `alarms_svc`, `blm`, `clock`, `devdb`, `mi8_autotune`, `tlg`, `unr`, `wscan`. If any listed upstream is missing, the service logs every missing variable and exits with a non-zero status. An unknown key is also a startup error, so a typo cannot silently drop a requirement. Unset or blank means nothing is required.
+
+### Parameter pages
+
+`/parameter-page` uses an in-memory store. Each server process starts with an empty page directory.
+
+`parameterPages` returns page IDs and titles ordered by title and then ID. `parameterPage(id:)` returns the full page or `null` for an unknown ID.
+
+`createParameterPage` and `updateParameterPage` accept the complete page, including its title and ordered subsystems, tabs, subpages, and entries. A page starts with at least one subsystem, each subsystem has at least one tab, and each tab has at least one subpage. A subpage can have an empty title or no entries. Entry inputs supply one of `comment`, `parameter`, or `mult`. A Mult entry records how many following rows it groups.
+
+Pass the revision from the last read or save as `expectedRevision` on updates and deletes. Stale revisions return `CONFLICT`, missing write targets return `NOT_FOUND`, and invalid page structure returns `BAD_USER_INPUT`.
 
 ### Error IDs in responses
 
