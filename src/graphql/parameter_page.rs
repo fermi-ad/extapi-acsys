@@ -33,7 +33,9 @@ mod tests {
     use serde_json::{Value, json};
     use tower::Service;
 
-    use crate::graphql::{PARAMETER_PAGE_ENDPOINT, create_parameter_page_router};
+    use crate::graphql::{
+        PARAMETER_PAGE_ENDPOINT, create_parameter_page_router,
+    };
 
     use super::*;
 
@@ -47,10 +49,13 @@ mod tests {
                 title: "Example page".into(),
             },
         )]);
-        let schema =
-            Schema::build(ParameterPageQueries, EmptyMutation, EmptySubscription)
-                .data(pages)
-                .finish();
+        let schema = Schema::build(
+            ParameterPageQueries,
+            EmptyMutation,
+            EmptySubscription,
+        )
+        .data(pages)
+        .finish();
 
         let result = schema
             .execute(
@@ -75,9 +80,12 @@ mod tests {
 
     #[tokio::test]
     async fn resolver_reports_an_unconfigured_store_as_an_error() {
-        let schema =
-            Schema::build(ParameterPageQueries, EmptyMutation, EmptySubscription)
-                .finish();
+        let schema = Schema::build(
+            ParameterPageQueries,
+            EmptyMutation,
+            EmptySubscription,
+        )
+        .finish();
         let result = schema
             .execute(r#"{ parameterPage(id: "page-123") { id } }"#)
             .await;
