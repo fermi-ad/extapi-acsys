@@ -39,6 +39,7 @@ The following variables exist for configuring the service at runtime:
 - `GRPC_ALARMS_DB_HOST` -> Hostname for the Alarms DB Access gRPC service
 - `GRPC_ALARMS_SERVICE_HOST` -> Hostname for the Alarms gRPC service
 - `MI8_AUTOTUNE_GRPC_HOST` -> Hostname for the MI8 Autotune gRPC service
+- `PARAMETER_PAGE_STORE=memory` -> Enable the read-only `/parameter-page` GraphQL endpoint. The in-memory store starts empty.
 - `REQUIRED_UPSTREAMS` -> Optional comma-separated list of upstreams that must be configured for the service to start (see below)
 - `RUST_LOG` -> The default logging environment variable from Rust. Can be configured to log specific crates/modules at different levels from the global default.
 - `SCANNER_GRPC_HOST` -> Hostname for the wire scanner gRPC service

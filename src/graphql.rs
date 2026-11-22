@@ -36,6 +36,7 @@ mod devdb;
 mod errors;
 mod faas;
 mod mi8_autotune;
+mod parameter_page;
 mod scanner;
 mod tlg;
 mod types;
@@ -277,6 +278,30 @@ fn create_mi8_autotune_router(
     )
 }
 
+const PARAMETER_PAGE_ENDPOINT: &str = "/parameter-page";
+
+fn create_parameter_page_router(
+    pages: parameter_page::ParameterPageStore,
+) -> Router {
+    let schema = Schema::build(
+        parameter_page::ParameterPageQueries,
+        EmptyMutation,
+        EmptySubscription,
+    )
+    .data(pages)
+    .finish();
+    let graphiql = Html(
+        async_graphql::http::GraphiQLSource::build()
+            .endpoint(PARAMETER_PAGE_ENDPOINT)
+            .finish(),
+    );
+
+    Router::new().route(
+        PARAMETER_PAGE_ENDPOINT,
+        get(graphiql).post(graphql_handler).with_state(schema),
+    )
+}
+
 fn create_unr_router_with_api(
     api: Arc<dyn UnrApi>, global_config: Arc<ExtapiGlobalConfig>,
 ) -> Router {
@@ -514,6 +539,14 @@ async fn create_site(cfg: Arc<ExtapiGlobalConfig>) -> Router {
             },
             cfg.mi8_autotune.is_enabled(),
             || create_mi8_autotune_router(Arc::clone(&cfg)),
+        )
+        .mount(
+            Link {
+                path: PARAMETER_PAGE_ENDPOINT,
+                label: "Parameter pages",
+            },
+            cfg.parameter_page_in_memory,
+            || create_parameter_page_router(Default::default()),
         )
         .mount(
             Link {
@@ -834,6 +867,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn parameter_page_route_is_mounted_with_memory_store() {
+        let mut config = get_test_config();
+        config.parameter_page_in_memory = true;
+        let site = create_site(Arc::new(config)).await;
+
+        assert_eq!(
+            status_of(&site, "GET", PARAMETER_PAGE_ENDPOINT).await,
+            StatusCode::OK,
+        );
+        assert_eq!(
+            status_of(&site, "POST", PARAMETER_PAGE_ENDPOINT).await,
+            StatusCode::OK,
+        );
+        assert!(landing_page(&site).await.contains(PARAMETER_PAGE_ENDPOINT));
+    }
+
+    #[tokio::test]
     async fn site_boots_with_every_upstream_disabled() {
         let mut config = get_test_config();
         config.alarms_db = disabled();
@@ -859,6 +909,7 @@ mod tests {
             "/blm",
             "/devdb",
             "/mi8-autotune",
+            PARAMETER_PAGE_ENDPOINT,
             "/tlg",
             "/unr",
             "/wscan",
