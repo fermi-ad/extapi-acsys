@@ -159,8 +159,8 @@ async fn concurrent_updates_accept_only_one_write_at_the_same_revision() {
 #[tokio::test]
 async fn resolver_reports_an_unconfigured_store() {
     let schema = Schema::build(
-        ParameterPageQueries,
-        ParameterPageMutations,
+        ParameterPageQueries(PhantomData::<InMemoryParameterPageStore>),
+        ParameterPageMutations(PhantomData::<InMemoryParameterPageStore>),
         EmptySubscription,
     )
     .finish();

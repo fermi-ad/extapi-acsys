@@ -21,6 +21,7 @@ use axum::{Router, body::Bytes, response::Html, routing::get};
 use http::{Method, header};
 use std::{
     fmt::Write as _,
+    marker::PhantomData,
     net::{IpAddr, Ipv6Addr, SocketAddr},
     sync::Arc,
 };
@@ -280,12 +281,13 @@ fn create_mi8_autotune_router(
 
 const PARAMETER_PAGE_ENDPOINT: &str = "/parameter-page";
 
-fn create_parameter_page_router(
-    store: Arc<dyn parameter_page::ParameterPageStore>,
-) -> Router {
+fn create_parameter_page_router<T>(store: Arc<T>) -> Router
+where
+    T: parameter_page::ParameterPageStore + 'static,
+{
     let schema = Schema::build(
-        parameter_page::ParameterPageQueries,
-        parameter_page::ParameterPageMutations,
+        parameter_page::ParameterPageQueries(PhantomData::<T>),
+        parameter_page::ParameterPageMutations(PhantomData::<T>),
         EmptySubscription,
     )
     .data(store)
