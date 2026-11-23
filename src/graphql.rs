@@ -36,6 +36,7 @@ mod devdb;
 mod errors;
 mod faas;
 mod mi8_autotune;
+mod parameter_page;
 mod scanner;
 mod tlg;
 mod types;
@@ -277,6 +278,32 @@ fn create_mi8_autotune_router(
     )
 }
 
+const PARAMETER_PAGE_ENDPOINT: &str = "/parameter-page";
+
+fn create_parameter_page_router<T>(store: Arc<T>) -> Router
+where
+    T: parameter_page::ParameterPageStore + 'static,
+{
+    let schema = Schema::build(
+        parameter_page::ParameterPageQueries {
+            store: store.clone(),
+        },
+        parameter_page::ParameterPageMutations { store },
+        EmptySubscription,
+    )
+    .finish();
+    let graphiql = Html(
+        async_graphql::http::GraphiQLSource::build()
+            .endpoint(PARAMETER_PAGE_ENDPOINT)
+            .finish(),
+    );
+
+    Router::new().route(
+        PARAMETER_PAGE_ENDPOINT,
+        get(graphiql).post(graphql_handler).with_state(schema),
+    )
+}
+
 fn create_unr_router_with_api(
     api: Arc<dyn UnrApi>, global_config: Arc<ExtapiGlobalConfig>,
 ) -> Router {
@@ -445,7 +472,7 @@ impl SiteBuilder {
 // Creates the web site for the various GraphQL APIs.
 //
 // A route is mounted only when the upstream(s) it needs are configured. The
-// ACSys, BBM and FaaS routes depend on no environment variables and are
+// ACSys, BBM, FaaS, and parameter-page routes need no configuration and are
 // always mounted (ACSys's DevDB- and clock-backed fields still return a
 // FEATURE_DISABLED error when those upstreams are missing). The alarms route
 // is mounted when either of its gRPC upstreams is available; its other
@@ -514,6 +541,18 @@ async fn create_site(cfg: Arc<ExtapiGlobalConfig>) -> Router {
             },
             cfg.mi8_autotune.is_enabled(),
             || create_mi8_autotune_router(Arc::clone(&cfg)),
+        )
+        .mount(
+            Link {
+                path: PARAMETER_PAGE_ENDPOINT,
+                label: "Parameter pages",
+            },
+            true,
+            || {
+                create_parameter_page_router(Arc::new(
+                    parameter_page::InMemoryParameterPageStore::default(),
+                ))
+            },
         )
         .mount(
             Link {
@@ -752,6 +791,7 @@ mod tests {
             "/devdb",
             "/faas",
             "/mi8-autotune",
+            PARAMETER_PAGE_ENDPOINT,
             "/tlg",
             "/unr",
             "/wscan",
@@ -834,6 +874,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn parameter_page_route_serves_an_empty_directory_on_startup() {
+        let mut site = create_site(Arc::new(get_test_config())).await;
+
+        assert_eq!(
+            status_of(&site, "GET", PARAMETER_PAGE_ENDPOINT).await,
+            StatusCode::OK,
+        );
+        assert!(landing_page(&site).await.contains(PARAMETER_PAGE_ENDPOINT));
+
+        let response = site
+            .call(
+                Request::post(PARAMETER_PAGE_ENDPOINT)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        r#"{"query":"{ parameterPages { id title } }"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024).await.unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
+            serde_json::json!({ "data": { "parameterPages": [] } }),
+        );
+    }
+
+    #[tokio::test]
     async fn site_boots_with_every_upstream_disabled() {
         let mut config = get_test_config();
         config.alarms_db = disabled();
@@ -854,6 +923,10 @@ mod tests {
         assert_eq!(status_of(&site, "GET", "/").await, StatusCode::OK);
         assert_eq!(status_of(&site, "POST", "/faas").await, StatusCode::OK);
         assert_eq!(status_of(&site, "POST", "/bbm").await, StatusCode::OK);
+        assert_eq!(
+            status_of(&site, "POST", PARAMETER_PAGE_ENDPOINT).await,
+            StatusCode::OK,
+        );
         for path in [
             "/alarms",
             "/blm",

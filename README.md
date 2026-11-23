@@ -62,7 +62,7 @@ By default, no upstream variable is required to start the service. If a variable
 | `ALARMS_KAFKA_HOST`, `ALARMS_KAFKA_TOPIC`         | `/alarms/s` subscriptions                                                                               | Subscription returns `FEATURE_DISABLED`                                                              |
 | `CLOCK_GRPC_HOST`                                 | `/acsys` triggered plots                                                                                | Field returns `FEATURE_DISABLED`                                                                     |
 
-`/acsys`, `/bbm` and `/faas` are always mounted. The landing page (`/`) only links to mounted routes. Requests that reach a disabled feature inside a mounted route get a GraphQL error with `extensions.code = "FEATURE_DISABLED"`.
+`/acsys`, `/bbm`, `/faas`, and `/parameter-page` are always mounted. The landing page (`/`) only links to mounted routes. Requests that reach a disabled feature inside a mounted route get a GraphQL error with `extensions.code = "FEATURE_DISABLED"`.
 
 #### Requiring upstreams
 
@@ -73,6 +73,16 @@ REQUIRED_UPSTREAMS=devdb,unr,clock
 ```
 
 Keys: `alarms_db`, `alarms_kafka` (only with the `kafka` feature), `alarms_svc`, `blm`, `clock`, `devdb`, `mi8_autotune`, `tlg`, `unr`, `wscan`. If any listed upstream is missing, the service logs every missing variable and exits with a non-zero status. An unknown key is also a startup error, so a typo cannot silently drop a requirement. Unset or blank means nothing is required.
+
+### Parameter pages
+
+`/parameter-page` uses an in-memory store. Use one gateway replica for API testing. Each process has its own page directory, and restarting it clears all saved pages. The prototype store accepts requests without checking caller permissions or applying storage quotas.
+
+`parameterPages` returns page IDs and titles ordered by title and then ID. `parameterPage(id:)` returns the full page or `null` for an unknown ID.
+
+`createParameterPage` and `updateParameterPage` accept the complete page, including its title and ordered subsystems, tabs, subpages, and entries. A page starts with at least one subsystem, each subsystem has at least one tab, and each tab has at least one subpage. A subpage can have an empty title or no entries. Entry inputs supply one of `comment`, `parameter`, or `mult`. A parameter entry requires a nonblank `drf`. A Mult entry groups zero or more following rows in the same subpage. Mult groups cannot overlap.
+
+Pass the revision from the last read or save as `expectedRevision` on updates and deletes. Stale revisions return `CONFLICT`, missing write targets return `NOT_FOUND`, and page content rejected by a resolver returns `BAD_USER_INPUT`. Schema violations, such as supplying two entry variants in one input object, return GraphQL validation or input coercion errors.
 
 ### Error IDs in responses
 
