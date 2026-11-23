@@ -1,9 +1,12 @@
-use std::collections::{
-    HashMap,
-    hash_map::{Entry, OccupiedEntry},
+use std::{
+    collections::{
+        HashMap,
+        hash_map::{Entry, OccupiedEntry},
+    },
+    future::Future,
 };
 
-use async_graphql::{ID, Result, async_trait::async_trait};
+use async_graphql::{ID, Result};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
@@ -11,17 +14,24 @@ use super::{
     ParameterPage, ParameterPageInput, ParameterPageSummary, page_error,
 };
 
-#[async_trait]
 pub(in crate::graphql) trait ParameterPageStore:
     Send + Sync
 {
-    async fn list(&self) -> Result<Vec<ParameterPageSummary>>;
-    async fn fetch(&self, id: ID) -> Result<Option<ParameterPage>>;
-    async fn create(&self, input: ParameterPageInput) -> Result<ParameterPage>;
-    async fn update(
+    fn list(
+        &self,
+    ) -> impl Future<Output = Result<Vec<ParameterPageSummary>>> + Send;
+    fn fetch(
+        &self, id: ID,
+    ) -> impl Future<Output = Result<Option<ParameterPage>>> + Send;
+    fn create(
+        &self, input: ParameterPageInput,
+    ) -> impl Future<Output = Result<ParameterPage>> + Send;
+    fn update(
         &self, id: ID, expected_revision: &str, input: ParameterPageInput,
-    ) -> Result<ParameterPage>;
-    async fn delete(&self, id: ID, expected_revision: &str) -> Result<ID>;
+    ) -> impl Future<Output = Result<ParameterPage>> + Send;
+    fn delete(
+        &self, id: ID, expected_revision: &str,
+    ) -> impl Future<Output = Result<ID>> + Send;
 }
 
 #[derive(Default)]
@@ -29,7 +39,6 @@ pub(in crate::graphql) struct InMemoryParameterPageStore {
     pages: RwLock<HashMap<ID, ParameterPage>>,
 }
 
-#[async_trait]
 impl ParameterPageStore for InMemoryParameterPageStore {
     async fn list(&self) -> Result<Vec<ParameterPageSummary>> {
         let mut pages: Vec<_> = self
