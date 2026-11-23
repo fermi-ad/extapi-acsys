@@ -76,13 +76,13 @@ Keys: `alarms_db`, `alarms_kafka` (only with the `kafka` feature), `alarms_svc`,
 
 ### Parameter pages
 
-`/parameter-page` uses an in-memory store. Each server process starts with an empty page directory.
+`/parameter-page` uses an in-memory store. Use one gateway replica for API testing. Each process has its own page directory, and restarting it clears all saved pages. The prototype store accepts requests without checking caller permissions or applying storage quotas.
 
 `parameterPages` returns page IDs and titles ordered by title and then ID. `parameterPage(id:)` returns the full page or `null` for an unknown ID.
 
-`createParameterPage` and `updateParameterPage` accept the complete page, including its title and ordered subsystems, tabs, subpages, and entries. A page starts with at least one subsystem, each subsystem has at least one tab, and each tab has at least one subpage. A subpage can have an empty title or no entries. Entry inputs supply one of `comment`, `parameter`, or `mult`. A Mult entry records how many following rows it groups.
+`createParameterPage` and `updateParameterPage` accept the complete page, including its title and ordered subsystems, tabs, subpages, and entries. A page starts with at least one subsystem, each subsystem has at least one tab, and each tab has at least one subpage. A subpage can have an empty title or no entries. Entry inputs supply one of `comment`, `parameter`, or `mult`. A parameter entry requires a nonblank `drf`. A Mult entry groups zero or more following rows in the same subpage. Mult groups cannot overlap.
 
-Pass the revision from the last read or save as `expectedRevision` on updates and deletes. Stale revisions return `CONFLICT`, missing write targets return `NOT_FOUND`, and invalid page structure returns `BAD_USER_INPUT`.
+Pass the revision from the last read or save as `expectedRevision` on updates and deletes. Stale revisions return `CONFLICT`, missing write targets return `NOT_FOUND`, and page content rejected by a resolver returns `BAD_USER_INPUT`. Schema violations, such as supplying two entry variants in one input object, return GraphQL validation or input coercion errors.
 
 ### Error IDs in responses
 

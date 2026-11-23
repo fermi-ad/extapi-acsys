@@ -1,7 +1,6 @@
 use async_graphql::{
     ID, InputObject, OneofObject, Result, SimpleObject, Union,
 };
-use uuid::Uuid;
 
 use super::page_error;
 
@@ -14,11 +13,13 @@ pub(in crate::graphql) struct ParameterPage {
 }
 
 impl ParameterPage {
-    pub(super) fn new(id: ID, input: ParameterPageInput) -> Self {
+    pub(super) fn new(
+        id: ID, revision: String, input: ParameterPageInput,
+    ) -> Self {
         Self {
             id,
             title: input.title,
-            revision: Uuid::new_v4().to_string(),
+            revision,
             sub_systems: input
                 .sub_systems
                 .into_iter()
@@ -122,21 +123,53 @@ impl ParameterPageInput {
                         "Each tab must have at least one subpage.",
                     ));
                 }
-                for entry in tab.sub_pages.iter().flat_map(|page| &page.entries)
-                {
-                    if let ParameterPageEntryInput::Mult(mult) = entry
-                        && mult.number_of_entries < 0
-                    {
-                        return Err(page_error(
-                            "BAD_USER_INPUT",
-                            "A Mult entry's numberOfEntries must be nonnegative.",
-                        ));
-                    }
+                for sub_page in &tab.sub_pages {
+                    validate_entries(&sub_page.entries)?;
                 }
             }
         }
         Ok(())
     }
+}
+
+fn validate_entries(entries: &[ParameterPageEntryInput]) -> Result<()> {
+    let mut group_end = 0;
+    for (index, entry) in entries.iter().enumerate() {
+        match entry {
+            ParameterPageEntryInput::Parameter(parameter)
+                if parameter.drf.trim().is_empty() =>
+            {
+                return Err(page_error(
+                    "BAD_USER_INPUT",
+                    "A parameter entry's drf must be nonblank.",
+                ));
+            }
+            ParameterPageEntryInput::Mult(mult) => {
+                let count = usize::try_from(mult.number_of_entries).map_err(|_| {
+                    page_error(
+                        "BAD_USER_INPUT",
+                        "A Mult entry's numberOfEntries must be nonnegative.",
+                    )
+                })?;
+                let first_row = index + 1;
+                if count > entries.len() - first_row {
+                    return Err(page_error(
+                        "BAD_USER_INPUT",
+                        "A Mult group must fit within its subpage.",
+                    ));
+                }
+                if index < group_end {
+                    return Err(page_error(
+                        "BAD_USER_INPUT",
+                        "Mult groups cannot overlap.",
+                    ));
+                }
+                group_end = first_row + count;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, InputObject)]

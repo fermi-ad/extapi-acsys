@@ -8,6 +8,7 @@ mod types;
 #[cfg(test)]
 mod tests;
 
+use store::StoreError;
 pub(super) use store::{InMemoryParameterPageStore, ParameterPageStore};
 use types::{ParameterPage, ParameterPageInput, ParameterPageSummary};
 
@@ -23,14 +24,14 @@ impl<T: ParameterPageStore + 'static> ParameterPageQueries<T> {
     async fn parameter_pages(
         &self, ctx: &Context<'_>,
     ) -> Result<Vec<ParameterPageSummary>> {
-        self.store.list(forwarded_token(ctx)).await
+        Ok(self.store.list(forwarded_token(ctx)).await?)
     }
 
     /// Retrieves a parameter page by ID.
     async fn parameter_page(
         &self, ctx: &Context<'_>, id: ID,
     ) -> Result<Option<ParameterPage>> {
-        self.store.fetch(id, forwarded_token(ctx)).await
+        Ok(self.store.fetch(id, forwarded_token(ctx)).await?)
     }
 }
 
@@ -45,7 +46,7 @@ impl<T: ParameterPageStore + 'static> ParameterPageMutations<T> {
         &self, ctx: &Context<'_>, input: ParameterPageInput,
     ) -> Result<ParameterPage> {
         input.validate()?;
-        self.store.create(input, forwarded_token(ctx)).await
+        Ok(self.store.create(input, forwarded_token(ctx)).await?)
     }
 
     /// Replaces the page title and contents if the revision still matches.
@@ -54,18 +55,34 @@ impl<T: ParameterPageStore + 'static> ParameterPageMutations<T> {
         input: ParameterPageInput,
     ) -> Result<ParameterPage> {
         input.validate()?;
-        self.store
+        Ok(self
+            .store
             .update(id, &expected_revision, input, forwarded_token(ctx))
-            .await
+            .await?)
     }
 
     /// Deletes the page if the revision still matches and returns its ID.
     async fn delete_parameter_page(
         &self, ctx: &Context<'_>, id: ID, expected_revision: String,
     ) -> Result<ID> {
-        self.store
+        Ok(self
+            .store
             .delete(id, &expected_revision, forwarded_token(ctx))
-            .await
+            .await?)
+    }
+}
+
+impl From<StoreError> for Error {
+    fn from(error: StoreError) -> Self {
+        match error {
+            StoreError::NotFound => {
+                page_error("NOT_FOUND", "The parameter page was not found.")
+            }
+            StoreError::Conflict => page_error(
+                "CONFLICT",
+                "The parameter page changed. Reload it before trying again.",
+            ),
+        }
     }
 }
 
