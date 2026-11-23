@@ -21,7 +21,6 @@ use axum::{Router, body::Bytes, response::Html, routing::get};
 use http::{Method, header};
 use std::{
     fmt::Write as _,
-    marker::PhantomData,
     net::{IpAddr, Ipv6Addr, SocketAddr},
     sync::Arc,
 };
@@ -286,11 +285,12 @@ where
     T: parameter_page::ParameterPageStore + 'static,
 {
     let schema = Schema::build(
-        parameter_page::ParameterPageQueries(PhantomData::<T>),
-        parameter_page::ParameterPageMutations(PhantomData::<T>),
+        parameter_page::ParameterPageQueries {
+            store: store.clone(),
+        },
+        parameter_page::ParameterPageMutations { store },
         EmptySubscription,
     )
-    .data(store)
     .finish();
     let graphiql = Html(
         async_graphql::http::GraphiQLSource::build()

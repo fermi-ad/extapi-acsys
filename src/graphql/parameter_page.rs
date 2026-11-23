@@ -1,6 +1,6 @@
-use std::{marker::PhantomData, sync::Arc};
+use std::sync::Arc;
 
-use async_graphql::{Context, Error, ErrorExtensions, ID, Object, Result};
+use async_graphql::{Error, ErrorExtensions, ID, Object, Result};
 
 mod store;
 mod types;
@@ -11,53 +11,50 @@ mod tests;
 pub(super) use store::{InMemoryParameterPageStore, ParameterPageStore};
 use types::{ParameterPage, ParameterPageInput, ParameterPageSummary};
 
-pub(super) struct ParameterPageQueries<T>(pub(super) PhantomData<T>);
+pub(super) struct ParameterPageQueries<T> {
+    pub(super) store: Arc<T>,
+}
 
 #[Object]
 impl<T: ParameterPageStore + 'static> ParameterPageQueries<T> {
     /// Lists page IDs and titles in title order.
-    async fn parameter_pages(
-        &self, ctx: &Context<'_>,
-    ) -> Result<Vec<ParameterPageSummary>> {
-        ctx.data::<Arc<T>>()?.list().await
+    async fn parameter_pages(&self) -> Result<Vec<ParameterPageSummary>> {
+        self.store.list().await
     }
 
     /// Retrieves a parameter page by ID.
-    async fn parameter_page(
-        &self, ctx: &Context<'_>, id: ID,
-    ) -> Result<Option<ParameterPage>> {
-        ctx.data::<Arc<T>>()?.fetch(id).await
+    async fn parameter_page(&self, id: ID) -> Result<Option<ParameterPage>> {
+        self.store.fetch(id).await
     }
 }
 
-pub(super) struct ParameterPageMutations<T>(pub(super) PhantomData<T>);
+pub(super) struct ParameterPageMutations<T> {
+    pub(super) store: Arc<T>,
+}
 
 #[Object]
 impl<T: ParameterPageStore + 'static> ParameterPageMutations<T> {
     /// Saves a new page with a server-assigned ID and revision.
     async fn create_parameter_page(
-        &self, ctx: &Context<'_>, input: ParameterPageInput,
+        &self, input: ParameterPageInput,
     ) -> Result<ParameterPage> {
         input.validate()?;
-        ctx.data::<Arc<T>>()?.create(input).await
+        self.store.create(input).await
     }
 
     /// Replaces the page title and contents if the revision still matches.
     async fn update_parameter_page(
-        &self, ctx: &Context<'_>, id: ID, expected_revision: String,
-        input: ParameterPageInput,
+        &self, id: ID, expected_revision: String, input: ParameterPageInput,
     ) -> Result<ParameterPage> {
         input.validate()?;
-        ctx.data::<Arc<T>>()?
-            .update(id, &expected_revision, input)
-            .await
+        self.store.update(id, &expected_revision, input).await
     }
 
     /// Deletes the page if the revision still matches and returns its ID.
     async fn delete_parameter_page(
-        &self, ctx: &Context<'_>, id: ID, expected_revision: String,
+        &self, id: ID, expected_revision: String,
     ) -> Result<ID> {
-        ctx.data::<Arc<T>>()?.delete(id, &expected_revision).await
+        self.store.delete(id, &expected_revision).await
     }
 }
 

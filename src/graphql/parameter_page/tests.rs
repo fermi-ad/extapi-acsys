@@ -1,4 +1,4 @@
-use async_graphql::{EmptySubscription, InputType, Schema};
+use async_graphql::InputType;
 use axum::{
     Router,
     body::{Body, to_bytes},
@@ -154,22 +154,6 @@ async fn concurrent_updates_accept_only_one_write_at_the_same_revision() {
     );
     assert_ne!(saved.revision, original.revision);
     assert_eq!(store.fetch(original.id).await.unwrap(), Some(saved));
-}
-
-#[tokio::test]
-async fn resolver_reports_an_unconfigured_store() {
-    let schema = Schema::build(
-        ParameterPageQueries(PhantomData::<InMemoryParameterPageStore>),
-        ParameterPageMutations(PhantomData::<InMemoryParameterPageStore>),
-        EmptySubscription,
-    )
-    .finish();
-    let result = schema
-        .execute(r#"{ parameterPage(id: "page-123") { id } }"#)
-        .await;
-
-    assert_eq!(result.errors.len(), 1);
-    assert_eq!(result.data, async_graphql::Value::Null);
 }
 
 #[tokio::test]
