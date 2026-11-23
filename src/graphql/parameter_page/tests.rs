@@ -4,12 +4,17 @@ use axum::{
     body::{Body, to_bytes},
     http::{Request, StatusCode, header},
 };
+use rust_grpc_lib::auth::ForwardedToken;
 use serde_json::{Value, json};
 use tower::Service;
 
 use crate::graphql::{PARAMETER_PAGE_ENDPOINT, create_parameter_page_router};
 
 use super::*;
+
+fn testing_token() -> ForwardedToken {
+    ForwardedToken::new("")
+}
 
 const PAGE_FIELDS: &str = r#"
     fragment SavedPage on ParameterPage {
@@ -104,12 +109,18 @@ fn response_data(response: &Value) -> &Value {
 #[tokio::test]
 async fn store_lists_summaries_in_title_order_and_fetches_exact_ids() {
     let store = InMemoryParameterPageStore::default();
-    assert!(store.list().await.unwrap().is_empty());
+    assert!(store.list(testing_token()).await.unwrap().is_empty());
 
-    let last = store.create(store_input("Zeta")).await.unwrap();
-    let first = store.create(store_input("Alpha")).await.unwrap();
+    let last = store
+        .create(store_input("Zeta"), testing_token())
+        .await
+        .unwrap();
+    let first = store
+        .create(store_input("Alpha"), testing_token())
+        .await
+        .unwrap();
     let ids: Vec<_> = store
-        .list()
+        .list(testing_token())
         .await
         .unwrap()
         .into_iter()
@@ -117,27 +128,35 @@ async fn store_lists_summaries_in_title_order_and_fetches_exact_ids() {
         .collect();
     assert_eq!(ids, [first.id.clone(), last.id]);
     assert_eq!(
-        store.fetch(first.id.clone()).await.unwrap(),
+        store
+            .fetch(first.id.clone(), testing_token())
+            .await
+            .unwrap(),
         Some(first.clone())
     );
     let prefix = ID::from(first.id.as_str()[..8].to_owned());
-    assert_eq!(store.fetch(prefix).await.unwrap(), None);
+    assert_eq!(store.fetch(prefix, testing_token()).await.unwrap(), None);
 }
 
 #[tokio::test]
 async fn concurrent_updates_accept_only_one_write_at_the_same_revision() {
     let store = InMemoryParameterPageStore::default();
-    let original = store.create(store_input("Original")).await.unwrap();
+    let original = store
+        .create(store_input("Original"), testing_token())
+        .await
+        .unwrap();
     let (left, right) = tokio::join!(
         store.update(
             original.id.clone(),
             &original.revision,
-            store_input("Left")
+            store_input("Left"),
+            testing_token(),
         ),
         store.update(
             original.id.clone(),
             &original.revision,
-            store_input("Right")
+            store_input("Right"),
+            testing_token(),
         ),
     );
     let (saved, rejected) = match (left, right) {
@@ -153,7 +172,10 @@ async fn concurrent_updates_accept_only_one_write_at_the_same_revision() {
         Some(&async_graphql::Value::from("CONFLICT")),
     );
     assert_ne!(saved.revision, original.revision);
-    assert_eq!(store.fetch(original.id).await.unwrap(), Some(saved));
+    assert_eq!(
+        store.fetch(original.id, testing_token()).await.unwrap(),
+        Some(saved)
+    );
 }
 
 #[tokio::test]

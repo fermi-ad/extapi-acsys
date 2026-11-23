@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use async_graphql::{Error, ErrorExtensions, ID, Object, Result};
+use async_graphql::{Context, Error, ErrorExtensions, ID, Object, Result};
 
 mod store;
 mod types;
@@ -11,6 +11,8 @@ mod tests;
 pub(super) use store::{InMemoryParameterPageStore, ParameterPageStore};
 use types::{ParameterPage, ParameterPageInput, ParameterPageSummary};
 
+use super::auth_handlers::forwarded_token;
+
 pub(super) struct ParameterPageQueries<T> {
     pub(super) store: Arc<T>,
 }
@@ -18,13 +20,17 @@ pub(super) struct ParameterPageQueries<T> {
 #[Object]
 impl<T: ParameterPageStore + 'static> ParameterPageQueries<T> {
     /// Lists page IDs and titles in title order.
-    async fn parameter_pages(&self) -> Result<Vec<ParameterPageSummary>> {
-        self.store.list().await
+    async fn parameter_pages(
+        &self, ctx: &Context<'_>,
+    ) -> Result<Vec<ParameterPageSummary>> {
+        self.store.list(forwarded_token(ctx)).await
     }
 
     /// Retrieves a parameter page by ID.
-    async fn parameter_page(&self, id: ID) -> Result<Option<ParameterPage>> {
-        self.store.fetch(id).await
+    async fn parameter_page(
+        &self, ctx: &Context<'_>, id: ID,
+    ) -> Result<Option<ParameterPage>> {
+        self.store.fetch(id, forwarded_token(ctx)).await
     }
 }
 
@@ -36,25 +42,30 @@ pub(super) struct ParameterPageMutations<T> {
 impl<T: ParameterPageStore + 'static> ParameterPageMutations<T> {
     /// Saves a new page with a server-assigned ID and revision.
     async fn create_parameter_page(
-        &self, input: ParameterPageInput,
+        &self, ctx: &Context<'_>, input: ParameterPageInput,
     ) -> Result<ParameterPage> {
         input.validate()?;
-        self.store.create(input).await
+        self.store.create(input, forwarded_token(ctx)).await
     }
 
     /// Replaces the page title and contents if the revision still matches.
     async fn update_parameter_page(
-        &self, id: ID, expected_revision: String, input: ParameterPageInput,
+        &self, ctx: &Context<'_>, id: ID, expected_revision: String,
+        input: ParameterPageInput,
     ) -> Result<ParameterPage> {
         input.validate()?;
-        self.store.update(id, &expected_revision, input).await
+        self.store
+            .update(id, &expected_revision, input, forwarded_token(ctx))
+            .await
     }
 
     /// Deletes the page if the revision still matches and returns its ID.
     async fn delete_parameter_page(
-        &self, id: ID, expected_revision: String,
+        &self, ctx: &Context<'_>, id: ID, expected_revision: String,
     ) -> Result<ID> {
-        self.store.delete(id, &expected_revision).await
+        self.store
+            .delete(id, &expected_revision, forwarded_token(ctx))
+            .await
     }
 }
 

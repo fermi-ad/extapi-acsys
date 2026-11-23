@@ -1,6 +1,7 @@
 use std::{collections::HashMap, future::Future};
 
 use async_graphql::{ID, Result};
+use rust_grpc_lib::auth::ForwardedToken;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
@@ -12,19 +13,20 @@ pub(in crate::graphql) trait ParameterPageStore:
     Send + Sync
 {
     fn list(
-        &self,
+        &self, token: ForwardedToken,
     ) -> impl Future<Output = Result<Vec<ParameterPageSummary>>> + Send;
     fn fetch(
-        &self, id: ID,
+        &self, id: ID, token: ForwardedToken,
     ) -> impl Future<Output = Result<Option<ParameterPage>>> + Send;
     fn create(
-        &self, input: ParameterPageInput,
+        &self, input: ParameterPageInput, token: ForwardedToken,
     ) -> impl Future<Output = Result<ParameterPage>> + Send;
     fn update(
         &self, id: ID, expected_revision: &str, input: ParameterPageInput,
+        token: ForwardedToken,
     ) -> impl Future<Output = Result<ParameterPage>> + Send;
     fn delete(
-        &self, id: ID, expected_revision: &str,
+        &self, id: ID, expected_revision: &str, token: ForwardedToken,
     ) -> impl Future<Output = Result<ID>> + Send;
 }
 
@@ -34,7 +36,9 @@ pub(in crate::graphql) struct InMemoryParameterPageStore {
 }
 
 impl ParameterPageStore for InMemoryParameterPageStore {
-    async fn list(&self) -> Result<Vec<ParameterPageSummary>> {
+    async fn list(
+        &self, _token: ForwardedToken,
+    ) -> Result<Vec<ParameterPageSummary>> {
         let mut pages: Vec<_> = self
             .pages
             .read()
@@ -50,11 +54,15 @@ impl ParameterPageStore for InMemoryParameterPageStore {
         Ok(pages)
     }
 
-    async fn fetch(&self, id: ID) -> Result<Option<ParameterPage>> {
+    async fn fetch(
+        &self, id: ID, _token: ForwardedToken,
+    ) -> Result<Option<ParameterPage>> {
         Ok(self.pages.read().await.get(&id).cloned())
     }
 
-    async fn create(&self, input: ParameterPageInput) -> Result<ParameterPage> {
+    async fn create(
+        &self, input: ParameterPageInput, _token: ForwardedToken,
+    ) -> Result<ParameterPage> {
         let id = ID::from(Uuid::new_v4().to_string());
         let page = ParameterPage::new(id, input);
         self.pages
@@ -66,6 +74,7 @@ impl ParameterPageStore for InMemoryParameterPageStore {
 
     async fn update(
         &self, id: ID, expected_revision: &str, input: ParameterPageInput,
+        _token: ForwardedToken,
     ) -> Result<ParameterPage> {
         let mut pages = self.pages.write().await;
         let page = matching_page(&mut pages, &id, expected_revision)?;
@@ -73,7 +82,9 @@ impl ParameterPageStore for InMemoryParameterPageStore {
         Ok(page.clone())
     }
 
-    async fn delete(&self, id: ID, expected_revision: &str) -> Result<ID> {
+    async fn delete(
+        &self, id: ID, expected_revision: &str, _token: ForwardedToken,
+    ) -> Result<ID> {
         let mut pages = self.pages.write().await;
         matching_page(&mut pages, &id, expected_revision)?;
         pages.remove(&id);
