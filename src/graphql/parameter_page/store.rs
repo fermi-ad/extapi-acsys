@@ -1,10 +1,4 @@
-use std::{
-    collections::{
-        HashMap,
-        hash_map::{Entry, OccupiedEntry},
-    },
-    future::Future,
-};
+use std::{collections::HashMap, future::Future};
 
 use async_graphql::{ID, Result};
 use tokio::sync::RwLock;
@@ -74,33 +68,30 @@ impl ParameterPageStore for InMemoryParameterPageStore {
         &self, id: ID, expected_revision: &str, input: ParameterPageInput,
     ) -> Result<ParameterPage> {
         let mut pages = self.pages.write().await;
-        let mut entry = matching_page(&mut pages, id, expected_revision)?;
-        let page = ParameterPage::new(entry.key().clone(), input);
-        entry.insert(page.clone());
-        Ok(page)
+        let page = matching_page(&mut pages, &id, expected_revision)?;
+        *page = ParameterPage::new(id, input);
+        Ok(page.clone())
     }
 
     async fn delete(&self, id: ID, expected_revision: &str) -> Result<ID> {
         let mut pages = self.pages.write().await;
-        let entry = matching_page(&mut pages, id, expected_revision)?;
-        Ok(entry.remove_entry().0)
+        matching_page(&mut pages, &id, expected_revision)?;
+        pages.remove(&id);
+        Ok(id)
     }
 }
 
 fn matching_page<'a>(
-    pages: &'a mut HashMap<ID, ParameterPage>, id: ID, expected_revision: &str,
-) -> Result<OccupiedEntry<'a, ID, ParameterPage>> {
-    let Entry::Occupied(entry) = pages.entry(id) else {
-        return Err(page_error(
-            "NOT_FOUND",
-            "The parameter page was not found.",
-        ));
-    };
-    if entry.get().revision != expected_revision {
+    pages: &'a mut HashMap<ID, ParameterPage>, id: &ID, expected_revision: &str,
+) -> Result<&'a mut ParameterPage> {
+    let page = pages.get_mut(id).ok_or_else(|| {
+        page_error("NOT_FOUND", "The parameter page was not found.")
+    })?;
+    if page.revision != expected_revision {
         return Err(page_error(
             "CONFLICT",
             "The parameter page changed. Reload it before trying again.",
         ));
     }
-    Ok(entry)
+    Ok(page)
 }
