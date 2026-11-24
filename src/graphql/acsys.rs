@@ -788,7 +788,7 @@ impl ACSysSubscriptions {
     async fn handle_continuous(
         &self, ctxt: &Context<'_>, drfs: Vec<String>,
         _window_size: Option<usize>, n_acquisitions: Option<usize>,
-        time_bounds: TimeBounds,
+        time_bounds: TimeBounds, x_axis_index: Option<usize>,
     ) -> Result<PlotStream> {
         let now = now();
         let mut reply = types::PlotReplyData {
@@ -816,8 +816,21 @@ impl ACSysSubscriptions {
                 Some(false),
             )
             .await?;
-        let s =
-            strm.filter_map(move |mut e: global::DataReply| {
+        // When an x-axis device is in play, a chunk may fail
+        // validation (bad status or a non-Scalar reading). `Step`
+        // lets the combinator chain below distinguish "not ready
+        // yet" from "ready to send" from "fatal error -- close the
+        // stream", since `filter_map` alone can only skip or forward
+        // an item and can't terminate the stream early.
+
+        enum Step {
+            Skip,
+            Item(types::PlotReplyData),
+            Stop,
+        }
+
+        let s = strm
+            .map(move |mut e: global::DataReply| {
                 // If the data consists of a single value that's a
                 // status, it gets moved to the packet level status
                 // field.
@@ -863,10 +876,28 @@ impl ACSysSubscriptions {
                     };
 
                     std::mem::swap(&mut temp, &mut reply);
-                    future::ready(Some(temp))
+
+                    if let Some(idx) = x_axis_index {
+                        match Self::apply_x_axis(&mut temp, idx) {
+                            Ok(()) => Step::Item(temp),
+                            Err(msg) => {
+                                error!("x-axis channel error: {msg}");
+                                Step::Stop
+                            }
+                        }
+                    } else {
+                        Step::Item(temp)
+                    }
                 } else {
-                    future::ready(None)
+                    Step::Skip
                 }
+            })
+            .take_while(|step| future::ready(!matches!(step, Step::Stop)))
+            .filter_map(|step| {
+                future::ready(match step {
+                    Step::Item(d) => Some(d),
+                    _ => None,
+                })
             });
 
         if let Some(n) = n_acquisitions.map(|v| v.max(1)) {
@@ -887,6 +918,67 @@ impl ACSysSubscriptions {
             chan.channel_data.drain(0..idx);
         }
         buf.trigger_timestamp = None;
+    }
+
+    // Removes the x-axis device's channel from `reply` and uses its
+    // scalar readings, positionally, to overwrite the `timestamp`
+    // field of every remaining channel's readings. This implements
+    // the `chXAxis` feature of `startPlot`, where one device's
+    // readings are used as the X-axis values for the rest of the
+    // devices instead of the wall-clock timestamp.
+    //
+    // The x-axis device must report a healthy status and every one
+    // of its readings must be a `Scalar`; any violation returns an
+    // `Err` describing the problem, which the caller should treat as
+    // fatal for the subscription. If a channel's reading count
+    // doesn't match the x-axis device's, the channel is truncated to
+    // the shorter length and a warning is logged.
+
+    fn apply_x_axis(
+        reply: &mut types::PlotReplyData, idx: usize,
+    ) -> std::result::Result<(), String> {
+        let x_chan = reply.data.remove(idx);
+
+        if x_chan.channel_status != 0 {
+            return Err(format!(
+                "x-axis device returned a bad status: {}",
+                x_chan.channel_status
+            ));
+        }
+
+        let mut x_values = Vec::with_capacity(x_chan.channel_data.len());
+
+        for info in x_chan.channel_data {
+            match info.result {
+                global::DataType::Scalar(global::Scalar { scalar_value }) => {
+                    x_values.push(scalar_value)
+                }
+                other => {
+                    return Err(format!(
+                        "x-axis device must return Scalar readings, got: {other:?}"
+                    ));
+                }
+            }
+        }
+
+        for chan in reply.data.iter_mut() {
+            if chan.channel_data.len() != x_values.len() {
+                warn!(
+                    "x-axis channel length ({}) doesn't match device \
+       channel length ({}); truncating to the shorter",
+                    x_values.len(),
+                    chan.channel_data.len()
+                );
+                chan.channel_data.truncate(x_values.len());
+            }
+
+            for (data, &x) in chan.channel_data.iter_mut().zip(x_values.iter())
+            {
+                data.timestamp = x;
+            }
+        }
+
+        Ok(())
     }
 
     fn prep_outgoing(
@@ -925,6 +1017,7 @@ impl ACSysSubscriptions {
     async fn handle_triggered(
         &self, ctxt: &Context<'_>, drfs: Vec<String>, trigger_event: u8,
         start_time: Option<f64>, end_time: Option<f64>,
+        x_axis_index: Option<usize>,
     ) -> Result<PlotStream> {
         let global_config = ctxt.data::<Arc<ExtapiGlobalConfig>>()?;
         let token = ctxt
@@ -1016,34 +1109,46 @@ impl ACSysSubscriptions {
 			    // clock's.
 
 			    if let Some(ev_ts) = event_time {
-				if triggered || divisor == 0 {
-				    // Process the outgoing reply. Any data
-				    // with a timestamp later than `ts` is
-				    // saved in `remaining`.
+			 if triggered || divisor == 0 {
+			     // Process the outgoing reply. Any data
+			     // with a timestamp later than `ts` is
+			     // saved in `remaining`.
 
-				    let mut remaining = template.clone();
+			     let mut remaining = template.clone();
 
-				    Self::prep_outgoing(
-					&mut remaining,
-					&mut outgoing,
-					ev_ts,
-					ts
-				    );
+			     Self::prep_outgoing(
+			  &mut remaining,
+			  &mut outgoing,
+			  ev_ts,
+			  ts
+			     );
 
-				    // If there's any data ready to go out,
-				    // send it.
+			     // If an x-axis device was specified,
+			     // replace the timestamps of the other
+			     // channels with its scalar readings. A
+			     // validation failure here is fatal for
+			     // the subscription.
 
-				    if outgoing
-					.data
-					.iter()
-					.any(|v| !v.channel_data.is_empty()) {
-					yield outgoing;
-				    }
+			     if let Some(idx) = x_axis_index
+			  && let Err(msg) = Self::apply_x_axis(&mut outgoing, idx) {
+			      error!("x-axis channel error: {msg}");
+			      break
+			     }
 
-				    // The remaining data becomes the new,
-				    // outgoing reply.
+			     // If there's any data ready to go out,
+			     // send it.
 
-				    outgoing = remaining;
+			     if outgoing
+			  .data
+			  .iter()
+			  .any(|v| !v.channel_data.is_empty()) {
+			  yield outgoing;
+			     }
+
+			     // The remaining data becomes the new,
+			     // outgoing reply.
+
+			     outgoing = remaining;
 				}
 			    } else {
 				Self::flush(&mut outgoing, ts)
@@ -1218,7 +1323,16 @@ live data."]
 This query sets up a request which returns a stream of data, presumably \
 used for plotting. Unlike the `acceleratorData` query, this stream \
 returns data for all the devices in one reply. Since the data is \
-correlated, all the devices are collected on the same event."]
+correlated, all the devices are collected on the same event.
+
+If `chXAxis` is specified, it names a device whose readings are used \
+as the X-axis values for every device in `drfList`, in place of the \
+usual wall-clock timestamp. The `chXAxis` device must return `Scalar` \
+readings; any other type terminates the subscription with an error. \
+Its readings are correlated positionally with each other device's \
+readings (the Nth reading of the x-axis device replaces the timestamp \
+of the Nth reading of each other device). The `chXAxis` device itself \
+is not included in the returned `data` array."]
     #[instrument(skip(self, ctxt, drf_list))]
     async fn start_plot(
         &self, ctxt: &Context<'_>,
@@ -1266,21 +1380,45 @@ correlated, all the devices are collected on the same event."]
         )]
         _x_max: Option<f64>,
         start_time: Option<f64>, end_time: Option<f64>,
-        _sample_on_event: Option<u8>, _ch_x_axis: Option<String>,
+        _sample_on_event: Option<u8>,
+        #[graphql(
+            desc = "The name of a device whose readings are used as the \
+      X-axis values for every device in `drfList`, in place \
+      of the timestamp. The device must return `Scalar` \
+      readings; any other type terminates the subscription \
+      with an error. If this parameter is `null`, the \
+      timestamp is used as the X-axis, as usual."
+        )]
+        ch_x_axis: Option<String>,
         _waveform_duration: Option<f64>,
     ) -> Result<PlotStream> {
         // Add the periodic rate to each of the device names after stripping
         // any event specifier.
 
-        let drfs: Vec<_> = drf_list
-            .iter()
-            .map(|v| strip_event(v))
-            .map(add_event(update_delay, None))
-            .collect();
+        let event = add_event(update_delay, None);
+        let mut drfs: Vec<_> =
+            drf_list.iter().map(|v| event(strip_event(v))).collect();
+
+        // If an x-axis device was specified, append it to the end of
+        // the device list so it's acquired along with the rest. Its
+        // index is recorded so the handlers can strip it from the
+        // outgoing replies and use its readings as the X-axis.
+
+        let x_axis_index = ch_x_axis.as_deref().map(|device| {
+            drfs.push(event(strip_event(device)));
+            drfs.len() - 1
+        });
 
         if let Some(event) = trigger_event {
-            self.handle_triggered(ctxt, drfs, event, start_time, end_time)
-                .await
+            self.handle_triggered(
+                ctxt,
+                drfs,
+                event,
+                start_time,
+                end_time,
+                x_axis_index,
+            )
+            .await
         } else {
             self.handle_continuous(
                 ctxt,
@@ -1291,6 +1429,7 @@ correlated, all the devices are collected on the same event."]
                     start: start_time,
                     end: end_time,
                 },
+                x_axis_index,
             )
             .await
         }
