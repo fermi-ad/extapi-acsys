@@ -835,7 +835,7 @@ dependencies = [
 
 [[package]]
 name = "extapi-acsys"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "async-graphql",
  "async-graphql-axum",
