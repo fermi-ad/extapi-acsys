@@ -1,0 +1,92 @@
+use std::sync::Arc;
+
+use async_graphql::{Context, Error, ErrorExtensions, ID, Object, Result};
+
+mod store;
+mod types;
+
+#[cfg(test)]
+mod tests;
+
+use store::StoreError;
+pub(super) use store::{InMemoryParameterPageStore, ParameterPageStore};
+use types::{ParameterPage, ParameterPageInput, ParameterPageSummary};
+
+use super::auth_handlers::forwarded_token;
+
+pub(super) struct ParameterPageQueries<T> {
+    pub(super) store: Arc<T>,
+}
+
+#[Object]
+impl<T: ParameterPageStore + 'static> ParameterPageQueries<T> {
+    /// Lists page IDs and titles in title order.
+    async fn parameter_pages(
+        &self, ctx: &Context<'_>,
+    ) -> Result<Vec<ParameterPageSummary>> {
+        Ok(self.store.list(forwarded_token(ctx)).await?)
+    }
+
+    /// Retrieves a parameter page by ID.
+    async fn parameter_page(
+        &self, ctx: &Context<'_>, id: ID,
+    ) -> Result<Option<ParameterPage>> {
+        Ok(self.store.fetch(id, forwarded_token(ctx)).await?)
+    }
+}
+
+pub(super) struct ParameterPageMutations<T> {
+    pub(super) store: Arc<T>,
+}
+
+#[Object]
+impl<T: ParameterPageStore + 'static> ParameterPageMutations<T> {
+    /// Saves a new page with a server-assigned ID and revision.
+    async fn create_parameter_page(
+        &self, ctx: &Context<'_>, input: ParameterPageInput,
+    ) -> Result<ParameterPage> {
+        input.validate()?;
+        Ok(self.store.create(input, forwarded_token(ctx)).await?)
+    }
+
+    /// Replaces the page title and contents if the revision still matches.
+    async fn update_parameter_page(
+        &self, ctx: &Context<'_>, id: ID, expected_revision: String,
+        input: ParameterPageInput,
+    ) -> Result<ParameterPage> {
+        input.validate()?;
+        Ok(self
+            .store
+            .update(id, &expected_revision, input, forwarded_token(ctx))
+            .await?)
+    }
+
+    /// Deletes the page if the revision still matches and returns its ID.
+    async fn delete_parameter_page(
+        &self, ctx: &Context<'_>, id: ID, expected_revision: String,
+    ) -> Result<ID> {
+        Ok(self
+            .store
+            .delete(id, &expected_revision, forwarded_token(ctx))
+            .await?)
+    }
+}
+
+impl From<StoreError> for Error {
+    fn from(error: StoreError) -> Self {
+        match error {
+            StoreError::NotFound => {
+                page_error("NOT_FOUND", "The parameter page was not found.")
+            }
+            StoreError::Conflict => page_error(
+                "CONFLICT",
+                "The parameter page changed. Reload it before trying again.",
+            ),
+        }
+    }
+}
+
+fn page_error(code: &str, message: &str) -> Error {
+    Error::new(message)
+        .extend_with(|_, extensions| extensions.set("code", code))
+}

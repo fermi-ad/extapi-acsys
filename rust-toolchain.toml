@@ -1,0 +1,6 @@
+[toolchain]
+# Match the Docker build. The shared coverage workflow reads test binaries
+# from the build layout used before Cargo 1.100.
+channel = "1.97.1"
+profile = "minimal"
+components = ["clippy", "rustfmt"]
