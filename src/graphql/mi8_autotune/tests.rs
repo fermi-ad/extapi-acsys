@@ -402,13 +402,23 @@ fn reading_quality_maps_every_known_value_and_unknown_numbers() {
     .enumerate()
     {
         assert_eq!(
-            types::BpmReading::new(String::new(), number as i32, None).quality,
+            types::BpmReading::from(proto::BpmReading {
+                bpm: String::new(),
+                quality: number as i32,
+                value: None,
+            })
+            .quality,
             expected
         );
     }
     for number in [-1, 5, 99, i32::MIN, i32::MAX] {
         assert_eq!(
-            types::BpmReading::new(String::new(), number, None).quality,
+            types::BpmReading::from(proto::BpmReading {
+                bpm: String::new(),
+                quality: number,
+                value: None,
+            })
+            .quality,
             types::ReadingQuality::Unknown
         );
     }
@@ -418,34 +428,41 @@ fn reading_quality_maps_every_known_value_and_unknown_numbers() {
 fn bpm_reading_exposes_numeric_value_only_for_valid_quality() {
     use types::{BpmReading, ReadingQuality};
 
-    for (quality, expected) in [
-        (0, ReadingQuality::Unknown),
-        (2, ReadingQuality::Missing),
-        (3, ReadingQuality::Invalid),
-        (4, ReadingQuality::Stale),
-        (99, ReadingQuality::Unknown),
+    for quality in [
+        ReadingQuality::Unknown,
+        ReadingQuality::Missing,
+        ReadingQuality::Invalid,
+        ReadingQuality::Stale,
     ] {
         assert_eq!(
             BpmReading::new("I:BP01".to_owned(), quality, Some(1.25)),
             BpmReading {
                 bpm: "I:BP01".to_owned(),
-                quality: expected,
+                quality,
                 value: None,
             }
         );
     }
     assert_eq!(
-        BpmReading::new("I:BP02".to_owned(), 1, Some(0.0)),
+        BpmReading::new("I:BP02".to_owned(), ReadingQuality::Valid, Some(0.0)),
         BpmReading {
             bpm: "I:BP02".to_owned(),
             quality: ReadingQuality::Valid,
             value: Some(0.0),
         }
     );
-    assert_eq!(BpmReading::new("I:BP02".to_owned(), 1, None).value, None);
+    assert_eq!(
+        BpmReading::new("I:BP02".to_owned(), ReadingQuality::Valid, None).value,
+        None
+    );
     for non_finite in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         assert_eq!(
-            BpmReading::new("I:BP02".to_owned(), 1, Some(non_finite)).value,
+            BpmReading::new(
+                "I:BP02".to_owned(),
+                ReadingQuality::Valid,
+                Some(non_finite)
+            )
+            .value,
             None
         );
     }
@@ -991,11 +1008,6 @@ async fn readings_initiation_and_terminal_stream_errors_are_sanitized_without_re
                         Some(2.5),
                     )),
                     Err(status.clone()),
-                    Ok(reading(
-                        "I:BP02",
-                        proto::ReadingQuality::Valid,
-                        Some(9.0),
-                    )),
                 ])
                 .boxed())
             });

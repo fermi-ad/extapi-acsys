@@ -3,10 +3,7 @@ use std::sync::Arc;
 use async_graphql::{
     Context, Object, Result, Subscription, async_trait::async_trait,
 };
-use futures_util::{
-    Stream, StreamExt,
-    stream::{self, BoxStream},
-};
+use futures_util::{Stream, StreamExt, stream::BoxStream};
 use rust_grpc_lib::auth::ForwardedToken;
 use tonic::Status;
 
@@ -281,17 +278,8 @@ impl Mi8AutotuneSubscriptions {
             .await
             .map_err(handle_graphql_error)?;
 
-        Ok(stream::unfold(Some(upstream_stream), |stream| async move {
-            let mut stream = stream?;
-            match stream.next().await {
-                Some(Ok(reading)) => {
-                    Some((Ok(BpmReading::from(reading)), Some(stream)))
-                }
-                Some(Err(status)) => {
-                    Some((Err(handle_graphql_error(status)), None))
-                }
-                None => None,
-            }
+        Ok(upstream_stream.map(|reading| {
+            reading.map(BpmReading::from).map_err(handle_graphql_error)
         }))
     }
 }

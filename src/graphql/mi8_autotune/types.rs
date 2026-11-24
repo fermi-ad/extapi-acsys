@@ -106,9 +106,9 @@ pub struct BpmReading {
 }
 
 impl BpmReading {
-    pub fn new(bpm: String, quality: i32, value: Option<f64>) -> Self {
-        let quality = ReadingQuality::try_from(quality)
-            .unwrap_or(ReadingQuality::Unknown);
+    pub fn new(
+        bpm: String, quality: ReadingQuality, value: Option<f64>,
+    ) -> Self {
         Self {
             bpm,
             quality,
@@ -123,6 +123,7 @@ impl BpmReading {
 
 impl From<proto::BpmReading> for BpmReading {
     fn from(reading: proto::BpmReading) -> Self {
-        Self::new(reading.bpm, reading.quality, reading.value)
+        let quality = reading.quality();
+        Self::new(reading.bpm, quality, reading.value)
     }
 }
