@@ -45,6 +45,9 @@ struct FakeApi {
             >,
         >,
     >,
+    readings: Mutex<
+        Option<std::result::Result<StatusStream<proto::BpmReading>, Status>>,
+    >,
 }
 
 impl FakeApi {
@@ -57,6 +60,7 @@ impl FakeApi {
             armed: Mutex::new(Some(Ok(stream::empty().boxed()))),
             mode: Mutex::new(Some(Ok(stream::empty().boxed()))),
             events: Mutex::new(Some(Ok(stream::empty().boxed()))),
+            readings: Mutex::new(Some(Ok(stream::empty().boxed()))),
         }
     }
 }
@@ -134,6 +138,20 @@ impl Mi8AutotuneApi for FakeApi {
             .unwrap()
             .push((config.host_addr.clone(), token.get_token().unwrap()));
         self.events.lock().unwrap().take().unwrap()
+    }
+
+    async fn subscribe_readings(
+        &self, config: &GrpcConfig, token: ForwardedToken,
+    ) -> std::result::Result<StatusStream<proto::BpmReading>, Status> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push((config.host_addr.clone(), token.get_token().unwrap()));
+        self.readings
+            .lock()
+            .unwrap()
+            .take()
+            .expect("one upstream call")
     }
 }
 
@@ -295,8 +313,22 @@ fn schema_exposes_mutations_with_non_null_bpms_and_subscriptions() {
         "events: AutotuneEventUpdate!",
         "event: AutotuneEvent!",
         "errorMessage: String\n",
+        "readings: BpmReading!",
+        "bpm: String!",
+        "quality: ReadingQuality!",
+        "value: Float",
     ] {
         assert!(sdl.contains(field), "{sdl}");
+    }
+    let quality_enum = sdl
+        .split("enum ReadingQuality {")
+        .nth(1)
+        .unwrap()
+        .split('}')
+        .next()
+        .unwrap();
+    for value in ["UNKNOWN", "VALID", "MISSING", "INVALID", "STALE"] {
+        assert!(quality_enum.contains(&format!("\n\t{value}\n")), "{sdl}");
     }
     assert!(!sdl.contains("autotuneEvent"), "{sdl}");
     assert!(
@@ -353,6 +385,85 @@ fn enum_mappings_cover_every_known_value_and_unknown_numbers() {
         assert_eq!(
             types::AutotuneEvent::from(number),
             types::AutotuneEvent::Unknown
+        );
+    }
+}
+
+#[test]
+fn reading_quality_maps_every_known_value_and_unknown_numbers() {
+    for (number, expected) in [
+        types::ReadingQuality::Unknown,
+        types::ReadingQuality::Valid,
+        types::ReadingQuality::Missing,
+        types::ReadingQuality::Invalid,
+        types::ReadingQuality::Stale,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        assert_eq!(
+            types::BpmReading::from(proto::BpmReading {
+                bpm: String::new(),
+                quality: number as i32,
+                value: None,
+            })
+            .quality,
+            expected
+        );
+    }
+    for number in [-1, 5, 99, i32::MIN, i32::MAX] {
+        assert_eq!(
+            types::BpmReading::from(proto::BpmReading {
+                bpm: String::new(),
+                quality: number,
+                value: None,
+            })
+            .quality,
+            types::ReadingQuality::Unknown
+        );
+    }
+}
+
+#[test]
+fn bpm_reading_exposes_numeric_value_only_for_valid_quality() {
+    use types::{BpmReading, ReadingQuality};
+
+    for quality in [
+        ReadingQuality::Unknown,
+        ReadingQuality::Missing,
+        ReadingQuality::Invalid,
+        ReadingQuality::Stale,
+    ] {
+        assert_eq!(
+            BpmReading::new("I:BP01".to_owned(), quality, Some(1.25)),
+            BpmReading {
+                bpm: "I:BP01".to_owned(),
+                quality,
+                value: None,
+            }
+        );
+    }
+    assert_eq!(
+        BpmReading::new("I:BP02".to_owned(), ReadingQuality::Valid, Some(0.0)),
+        BpmReading {
+            bpm: "I:BP02".to_owned(),
+            quality: ReadingQuality::Valid,
+            value: Some(0.0),
+        }
+    );
+    assert_eq!(
+        BpmReading::new("I:BP02".to_owned(), ReadingQuality::Valid, None).value,
+        None
+    );
+    for non_finite in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert_eq!(
+            BpmReading::new(
+                "I:BP02".to_owned(),
+                ReadingQuality::Valid,
+                Some(non_finite)
+            )
+            .value,
+            None
         );
     }
 }
@@ -762,6 +873,198 @@ async fn pending_streams_emit_nothing_synthetic_and_are_dropped_on_cancellation(
         drop(responses);
         assert!(dropped.load(Ordering::SeqCst));
     }
+}
+
+const READINGS: &str = "subscription { readings { bpm quality value } }";
+
+fn reading(
+    bpm: &str, quality: proto::ReadingQuality, value: Option<f64>,
+) -> proto::BpmReading {
+    proto::BpmReading {
+        bpm: bpm.to_owned(),
+        quality: quality as i32,
+        value,
+    }
+}
+
+#[tokio::test]
+async fn readings_forward_individual_messages_and_complete_on_clean_eof() {
+    let api = empty_api();
+    *api.readings.lock().unwrap() = Some(Ok(stream::iter([
+        Ok(reading("I:BP01", proto::ReadingQuality::Valid, Some(1.25))),
+        Ok(reading("I:BP02", proto::ReadingQuality::Missing, None)),
+        Ok(reading("I:BP03", proto::ReadingQuality::Invalid, Some(3.0))),
+        Ok(reading("I:BP04", proto::ReadingQuality::Stale, None)),
+        Ok(reading("I:BP05", proto::ReadingQuality::Unknown, None)),
+        Ok(proto::BpmReading {
+            bpm: "I:BP06".to_owned(),
+            quality: 999,
+            value: Some(4.0),
+        }),
+        Ok(reading(
+            "I:BP07",
+            proto::ReadingQuality::Valid,
+            Some(f64::NAN),
+        )),
+        Ok(reading("I:BP08", proto::ReadingQuality::Valid, None)),
+    ])
+    .boxed()));
+    let responses = schema(config(), api.clone())
+        .execute_stream(READINGS)
+        .collect::<Vec<_>>()
+        .await;
+    assert!(
+        responses.iter().all(|response| response.errors.is_empty()),
+        "{responses:?}"
+    );
+    assert_eq!(
+        responses
+            .into_iter()
+            .map(|response| response.data)
+            .collect::<Vec<_>>(),
+        [
+            value!({"readings": {"bpm": "I:BP01", "quality": "VALID", "value": 1.25}}),
+            value!({"readings": {"bpm": "I:BP02", "quality": "MISSING", "value": null}}),
+            value!({"readings": {"bpm": "I:BP03", "quality": "INVALID", "value": null}}),
+            value!({"readings": {"bpm": "I:BP04", "quality": "STALE", "value": null}}),
+            value!({"readings": {"bpm": "I:BP05", "quality": "UNKNOWN", "value": null}}),
+            value!({"readings": {"bpm": "I:BP06", "quality": "UNKNOWN", "value": null}}),
+            value!({"readings": {"bpm": "I:BP07", "quality": "VALID", "value": null}}),
+            value!({"readings": {"bpm": "I:BP08", "quality": "VALID", "value": null}}),
+        ]
+    );
+    assert_eq!(api.calls.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn readings_forward_each_callers_token_even_without_operator_role() {
+    use axum::extract::FromRequestParts;
+    for token in [Some("first-caller"), Some("second-caller"), None] {
+        let api = empty_api();
+        let mut builder = Request::builder();
+        if let Some(token) = token {
+            builder =
+                builder.header("authorization", format!("Bearer {token}"));
+        }
+        let (mut parts, _) = builder.body(()).unwrap().into_parts();
+        let auth = AuthInfo::from_request_parts(&mut parts, &())
+            .await
+            .ok()
+            .unwrap();
+        let responses = schema(config(), api.clone())
+            .execute_stream(async_graphql::Request::new(READINGS).data(auth))
+            .collect::<Vec<_>>()
+            .await;
+        assert!(responses.is_empty());
+        assert_eq!(
+            *api.calls.lock().unwrap(),
+            [(
+                "http://mi8-autotune.test:50051".to_owned(),
+                token.unwrap_or_default().to_owned()
+            )]
+        );
+    }
+}
+
+#[tokio::test]
+async fn disabled_readings_do_not_call_upstream() {
+    let api = empty_api();
+    let mut config = config();
+    config.mi8_autotune =
+        Upstream::disabled("MI8 Autotune", ["MI8_AUTOTUNE_GRPC_HOST"]);
+    let responses = schema(config, api.clone())
+        .execute_stream(READINGS)
+        .collect::<Vec<_>>()
+        .await;
+    assert_eq!(responses.len(), 1);
+    assert_eq!(
+        responses[0].errors[0]
+            .extensions
+            .as_ref()
+            .unwrap()
+            .get("code"),
+        Some(&value!("FEATURE_DISABLED"))
+    );
+    assert!(api.calls.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn readings_initiation_and_terminal_stream_errors_are_sanitized_without_reconnection()
+ {
+    for status in [
+        Status::internal("private token=secret"),
+        Status::unavailable("private acquisition failure"),
+        Status::resource_exhausted("private subscriber lag"),
+    ] {
+        for initiation in [true, false] {
+            let api = empty_api();
+            *api.readings.lock().unwrap() = Some(if initiation {
+                Err(status.clone())
+            } else {
+                Ok(stream::iter([
+                    Ok(reading(
+                        "I:BP01",
+                        proto::ReadingQuality::Valid,
+                        Some(2.5),
+                    )),
+                    Err(status.clone()),
+                ])
+                .boxed())
+            });
+            let responses = schema(config(), api.clone())
+                .execute_stream(READINGS)
+                .collect::<Vec<_>>()
+                .await;
+            assert_eq!(responses.len(), if initiation { 1 } else { 2 });
+            if !initiation {
+                assert_eq!(
+                    responses[0].data,
+                    value!({"readings": {"bpm": "I:BP01", "quality": "VALID", "value": 2.5}})
+                );
+                assert!(responses[0].errors.is_empty());
+            }
+            assert_safe_error(responses.last().unwrap());
+            assert_eq!(api.calls.lock().unwrap().len(), 1);
+        }
+    }
+}
+
+#[tokio::test]
+async fn cancelling_readings_drops_upstream_without_creating_another_subscription()
+ {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    struct DropSignal(Arc<AtomicBool>);
+    impl Drop for DropSignal {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+    let api = empty_api();
+    let dropped = Arc::new(AtomicBool::new(false));
+    let guard = DropSignal(dropped.clone());
+    *api.readings.lock().unwrap() = Some(Ok(stream::pending()
+        .map(
+            move |item: std::result::Result<proto::BpmReading, Status>| {
+                let _ = &guard;
+                item
+            },
+        )
+        .boxed()));
+    let schema = schema(config(), api.clone());
+    let mut responses = schema.execute_stream(READINGS);
+    assert!(
+        tokio::time::timeout(
+            std::time::Duration::from_millis(20),
+            responses.next()
+        )
+        .await
+        .is_err()
+    );
+    assert_eq!(api.calls.lock().unwrap().len(), 1);
+    assert!(!dropped.load(Ordering::SeqCst));
+    drop(responses);
+    assert!(dropped.load(Ordering::SeqCst));
+    assert_eq!(api.calls.lock().unwrap().len(), 1);
 }
 
 #[tokio::test]

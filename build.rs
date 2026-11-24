@@ -11,6 +11,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .enum_attribute(
             ".services.blm.v1.BeamLine",
             "#[derive(async_graphql::Enum)]",
+        )
+        .enum_attribute(
+            ".services.mi8_autotune.v1.ReadingQuality",
+            "#[derive(async_graphql::Enum)]",
         );
 
     generate_protos(config)?;

@@ -93,3 +93,37 @@ impl From<proto::SubscribeAutotuneEventResponse> for AutotuneEventUpdate {
         }
     }
 }
+
+/// Quality of one BPM reading. Unrecognized numbers map to UNKNOWN.
+pub use proto::ReadingQuality;
+
+/// One BPM reading. Only VALID readings expose their optional scalar value.
+#[derive(SimpleObject, Debug, PartialEq)]
+pub struct BpmReading {
+    pub bpm: String,
+    pub quality: ReadingQuality,
+    pub value: Option<f64>,
+}
+
+impl BpmReading {
+    pub fn new(
+        bpm: String, quality: ReadingQuality, value: Option<f64>,
+    ) -> Self {
+        Self {
+            bpm,
+            quality,
+            value: if quality == ReadingQuality::Valid {
+                value.filter(|value| value.is_finite())
+            } else {
+                None
+            },
+        }
+    }
+}
+
+impl From<proto::BpmReading> for BpmReading {
+    fn from(reading: proto::BpmReading) -> Self {
+        let quality = reading.quality();
+        Self::new(reading.bpm, quality, reading.value)
+    }
+}
