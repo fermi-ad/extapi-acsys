@@ -735,3 +735,158 @@ fn test_prep_outgoing_ts_before_all_data() {
         vec![make_point(10.0), make_point(20.0)]
     );
 }
+
+// -----------------------------------------------------------------------
+// apply_x_axis
+
+fn scalar_point(ts: f64, value: f64) -> global::DataInfo {
+    global::DataInfo {
+        timestamp: ts,
+        result: global::DataType::Scalar(global::Scalar {
+            scalar_value: value,
+        }),
+    }
+}
+
+fn make_channel(
+    units: &str, status: i16, data: Vec<global::DataInfo>,
+) -> types::PlotChannelData {
+    types::PlotChannelData {
+        channel_rate: "Unknown".into(),
+        channel_units: units.to_owned(),
+        status_string: None,
+        channel_status: status,
+        channel_data: data,
+    }
+}
+
+fn make_reply(data: Vec<types::PlotChannelData>) -> types::PlotReplyData {
+    types::PlotReplyData {
+        plot_id: "test".to_owned(),
+        timestamp: 0.0,
+        trigger_timestamp: None,
+        data,
+    }
+}
+
+// apply_x_axis removes the x-axis channel and overwrites the
+// timestamps of the remaining channels, positionally, with the
+// x-axis channel's scalar values.
+#[test]
+fn test_apply_x_axis_success() {
+    let mut reply = make_reply(vec![
+        make_channel(
+            "V",
+            0,
+            vec![scalar_point(100.0, 1.0), scalar_point(101.0, 2.0)],
+        ),
+        make_channel(
+            "A",
+            0,
+            vec![scalar_point(10.0, 7.0), scalar_point(20.0, 8.0)],
+        ),
+    ]);
+
+    // Insert the x-axis channel at index 1 (between the two device
+    // channels) to confirm the function works regardless of position.
+
+    reply.data.insert(
+        1,
+        make_channel(
+            "x",
+            0,
+            vec![scalar_point(0.0, 42.0), scalar_point(0.0, 43.0)],
+        ),
+    );
+
+    assert!(ACSysSubscriptions::apply_x_axis(&mut reply, 1).is_ok());
+
+    // The x-axis channel is gone; only the two original channels
+    // remain, in their original order.
+
+    assert_eq!(reply.data.len(), 2);
+    assert_eq!(
+        reply.data[0].channel_data,
+        vec![scalar_point(42.0, 1.0), scalar_point(43.0, 2.0)]
+    );
+    assert_eq!(
+        reply.data[1].channel_data,
+        vec![scalar_point(42.0, 7.0), scalar_point(43.0, 8.0)]
+    );
+}
+
+// A non-Scalar reading from the x-axis device is a fatal error.
+#[test]
+fn test_apply_x_axis_rejects_non_scalar() {
+    let mut reply = make_reply(vec![
+        make_channel(
+            "x",
+            0,
+            vec![global::DataInfo {
+                timestamp: 0.0,
+                result: global::DataType::ScalarArray(global::ScalarArray {
+                    scalar_array_value: vec![1.0, 2.0],
+                }),
+            }],
+        ),
+        make_channel("V", 0, vec![scalar_point(100.0, 1.0)]),
+    ]);
+
+    let err = ACSysSubscriptions::apply_x_axis(&mut reply, 0).unwrap_err();
+    assert!(err.contains("Scalar"), "{err}");
+}
+
+// A bad status on the x-axis device's channel is a fatal error.
+#[test]
+fn test_apply_x_axis_rejects_bad_status() {
+    let mut reply = make_reply(vec![
+        make_channel("x", -5, vec![]),
+        make_channel("V", 0, vec![scalar_point(100.0, 1.0)]),
+    ]);
+
+    let err = ACSysSubscriptions::apply_x_axis(&mut reply, 0).unwrap_err();
+    assert!(err.contains("-5"), "{err}");
+}
+
+// If a device channel has fewer (or more) readings than the x-axis
+// channel, it is truncated to the shorter length instead of panicking.
+#[test]
+fn test_apply_x_axis_truncates_mismatched_lengths() {
+    let mut reply = make_reply(vec![
+        make_channel(
+            "x",
+            0,
+            vec![
+                scalar_point(0.0, 10.0),
+                scalar_point(0.0, 20.0),
+                scalar_point(0.0, 30.0),
+            ],
+        ),
+        // Fewer readings than the x-axis channel.
+        make_channel("V", 0, vec![scalar_point(100.0, 1.0)]),
+        // More readings than the x-axis channel.
+        make_channel(
+            "A",
+            0,
+            vec![
+                scalar_point(1.0, 1.0),
+                scalar_point(2.0, 2.0),
+                scalar_point(3.0, 3.0),
+                scalar_point(4.0, 4.0),
+            ],
+        ),
+    ]);
+
+    assert!(ACSysSubscriptions::apply_x_axis(&mut reply, 0).is_ok());
+
+    assert_eq!(reply.data.len(), 2);
+    assert_eq!(reply.data[0].channel_data, vec![scalar_point(10.0, 1.0)]);
+    assert_eq!(
+        reply.data[1].channel_data,
+        vec![
+            scalar_point(10.0, 1.0),
+            scalar_point(20.0, 2.0),
+            scalar_point(30.0, 3.0),
+        ]
+    );
+}
