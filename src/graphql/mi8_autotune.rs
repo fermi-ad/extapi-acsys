@@ -3,8 +3,10 @@ use std::sync::Arc;
 use async_graphql::{
     Context, Object, Result, Subscription, async_trait::async_trait,
 };
-use async_stream::stream;
-use futures_util::{Stream, StreamExt, stream::BoxStream};
+use futures_util::{
+    Stream, StreamExt,
+    stream::{self, BoxStream},
+};
 use rust_grpc_lib::auth::ForwardedToken;
 use tonic::Status;
 
@@ -273,23 +275,24 @@ impl Mi8AutotuneSubscriptions {
     ) -> Result<impl Stream<Item = Result<BpmReading>>> {
         let config = ctx.data::<Arc<ExtapiGlobalConfig>>()?;
         let upstream = config.mi8_autotune.require()?;
-        let mut upstream_stream = ctx
+        let upstream_stream = ctx
             .data::<Arc<dyn Mi8AutotuneApi>>()?
             .subscribe_readings(upstream, forwarded_token(ctx))
             .await
             .map_err(handle_graphql_error)?;
 
-        Ok(stream! {
-            while let Some(result) = upstream_stream.next().await {
-                match result {
-                    Ok(reading) => yield Ok(BpmReading::from(reading)),
-                    Err(status) => {
-                        yield Err(handle_graphql_error(status));
-                        break;
-                    }
+        Ok(stream::unfold(Some(upstream_stream), |stream| async move {
+            let mut stream = stream?;
+            match stream.next().await {
+                Some(Ok(reading)) => {
+                    Some((Ok(BpmReading::from(reading)), Some(stream)))
                 }
+                Some(Err(status)) => {
+                    Some((Err(handle_graphql_error(status)), None))
+                }
+                None => None,
             }
-        })
+        }))
     }
 }
 

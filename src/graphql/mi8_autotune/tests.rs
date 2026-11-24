@@ -320,6 +320,16 @@ fn schema_exposes_mutations_with_non_null_bpms_and_subscriptions() {
     ] {
         assert!(sdl.contains(field), "{sdl}");
     }
+    let quality_enum = sdl
+        .split("enum ReadingQuality {")
+        .nth(1)
+        .unwrap()
+        .split('}')
+        .next()
+        .unwrap();
+    for value in ["UNKNOWN", "VALID", "MISSING", "INVALID", "STALE"] {
+        assert!(quality_enum.contains(&format!("\n\t{value}\n")), "{sdl}");
+    }
     assert!(!sdl.contains("autotuneEvent"), "{sdl}");
     assert!(
         !sdl.lines().any(|line| {
@@ -391,11 +401,14 @@ fn reading_quality_maps_every_known_value_and_unknown_numbers() {
     .into_iter()
     .enumerate()
     {
-        assert_eq!(types::ReadingQuality::from(number as i32), expected);
+        assert_eq!(
+            types::BpmReading::new(String::new(), number as i32, None).quality,
+            expected
+        );
     }
     for number in [-1, 5, 99, i32::MIN, i32::MAX] {
         assert_eq!(
-            types::ReadingQuality::from(number),
+            types::BpmReading::new(String::new(), number, None).quality,
             types::ReadingQuality::Unknown
         );
     }
